@@ -1,0 +1,1603 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String      @id @default(cuid())
+  email           String?     @unique // nullable — a user may register with phone instead
+  password        String
+  name            String
+  phone           String?
+  phoneNormalized String?     @unique // digits-only form of `phone`, used as an alternate login identifier when no email is set
+  photo           String?
+  role            String
+  mfaEnabled      Boolean     @default(false)
+  mfaSecretEncrypted String?
+  mfaRecoveryCodes Json?
+  departmentId    String?
+  department      Department? @relation(fields: [departmentId], references: [id])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  classesAsTeacher    Class[]           @relation("TeacherClasses")
+  classesAsClassAdmin Class[]           @relation("ClassAdminClasses")
+  attendancesMarked   Attendance[]      @relation("MarkedBy")
+  notifications       Notification[]
+  staffAttendances    StaffAttendance[] @relation("StaffAttendances")
+  staffMarkedBy       StaffAttendance[] @relation("StaffMarkedBy")
+
+  // For students and parents
+  studentProfile Student?
+  parentStudents Student[]      @relation("ParentStudents")
+  refreshTokens  RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+
+  // Module 1: Salary
+  salaries Salary[] @relation("UserSalaries")
+
+  // Staff Curriculum Vitae
+  staffProfile        StaffProfile?
+  staffEducation      StaffEducation[]
+  staffWorkExperience StaffWorkExperience[]
+  staffCertifications StaffCertification[]
+
+  // Module 3: Exams
+  examsCreated Exam[] @relation("ExamCreator")
+
+  // Modules 5 & 6: Assignments
+  assignmentsCreated Assignment[] @relation("AssignmentCreator")
+
+  // Courses (LMS): authored by teachers / admins
+  coursesCreated          Course[]           @relation("CourseCreator")
+  courseAttendancesMarked CourseAttendance[] @relation("CourseAttendanceMarkedBy")
+
+  // Module 4: Messages
+  messagesSent     Message[] @relation("MessageSender")
+  messagesReceived Message[] @relation("MessageReceiver")
+
+  // Announcements (Phase 1: Communication Hub)
+  announcementsAuthored  Announcement[]          @relation("AnnouncementAuthor")
+  announcementReads      AnnouncementRead[]      @relation("AnnouncementReads")
+  notificationPreference NotificationPreference?
+}
+
+model Class {
+  id                 String     @id @default(cuid())
+  name               String
+  subject            String?
+  teacherId          String?
+  teacher            User?      @relation("TeacherClasses", fields: [teacherId], references: [id])
+  classAdminId       String?
+  classAdmin         User?      @relation("ClassAdminClasses", fields: [classAdminId], references: [id])
+  studyYearId        String?
+  studyYear          StudyYear? @relation(fields: [studyYearId], references: [id])
+  schedule           String? // e.g., "Mon 9:00-10:00"
+  // Public student self-registration visibility: AVAILABLE | UNAVAILABLE | HIDDEN
+  registrationStatus String     @default("HIDDEN")
+  // Public marketing card fields (shown on the home page registration listing)
+  thumbnail          String? // base64 data URL or external URL
+  description        String?
+  price              Float?
+  showPrice          Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  // Relations
+  students       Student[]
+  attendances    Attendance[]
+  sessionConfigs SessionConfig[]
+  exams          Exam[]              @relation("ClassExams")
+  assignments    Assignment[]        @relation("ClassAssignments")
+  announcements  Announcement[]      @relation("ClassAnnouncements")
+  courses        Course[]            @relation("ClassCourses")
+  registrations  ClassRegistration[]
+}
+
+model Student {
+  id                String    @id @default(cuid())
+  studentNumber     String? // ID number from CSV (e.g., 0001, 0002)
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id])
+  classId           String?
+  class             Class?    @relation(fields: [classId], references: [id])
+  parentId          String?
+  parent            User?     @relation("ParentStudents", fields: [parentId], references: [id])
+  qrCode            String?   @unique // For static QR if needed
+  photo             String? // URL or base64 of student photo
+  sex               String? // MALE or FEMALE
+  dateOfBirth       DateTime? // Date of birth
+  address           String? // Home address
+  generation        String? // Nth generation (ជំនាន់)
+  nameKh            String? // Khmer name — captured at self-registration; User.name stays the English name used for display
+  customFieldValues Json? // { [ClassRegistrationField.key]: string } — copied over from ClassRegistration on approval
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  attendances           Attendance[]
+  feeRecords            FeeRecord[]
+  examAttempts          ExamAttempt[]          @relation("StudentExamAttempts")
+  assignmentSubmissions AssignmentSubmission[] @relation("StudentSubmissions")
+  parentLinkRequests    ParentLinkRequest[]
+  cardAliases           CardAlias[]
+  courseEnrollments     CourseEnrollment[]     @relation("StudentCourseEnrollments")
+  courseAttendances     CourseAttendance[]     @relation("StudentCourseAttendances")
+  lessonViews           LessonView[]           @relation("StudentLessonViews")
+
+  @@index([studentNumber])
+  @@index([classId])
+  @@index([parentId])
+}
+
+// Maps an arbitrary QR payload (e.g. an old cuid printed on a physical card)
+// to the current Student. Lets pre-printed cards keep working after a CSV
+// re-import regenerates Student.id values.
+model CardAlias {
+  id          String   @id @default(cuid())
+  qrValue     String   @unique
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([studentId])
+}
+
+model Attendance {
+  id                  String    @id @default(cuid())
+  studentId           String
+  student             Student   @relation(fields: [studentId], references: [id])
+  classId             String
+  class               Class     @relation(fields: [classId], references: [id])
+  date                DateTime
+  session             Int       @default(1) // 1=Morning1, 2=Morning2, 3=Afternoon1, 4=Afternoon2
+  status              String
+  permissionType      String?
+  permissionStartDate DateTime?
+  permissionEndDate   DateTime?
+  checkInTime         DateTime?
+  checkOutTime        DateTime?
+  markedById          String
+  markedBy            User      @relation("MarkedBy", fields: [markedById], references: [id])
+  scanLatitude        Float? // GPS latitude at scan time
+  scanLongitude       Float? // GPS longitude at scan time
+  scanLocation        String? // Human-readable location label
+  timestamp           DateTime  @default(now())
+
+  @@unique([studentId, classId, date, session])
+  @@index([date])
+  @@index([classId, date])
+  @@index([studentId, date])
+  @@index([status])
+  @@index([markedById])
+}
+
+model Notification {
+  id      String    @id @default(cuid())
+  userId  String
+  user    User      @relation(fields: [userId], references: [id])
+  message String
+  type    String // e.g., "absence", "late"
+  sentAt  DateTime  @default(now())
+  readAt  DateTime?
+
+  @@index([userId, sentAt])
+  @@index([sentAt])
+  @@index([readAt])
+}
+
+// Student-initiated request to be linked to a parent account. Reviewed by admin.
+model ParentLinkRequest {
+  id           String    @id @default(cuid())
+  studentId    String
+  student      Student   @relation(fields: [studentId], references: [id])
+  parentEmail  String
+  parentName   String?
+  parentPhone  String?
+  note         String?
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  rejectReason String?
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedBy   String? // admin user id
+
+  @@index([status])
+  @@index([studentId])
+}
+
+// Public, unauthenticated student self-registration request for a class.
+// Reviewed by admin; approval creates the User + Student records.
+model ClassRegistration {
+  id                String    @id @default(cuid())
+  classId           String
+  class             Class     @relation(fields: [classId], references: [id])
+  nameKh            String? // required unless hidden/optional via ClassRegistrationSettings.khmerNameMode
+  nameEn            String
+  email             String? // at least one of email/phone is required — see createRegistration
+  phone             String? // required unless hidden/optional via ClassRegistrationSettings.phoneMode
+  passwordHash      String // bcrypt hash of the password the student chose, or an auto-generated one — see passwordMode
+  generatedPassword String? // plaintext, set ONLY when auto-generated (never for a student-chosen password), so an admin can relay it
+  photo             String? // base64 data URL, same convention as Student.photo
+  sex               String? // MALE or FEMALE — required unless hidden/optional via ClassRegistrationSettings.sexMode
+  dateOfBirth       DateTime? // required unless hidden/optional via ClassRegistrationSettings.dateOfBirthMode
+  address           String? // required unless hidden/optional via ClassRegistrationSettings.addressMode
+  generation        String? // required unless hidden/optional via ClassRegistrationSettings.generationMode
+  customFieldValues Json? // { [ClassRegistrationField.key]: string }
+  status            String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  rejectReason      String?
+  studentId         String? // set once approved
+  createdAt         DateTime  @default(now())
+  resolvedAt        DateTime?
+  resolvedBy        String? // admin user id
+
+  @@index([status])
+  @@index([classId])
+}
+
+// Site-wide toggle for which built-in fields the public registration form shows/requires.
+model ClassRegistrationSettings {
+  id              String   @id @default("singleton")
+  khmerNameMode   String   @default("REQUIRED") // REQUIRED | OPTIONAL | HIDDEN
+  phoneMode       String   @default("REQUIRED") // REQUIRED | OPTIONAL | HIDDEN
+  emailMode       String   @default("REQUIRED") // REQUIRED | OPTIONAL | HIDDEN — emailMode and phoneMode can't both be HIDDEN (no way to create a login otherwise)
+  photoMode       String   @default("OPTIONAL") // REQUIRED | OPTIONAL | HIDDEN
+  passwordMode    String   @default("REQUIRED") // REQUIRED | OPTIONAL | HIDDEN — non-REQUIRED means a password is auto-generated when the student doesn't set one
+  sexMode         String   @default("HIDDEN") // REQUIRED | OPTIONAL | HIDDEN
+  dateOfBirthMode String   @default("HIDDEN") // REQUIRED | OPTIONAL | HIDDEN
+  addressMode     String   @default("HIDDEN") // REQUIRED | OPTIONAL | HIDDEN
+  generationMode  String   @default("HIDDEN") // REQUIRED | OPTIONAL | HIDDEN
+  updatedAt       DateTime @updatedAt
+}
+
+// Admin-defined extra fields rendered on the public registration form, global across all classes.
+model ClassRegistrationField {
+  id        String   @id @default(cuid())
+  key       String   @unique // slug used as the JSON key in ClassRegistration.customFieldValues
+  label     String
+  fieldType String   @default("TEXT") // TEXT | SELECT
+  options   Json? // string[] — choices shown when fieldType is SELECT, ignored otherwise
+  required  Boolean  @default(false)
+  order     Int      @default(0)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StaffAttendance {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation("StaffAttendances", fields: [userId], references: [id])
+  date                DateTime
+  session             Int       @default(1)
+  status              String // PRESENT, LATE, ABSENT
+  permissionType      String?
+  permissionStartDate DateTime?
+  permissionEndDate   DateTime?
+  checkInTime         DateTime?
+  checkOutTime        DateTime?
+  markedById          String
+  markedBy            User      @relation("StaffMarkedBy", fields: [markedById], references: [id])
+  scanLatitude        Float? // GPS latitude at scan time
+  scanLongitude       Float? // GPS longitude at scan time
+  scanLocation        String? // Human-readable location label
+  timestamp           DateTime  @default(now())
+
+  @@unique([userId, date, session])
+  @@index([date])
+  @@index([userId, date])
+  @@index([status])
+  @@index([markedById])
+}
+
+model SessionConfig {
+  id        String   @id @default(cuid())
+  classId   String? // null = global default
+  class     Class?   @relation(fields: [classId], references: [id])
+  session   Int // 1=Morning1, 2=Morning2, 3=Afternoon1, 4=Afternoon2
+  type      String // CHECK_IN or CHECK_OUT
+  startTime String // HH:mm format e.g. "07:00"
+  endTime   String // HH:mm format e.g. "07:15"
+  scope     String   @default("CLASS") // CLASS or STAFF
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classId, session, scope])
+}
+
+// Global weekly schedule for STAFF (single row, id = "default").
+// `schedule` is a JSON string: { MON:'same'|'day-off'|..., TUE:..., ..., SUN:... }
+// Same value vocabulary as Class.schedule. 'day-off' days are excluded from
+// staff attendance reports (not auto-marked ABSENT, not counted in totals).
+model StaffWeeklySchedule {
+  id        String   @id @default("default")
+  schedule  String
+  updatedAt DateTime @updatedAt
+}
+
+model StudyYear {
+  id         String    @id @default(cuid())
+  year       Int       @unique // e.g., 2026, 2027
+  label      String? // e.g., "2026-2027"
+  startDate  DateTime?
+  endDate    DateTime?
+  isCurrent  Boolean   @default(false)
+  schoolName String? // e.g., "Wattaman International School"
+  logoUrl    String? // base64 data URL or external URL
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  classes Class[]
+}
+
+model Holiday {
+  id          String   @id @default(cuid())
+  date        DateTime
+  name        String
+  description String?
+  type        String   @default("HOLIDAY") // HOLIDAY, SCHOOL_EVENT, CUSTOM
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date, name])
+  @@index([date])
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  nameKh      String? // Khmer name
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  /// Legacy plaintext value. New writes always leave this null; retained only so
+  /// pre-migration sessions can be rotated once without signing every user out.
+  token     String?  @unique
+  tokenHash String?  @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([userId, revokedAt])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, consumedAt])
+  @@index([expiresAt])
+}
+
+/// Append-only audit trail of every privileged action in the system.
+/// Designed for compliance + forensics: actor identity is denormalized so
+/// the record survives even if the user is later deleted.
+model AuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // ── Who ──
+  actorId    String? // null for anonymous / system events (e.g. failed login attempt)
+  actorRole  String?
+  actorName  String? // denormalized snapshot
+  actorEmail String? // denormalized snapshot
+
+  // ── What ──
+  // High-level verb. Suggested set: CREATE, READ, UPDATE, DELETE, LOGIN,
+  // LOGIN_FAILED, LOGOUT, EXPORT, IMPORT, ROLE_CHANGE, PASSWORD_RESET,
+  // PERMISSION_CHANGE, BACKUP, RESTORE.
+  action        String
+  // Resource type, e.g. USER, STUDENT, CLASS, ATTENDANCE, CARD_TEMPLATE,
+  // EXAM, FEE, SALARY, ANNOUNCEMENT, BACKUP, SETTINGS, etc.
+  resource      String
+  resourceId    String?
+  resourceLabel String? // human-readable snapshot (e.g. student name)
+
+  // ── Detail ──
+  changes  Json? // { before: {...}, after: {...} } or array of diffs
+  metadata Json? // arbitrary structured context
+
+  // ── Request context ──
+  method     String? // HTTP method
+  path       String? // request path
+  statusCode Int?
+  ip         String?
+  userAgent  String?
+
+  // ── Outcome ──
+  success      Boolean @default(true)
+  errorMessage String?
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([resource, resourceId, createdAt])
+  @@index([action, createdAt])
+}
+
+/// Stores admin-configured schedules for automatic audit log cleanup.
+model AuditCleanupSchedule {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Human-readable label, e.g. "Daily – keep 90 days"
+  label String
+
+  /// How often to run: HOURLY | DAILY | WEEKLY | MONTHLY
+  frequency String
+
+  /// Number of days of logs to retain (older entries are deleted)
+  retainDays Int
+
+  /// Whether this schedule is active
+  enabled Boolean @default(true)
+
+  /// ISO timestamp of the last successful run (null = never ran)
+  lastRunAt DateTime?
+
+  /// Number of rows deleted in the last run
+  lastDeletedCount Int @default(0)
+
+  @@index([enabled])
+}
+
+model CardTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  cardType  String // "student" or "staff"
+  design    Json // full CardDesign JSON
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AttendanceFormatRule {
+  id                         String   @id @default(cuid())
+  scope                      String // CLASS or STAFF
+  organizationId             String?
+  permissionsPerAbsent       Int      @default(3) // X permissions = 1 absent full day
+  latesPerAbsentHalf         Int      @default(3) // X lates = 1 absent half day
+  // Daily "Mostly Absent" rule: if a person is ABSENT in >= N sessions of the day,
+  // the whole day is counted as ABSENT even if some sessions are PRESENT/LATE.
+  // 0 = disabled. Default 3 (out of 4 sessions).
+  absentSessionsForDayAbsent Int      @default(3)
+  // Grace minutes after a teacher's period start before their wattaman scan
+  // is marked LATE instead of PRESENT. Default 20 minutes.
+  teacherLateGraceMinutes    Int      @default(20)
+  caseStudyABEnabled         Boolean  @default(true)
+  enabled                    Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@unique([scope, organizationId])
+}
+
+// ─── Fee Management ───────────────────────────────────────────────────────────
+
+model FeeRecord {
+  id             String   @id @default(cuid())
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id])
+  totalAmount    Float
+  discount       Float    @default(0)
+  discountReason String?
+  paidAmount     Float    @default(0)
+  dueDate        DateTime
+  term           String?
+  subject        String? // e.g. "Math", "English" — which lesson this fee is for
+  feeClass       String? // class name override (e.g. extra-curricular class)
+  notes          String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  payments FeePayment[]
+
+  @@index([studentId])
+}
+
+model FeePayment {
+  id          String    @id @default(cuid())
+  feeRecordId String
+  feeRecord   FeeRecord @relation(fields: [feeRecordId], references: [id], onDelete: Cascade)
+  amount      Float
+  note        String?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  @@index([feeRecordId])
+}
+
+// ─── Timetable Module ────────────────────────────────────────────────────────
+
+model Timetable {
+  id            String   @id @default(cuid())
+  name          String
+  short         String?
+  academicYear  String
+  periodsPerDay Int      @default(8)
+  numberOfDays  Int      @default(5)
+  weekend       String[] // e.g. ["SATURDAY","SUNDAY"]
+  timeOffRules  String? // JSON: time-off window config
+  distribution  String? // Distribution constraints (JSON)
+  homeworkPrep  String? // Homework preparation constraints (JSON)
+  maxOnDay      Int? // Max lessons allowed on one day
+  docNotes      String? // Freeform doc / notes field
+  periodTimes   String? // JSON array of "HH:mm" time strings, one per period e.g. ["07:00","08:00","09:00","10:00","13:00","14:00","15:00","16:00"]
+  status        String   @default("DRAFT") // DRAFT | PUBLISHED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subjects   TimetableSubject[]
+  classes    TimetableClass[]
+  classrooms TimetableClassroom[]
+  teachers   TimetableTeacher[]
+  lessons    TimetableLesson[]
+  entries    TimetableEntry[]
+}
+
+model TimetableSubject {
+  id             String    @id @default(cuid())
+  timetableId    String
+  timetable      Timetable @relation(fields: [timetableId], references: [id], onDelete: Cascade)
+  name           String
+  short          String
+  color          String?
+  picture        String?
+  classroomCount Int       @default(1)
+  customFields   Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lessons TimetableLesson[]
+  entries TimetableEntry[]
+}
+
+model TimetableClass {
+  id                  String    @id @default(cuid())
+  timetableId         String
+  timetable           Timetable @relation(fields: [timetableId], references: [id], onDelete: Cascade)
+  name                String
+  short               String
+  color               String?
+  picture             String?
+  printSubjectPicture Boolean   @default(false)
+  customFields        Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  classTeachers TimetableTeacher[] @relation("ClassTeacherRel")
+  lessons       TimetableLesson[]
+  entries       TimetableEntry[]
+}
+
+model TimetableClassroom {
+  id           String    @id @default(cuid())
+  timetableId  String
+  timetable    Timetable @relation(fields: [timetableId], references: [id], onDelete: Cascade)
+  name         String
+  short        String
+  color        String?
+  picture      String?
+  customFields Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  entries TimetableEntry[]
+}
+
+model TimetableTeacher {
+  id             String          @id @default(cuid())
+  timetableId    String
+  timetable      Timetable       @relation(fields: [timetableId], references: [id], onDelete: Cascade)
+  lastName       String
+  firstName      String
+  khmerName      String?
+  short          String
+  sex            String? // MALE | FEMALE
+  email          String?
+  phone          String?
+  photo          String? // URL to teacher photo
+  color          String?
+  classTeacherId String? // FK to TimetableClass (no unique — multiple teachers can share a class)
+  classTeacher   TimetableClass? @relation("ClassTeacherRel", fields: [classTeacherId], references: [id])
+  qrCode         String?         @unique
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  lessons     TimetableLesson[]
+  entries     TimetableEntry[]
+  attendances TimetableTeacherAttendance[]
+}
+
+model TimetableLesson {
+  id          String           @id @default(cuid())
+  timetableId String
+  timetable   Timetable        @relation(fields: [timetableId], references: [id], onDelete: Cascade)
+  teacherId   String
+  teacher     TimetableTeacher @relation(fields: [teacherId], references: [id])
+  subjectId   String
+  subject     TimetableSubject @relation(fields: [subjectId], references: [id])
+  classId     String
+  class       TimetableClass   @relation(fields: [classId], references: [id])
+  perWeek     Int              @default(1)
+  lessonType  String           @default("SINGLE") // SINGLE | DOUBLE | TRIPLE
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  entries TimetableEntry[]
+}
+
+model TimetableEntry {
+  id          String              @id @default(cuid())
+  timetableId String
+  timetable   Timetable           @relation(fields: [timetableId], references: [id], onDelete: Cascade)
+  lessonId    String?
+  lesson      TimetableLesson?    @relation(fields: [lessonId], references: [id])
+  classId     String
+  class       TimetableClass      @relation(fields: [classId], references: [id])
+  teacherId   String
+  teacher     TimetableTeacher    @relation(fields: [teacherId], references: [id])
+  subjectId   String
+  subject     TimetableSubject    @relation(fields: [subjectId], references: [id])
+  classroomId String?
+  classroom   TimetableClassroom? @relation(fields: [classroomId], references: [id])
+  day         Int // 1=Mon … 6=Sat
+  period      Int // 1-based period
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([timetableId, classId, day, period])
+}
+
+model TimetableTeacherAttendance {
+  id        String           @id @default(cuid())
+  teacherId String
+  teacher   TimetableTeacher @relation(fields: [teacherId], references: [id])
+  date      DateTime
+  period    Int
+  status    String           @default("PRESENT") // PRESENT | ABSENT | LATE
+  checkIn   DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([teacherId, date, period])
+}
+
+// ─── Student Scoring Module ───────────────────────────────────────────────────
+
+model ScoreSheet {
+  id          String   @id @default(cuid())
+  name        String // Gradebook label (e.g. "2026-2027")
+  degree      String? // Degree/level label (e.g. "Degree 1: Grade 7–9")
+  logoUrl     String? // School logo URL
+  studyYearId String? // Linked study year
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  classes  ScoreSheetClass[]
+  subjects ScoreSubject[]
+  examTabs ScoreExamTab[]
+}
+
+// Join table: one score sheet → many classes
+model ScoreSheetClass {
+  id           String     @id @default(cuid())
+  scoreSheetId String
+  scoreSheet   ScoreSheet @relation(fields: [scoreSheetId], references: [id], onDelete: Cascade)
+  classId      String // Reference to Class.id
+  createdAt    DateTime   @default(now())
+
+  @@unique([scoreSheetId, classId])
+}
+
+model ScoreSubject {
+  id                 String     @id @default(cuid())
+  scoreSheetId       String
+  scoreSheet         ScoreSheet @relation(fields: [scoreSheetId], references: [id], onDelete: Cascade)
+  name               String
+  maxScore           Float      @default(100)
+  color              String     @default("#000000")
+  order              Int        @default(0)
+  timetableSubjectId String? // Optional link to TimetableSubject.id
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  entries ScoreEntry[]
+}
+
+model ScoreExamTab {
+  id           String     @id @default(cuid())
+  scoreSheetId String
+  scoreSheet   ScoreSheet @relation(fields: [scoreSheetId], references: [id], onDelete: Cascade)
+  label        String // e.g., "January", "Q1", "Semester 1"
+  type         String // MONTHLY | QUARTERLY | SEMESTER
+  order        Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  entries ScoreEntry[]
+}
+
+model ScoreEntry {
+  id        String       @id @default(cuid())
+  examTabId String
+  examTab   ScoreExamTab @relation(fields: [examTabId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   ScoreSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  studentId String // Reference to Student.id
+  score     Float?
+  formula   String? // Original formula string if entered (e.g. "=SUM(A,B)")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([examTabId, subjectId, studentId])
+}
+
+// ─── Module 1: Salary Management ─────────────────────────────────────────────
+
+model Salary {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("UserSalaries", fields: [userId], references: [id])
+  month       Int // 1-12
+  year        Int
+  baseSalary  Float
+  allowances  Float     @default(0)
+  deductions  Float     @default(0)
+  netSalary   Float
+  isPaid      Boolean   @default(false)
+  paidAt      DateTime?
+  notes       String?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, month, year])
+  @@index([year, month])
+  @@index([isPaid])
+}
+
+// ─── Staff Curriculum Vitae ───────────────────────────────────────────────────
+// A staff member's printable CV. StaffProfile holds the header (title/summary/
+// skills); education, work experience, and certifications are separate one-to-
+// many tables since each entry needs its own dates. Saved as a whole document
+// from the CV editor (see StaffCvService.saveCv) — same delete-all/recreate
+// pattern used for ExamQuestion on exam update, rather than per-item CRUD.
+
+model StaffProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String? // job title / position, e.g. "Senior English Teacher"
+  summary   String? // professional summary paragraph
+  skills    Json? // string[]
+  updatedAt DateTime @updatedAt
+}
+
+model StaffEducation {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution  String
+  degree       String?
+  fieldOfStudy String?
+  startYear    Int?
+  endYear      Int? // null = ongoing
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model StaffWorkExperience {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  employer    String
+  startDate   DateTime?
+  endDate     DateTime? // null = current position
+  description String?
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model StaffCertification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  issuer    String?
+  issueDate DateTime?
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// ─── Module 2: School Bus Tracking ───────────────────────────────────────────
+
+model Bus {
+  id          String        @id @default(cuid())
+  name        String
+  plateNumber String        @unique
+  capacity    Int           @default(40)
+  status      String        @default("ACTIVE") // ACTIVE, INACTIVE, MAINTENANCE
+  driverId    String?
+  routeId     String?
+  route       BusRoute?     @relation(fields: [routeId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  locations   BusLocation[]
+}
+
+model BusRoute {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  buses       Bus[]
+  stops       BusStop[]
+}
+
+model BusStop {
+  id        String   @id @default(cuid())
+  name      String
+  latitude  Float
+  longitude Float
+  order     Int      @default(0)
+  routeId   String
+  route     BusRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model BusLocation {
+  id        String   @id @default(cuid())
+  busId     String
+  bus       Bus      @relation(fields: [busId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  speed     Float?
+  heading   Float?
+  timestamp DateTime @default(now())
+
+  @@index([busId, timestamp])
+}
+
+// ─── Module 3: Examination ───────────────────────────────────────────────────
+
+model Exam {
+  id          String         @id @default(cuid())
+  title       String
+  description String?
+  classId     String?
+  class       Class?         @relation("ClassExams", fields: [classId], references: [id])
+  createdById String
+  createdBy   User           @relation("ExamCreator", fields: [createdById], references: [id])
+  startTime   DateTime?
+  endTime     DateTime?
+  duration    Int            @default(60) // minutes
+  totalMarks  Float          @default(100)
+  passMark    Float          @default(50)
+  maxAttempts Int            @default(1) // 0 = unlimited — same convention as Assignment.maxAttempts
+  status      String         @default("DRAFT") // DRAFT, PUBLISHED, ACTIVE, COMPLETED
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  questions   ExamQuestion[]
+  attempts    ExamAttempt[]
+}
+
+model ExamQuestion {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  text      String
+  type      String   @default("MCQ") // MCQ | TF | see backend/src/h5p/h5p-questions.ts for the shared H5P types
+  data      Json? // type-specific config, e.g. MCQ: { choices:[{id,text,isCorrect}], multiple }, TF: { correct }
+  marks     Float    @default(1)
+  order     Int      @default(0)
+  section   String? // free-text label (e.g. "Listening", "Reading") — consecutive questions sharing
+  // a section are grouped into one page in the exam-taking UI; null/absent means no pagination
+  createdAt DateTime @default(now())
+}
+
+model ExamAttempt {
+  id            String    @id @default(cuid())
+  examId        String
+  exam          Exam      @relation(fields: [examId], references: [id])
+  studentId     String
+  student       Student   @relation("StudentExamAttempts", fields: [studentId], references: [id])
+  answers       Json? // { questionId: answerText }
+  manualMarks   Json? // { questionId: number } — teacher-graded marks for non-MCQ questions
+  feedback      String?
+  score         Float?
+  grade         String?
+  status        String    @default("IN_PROGRESS") // IN_PROGRESS, SUBMITTED, GRADED
+  attemptNumber Int       @default(0) // bumped on each submit — gated against Exam.maxAttempts, same convention as AssignmentSubmission
+  startedAt     DateTime  @default(now())
+  submittedAt   DateTime?
+  gradedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([examId, studentId])
+  @@index([studentId])
+  @@index([examId])
+  @@index([status])
+}
+
+// ─── Modules 5 & 6: Assignments (Student + Teacher shared) ───────────────────
+
+model Assignment {
+  id                 String                 @id @default(cuid())
+  title              String
+  description        String?
+  instructions       String?
+  classId            String
+  class              Class                  @relation("ClassAssignments", fields: [classId], references: [id])
+  createdById        String
+  createdBy          User                   @relation("AssignmentCreator", fields: [createdById], references: [id])
+  type               String                 @default("HOMEWORK") // HOMEWORK, QUIZ, PROJECT, LAB, ESSAY
+  weight             Float                  @default(1.0)
+  availableFrom      DateTime?
+  dueDate            DateTime?
+  totalMarks         Float                  @default(100)
+  allowLate          Boolean                @default(true)
+  latePenaltyPct     Float                  @default(0)
+  maxAttempts        Int                    @default(1)
+  status             String                 @default("PUBLISHED") // DRAFT, PUBLISHED, CLOSED
+  attachmentUrl      String?
+  publishedAt        DateTime?
+  randomizeQuestions Boolean                @default(false)
+  randomizeChoices   Boolean                @default(false)
+  timeLimitMinutes   Int?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  submissions        AssignmentSubmission[]
+  questions          QuizQuestion[]
+}
+
+model AssignmentSubmission {
+  id                 String       @id @default(cuid())
+  assignmentId       String
+  assignment         Assignment   @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId          String
+  student            Student      @relation("StudentSubmissions", fields: [studentId], references: [id])
+  content            String?
+  attachmentUrl      String?
+  marks              Float?
+  feedback           String?
+  status             String       @default("SUBMITTED") // SUBMITTED, LATE, GRADED
+  attemptNumber      Int          @default(1)
+  latePenaltyApplied Float?
+  quizStartedAt      DateTime?
+  submittedAt        DateTime     @default(now())
+  gradedAt           DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  answers            QuizAnswer[]
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+  @@index([status])
+  @@index([submittedAt])
+}
+
+model QuizQuestion {
+  id           String       @id @default(cuid())
+  assignmentId String
+  assignment   Assignment   @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  order        Int          @default(0)
+  type         String // MCQ, TF, MATCHING, ESSAY, NUMERICAL
+  prompt       String
+  points       Float        @default(1)
+  data         Json // type-specific config (choices, correct answer, pairs, tolerance, etc.)
+  answers      QuizAnswer[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model QuizAnswer {
+  id            String               @id @default(cuid())
+  submissionId  String
+  submission    AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      QuizQuestion         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  response      Json
+  pointsAwarded Float?
+  autoGraded    Boolean              @default(false)
+  feedback      String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([submissionId, questionId])
+}
+
+// ─── Module 4: Parents Portal — Messaging ────────────────────────────────────
+
+model Message {
+  id         String    @id @default(cuid())
+  senderId   String
+  sender     User      @relation("MessageSender", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User      @relation("MessageReceiver", fields: [receiverId], references: [id])
+  content    String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, readAt])
+  @@index([createdAt])
+}
+
+// ─── Phase 1: Communication Hub — Announcements & Broadcasts ────────────────
+
+model Announcement {
+  id          String    @id @default(cuid())
+  authorId    String
+  author      User      @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+  title       String
+  body        String
+  // audience scope: SCHOOL | ROLE | CLASS
+  audience    String
+  // when audience=ROLE → one of: PARENT, TEACHER, STUDENT, ALL
+  targetRole  String?
+  // when audience=CLASS
+  classId     String?
+  class       Class?    @relation("ClassAnnouncements", fields: [classId], references: [id])
+  // CSV of channels: IN_APP,EMAIL,SMS
+  channels    String    @default("IN_APP")
+  pinned      Boolean   @default(false)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  reads AnnouncementRead[]
+
+  @@index([sentAt])
+  @@index([classId, sentAt])
+  @@index([audience, targetRole, sentAt])
+  @@index([pinned, sentAt])
+}
+
+model AnnouncementRead {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("AnnouncementReads", fields: [userId], references: [id])
+  readAt         DateTime     @default(now())
+
+  @@unique([announcementId, userId])
+  @@index([userId])
+}
+
+model NotificationPreference {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled         Boolean  @default(true)
+  smsEnabled           Boolean  @default(true)
+  inAppEnabled         Boolean  @default(true)
+  announcementsEnabled Boolean  @default(true)
+  messagesEnabled      Boolean  @default(true)
+  digestFrequency      String   @default("NONE") // NONE | DAILY | WEEKLY
+  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
+}
+
+// --- LMS: Courses, Lessons, Pages, Enrollments -------------------------------
+// Follows the same lifecycle pattern as Assignment (status field driven).
+// Course lifecycle: DRAFT -> PUBLISHED -> ENROLLMENT -> ACTIVE -> COMPLETED -> ARCHIVED
+// Lesson lifecycle: DRAFT -> PUBLISHED
+// LessonPage type:  CONTENT | QUESTION | BRANCH
+
+model Course {
+  id             String             @id @default(cuid())
+  title          String
+  description    String?
+  category       String?
+  classId        String
+  class          Class              @relation("ClassCourses", fields: [classId], references: [id])
+  createdById    String
+  createdBy      User               @relation("CourseCreator", fields: [createdById], references: [id])
+  status         String             @default("DRAFT") // DRAFT, PUBLISHED, ENROLLMENT, ACTIVE, COMPLETED, ARCHIVED
+  enrollmentOpen Boolean            @default(false)
+  startDate      DateTime?
+  endDate        DateTime?
+  publishedAt    DateTime?
+  archivedAt     DateTime?
+  completedAt    DateTime?
+  coverImageUrl  String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  lessons        CourseLesson[]
+  enrollments    CourseEnrollment[]
+  sessions       CourseSession[]
+
+  @@index([classId])
+  @@index([status])
+  @@index([createdById])
+}
+
+model CourseLesson {
+  id                String          @id @default(cuid())
+  courseId          String
+  course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title             String
+  description       String?
+  order             Int             @default(0)
+  status            String          @default("DRAFT") // DRAFT, PUBLISHED
+  gradingMode       String          @default("GRADED") // GRADED, PRACTICE, UNGRADED
+  availableFrom     DateTime?
+  availableUntil    DateTime?
+  showProgressBar   Boolean         @default(true)
+  branchingEnabled  Boolean         @default(false)
+  totalPoints       Float           @default(0)
+  passingScore      Float?
+  requireVideoWatch Boolean         @default(false)
+  videoWatchPct     Int             @default(90) // % of video required to count as finished
+  maxAttempts       Int             @default(0) // 0 = unlimited (the pre-existing behavior) — caps how many times a student can retake this lesson
+  publishedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  pages             LessonPage[]
+  attempts          LessonAttempt[]
+  sessions          CourseSession[]
+  views             LessonView[]
+
+  @@index([courseId])
+  @@index([status])
+}
+
+model LessonPage {
+  id         String         @id @default(cuid())
+  lessonId   String
+  lesson     CourseLesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  title      String
+  pageType   String         @default("CONTENT") // CONTENT, QUESTION, BRANCH
+  content    Json // page-type specific body (html/markdown, question payload, branch rules)
+  order      Int            @default(0)
+  nextPageId String? // optional next page (or null = sequential)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  responses  PageResponse[]
+
+  @@index([lessonId])
+  @@index([pageType])
+}
+
+model CourseEnrollment {
+  id             String    @id @default(cuid())
+  courseId       String
+  course         Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student   @relation("StudentCourseEnrollments", fields: [studentId], references: [id])
+  status         String    @default("ENROLLED") // ENROLLED, ACTIVE, COMPLETED, DROPPED
+  progressPct    Float     @default(0)
+  enrolledAt     DateTime  @default(now())
+  completedAt    DateTime?
+  certificateUrl String?
+
+  @@unique([courseId, studentId])
+  @@index([courseId])
+  @@index([studentId])
+  @@index([status])
+}
+
+// ─── Lesson attempts ──────────────────────────────────────────────────
+// Tracks a student's pass through a lesson: which pages they answered,
+// resulting score, pass/fail, etc. Lessons can be retaken — each retake
+// creates a new LessonAttempt row.
+model LessonAttempt {
+  id            String         @id @default(cuid())
+  lessonId      String
+  lesson        CourseLesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  studentId     String
+  status        String         @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, AWAITING_GRADE, ABANDONED
+  currentPageId String?
+  score         Float          @default(0)
+  maxScore      Float          @default(0)
+  passed        Boolean?
+  startedAt     DateTime       @default(now())
+  completedAt   DateTime?
+  responses     PageResponse[]
+
+  @@index([lessonId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model PageResponse {
+  id            String        @id @default(cuid())
+  attemptId     String
+  attempt       LessonAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  pageId        String
+  page          LessonPage    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  answer        Json // student-submitted answer (shape depends on question type)
+  correct       Boolean?
+  pointsAwarded Float? // null = pending manual grade (Essay questions only)
+  nextPageId    String? // page the player was sent to after this response
+  answeredAt    DateTime      @default(now())
+
+  @@unique([attemptId, pageId])
+  @@index([attemptId])
+  @@index([pageId])
+}
+
+// --- Course attendance ------------------------------------------------
+// Per-course meetings/sessions and the per-student attendance records.
+// A session may optionally be tied to a CourseLesson � opening / finishing
+// that lesson auto-marks the student PRESENT for the linked session.
+model CourseSession {
+  id              String        @id @default(cuid())
+  courseId        String
+  course          Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId        String?
+  lesson          CourseLesson? @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  title           String
+  scheduledAt     DateTime
+  durationMinutes Int           @default(60)
+  location        String?
+  checkInCode     String? // optional code students enter to self-check-in
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  attendances CourseAttendance[]
+
+  @@index([courseId])
+  @@index([lessonId])
+  @@index([scheduledAt])
+}
+
+model CourseAttendance {
+  id          String        @id @default(cuid())
+  sessionId   String
+  session     CourseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     Student       @relation("StudentCourseAttendances", fields: [studentId], references: [id])
+  status      String        @default("PRESENT") // PRESENT, LATE, ABSENT, EXCUSED
+  source      String        @default("MANUAL") // MANUAL, AUTO_LESSON, CODE
+  checkInTime DateTime?
+  notes       String?
+  markedById  String?
+  markedBy    User?         @relation("CourseAttendanceMarkedBy", fields: [markedById], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([sessionId, studentId])
+  @@index([sessionId])
+  @@index([studentId])
+  @@index([status])
+}
+
+// ─── Lesson access tracking ───────────────────────────────────────────
+// One row per (lesson, student). Updated on every open + video heartbeat.
+model LessonView {
+  id               String       @id @default(cuid())
+  lessonId         String
+  lesson           CourseLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student      @relation("StudentLessonViews", fields: [studentId], references: [id])
+  firstOpenedAt    DateTime     @default(now())
+  lastOpenedAt     DateTime     @default(now())
+  openCount        Int          @default(1)
+  watchedSeconds   Int          @default(0) // max watched seconds across attempts
+  videoDurationSec Int? // last known video duration
+  videoCompleted   Boolean      @default(false)
+  completedAt      DateTime?
+
+  @@unique([lessonId, studentId])
+  @@index([lessonId])
+  @@index([studentId])
+}
+
+// ─── Fee Settings (singleton) ─────────────────────────────────────────────────
+
+model FeeSettings {
+  id              String   @id @default("singleton")
+  schoolName      String   @default("Wattaman School")
+  schoolAddress   String   @default("")
+  schoolPhone     String   @default("")
+  schoolEmail     String   @default("")
+  invoiceTitle    String   @default("INVOICE")
+  invoiceSubtitle String   @default("Student Fee Receipt")
+  invoiceFooter   String   @default("This is a computer-generated invoice. No signature required.")
+  // JSON arrays stored as strings
+  discountPresets String   @default("[]")
+  promotions      String   @default("[]")
+  updatedAt       DateTime @updatedAt
+}
+
+model SiteSetting {
+  id               String   @id @default("singleton")
+  // Header
+  siteName         String   @default("Wattaman")
+  siteTagline      String   @default("Smart School Management")
+  logoUrl          String   @default("")
+  // Hero banner slides — JSON array of { id, imageUrl, title, subtitle, ctaLabel, ctaHref }
+  heroSlides       String   @default("[]")
+  // Footer
+  footerAddress    String   @default("")
+  footerPhone      String   @default("")
+  footerEmail      String   @default("")
+  footerFacebook   String   @default("")
+  footerInstagram  String   @default("")
+  footerTwitter    String   @default("")
+  footerYoutube    String   @default("")
+  footerCopyright  String   @default("")
+  // Theme
+  primaryColor     String   @default("#4f46e5")
+  // Custom CSS
+  customCss        String   @default("")
+  // About section
+  aboutBadge       String   @default("About Us")
+  aboutTitle       String   @default("A Smarter Way to Manage Your School")
+  aboutDescription String   @default("")
+  aboutImageUrl    String   @default("")
+  aboutFeatures    String   @default("[]") // JSON string[]
+  aboutCtaLabel    String   @default("Get Started Today")
+  aboutCtaHref     String   @default("/login")
+  updatedAt        DateTime @updatedAt
+}
+
+model Installation {
+  id                     String    @id @default("singleton")
+  installationId         String    @unique @default(uuid())
+  status                 String    @default("installed")
+  schoolName             String
+  schoolSlug             String    @unique
+  locale                 String    @default("en")
+  timezone               String    @default("UTC")
+  currency               String    @default("USD")
+  coreVersion            String
+  acceptedLicenseVersion String?
+  acceptedLicenseAt      DateTime?
+  installedAt            DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+model PluginInstallation {
+  id            String    @id
+  name          String
+  version       String
+  publisher     String
+  status        String    @default("installed")
+  manifestJson  String
+  packageSha256 String
+  installedPath String
+  installedAt   DateTime  @default(now())
+  activatedAt   DateTime?
+  deactivatedAt DateTime?
+  updatedAt     DateTime  @updatedAt
+  lastError     String?
+
+  @@index([status])
+  @@index([publisher])
+}
+
+/// What this school knows about its own marketplace registration.
+///
+/// `status()` is deliberately local-only -- a marketplace outage must never make the licensing
+/// screen hang -- but without this it could only report that a keypair exists on disk, which says
+/// nothing about whether the marketplace ever accepted it. The licensing page was left showing
+/// "Register with the marketplace" to schools that had registered long ago.
+///
+/// Written by this school when its own registration succeeds, so recording it needs no network
+/// call. Holds no secret: the fingerprint is a public-key digest.
+model MarketplaceRegistration {
+  id             String   @id @default("singleton")
+  installationId String
+  keyFingerprint String
+  accountId      String?
+  label          String?
+  registeredAt   DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+/// Last verified control-plane billing state. Network failures never overwrite a verified ACTIVE
+/// state with SUSPENDED, so a marketplace outage cannot lock a school.
+model MarketplaceSchoolControl {
+  id              String   @id @default("singleton")
+  access          String   @default("ACTIVE")
+  generation      Int      @default(0)
+  reason          String?
+  warningsJson    String   @default("[]")
+  billingJson     String   @default("{}")
+  lastVerifiedAt  DateTime?
+  lastAttemptAt   DateTime?
+  lastError       String?
+  updatedAt       DateTime @updatedAt
+}
+
+/// The marketplace link request currently awaiting the account owner's approval.
+///
+/// Without this, the request id existed only inside the browser callback that opened the consent
+/// tab: reloading the school admin page destroyed it, and an approval granted afterwards could
+/// never be exchanged -- the grant existed marketplace-side while the school had no way to claim
+/// it. A singleton because one installation links to one account at a time.
+///
+/// Holds no secret. The id is useless without this installation's Ed25519 key, which signs every
+/// exchange attempt.
+model MarketplacePendingLink {
+  id        String   @id @default("singleton")
+  requestId String
+  scope     String?
+  startedAt DateTime @default(now())
+  /// The marketplace's own deadline for *approval*. An approved request never expires, so this
+  /// bounds how long we keep waiting for an answer, not how long we may exchange one.
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+}
+
+model MarketplaceProxyLink {
+  id                 String    @id @default("singleton")
+  grantId            String
+  accountId          String
+  accountEmailMasked String?
+  scope              String
+  linkedAt           DateTime
+  expiresAt          DateTime
+  sessionExpiresAt   DateTime
+  revokedAt          DateTime?
+  lastUsedAt         DateTime?
+  updatedAt          DateTime  @updatedAt
+}
+
+model PluginPermissionGrant {
+  id           String   @id @default(uuid())
+  pluginId     String
+  permissionId String
+  role         String
+  createdAt    DateTime @default(now())
+
+  @@unique([pluginId, permissionId, role])
+  @@index([pluginId, permissionId])
+}
+
+/// One row per plugin per UTC day, atomically incremented to enforce a daily notification-send quota.
+model PluginNotificationUsage {
+  id          String   @id @default(uuid())
+  pluginId    String
+  windowStart DateTime
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([pluginId, windowStart])
+}
+
+/// Idempotency journal for narrowly scoped plugin requests that create core account identities.
+/// Plugins never receive direct User-table access; retries with the same command key must return
+/// the same account, while a changed request under that key fails closed.
+model PluginAccountCommand {
+  id          String   @id @default(uuid())
+  pluginId    String
+  commandKey  String
+  requestHash String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  @@unique([pluginId, commandKey])
+  @@index([userId])
+}
+
+model PluginMigration {
+  id            String   @id @default(uuid())
+  pluginId      String
+  migrationId   String
+  pluginVersion String
+  checksum      String
+  destructive   Boolean  @default(false)
+  appliedAt     DateTime @default(now())
+
+  @@unique([pluginId, migrationId])
+  @@index([pluginId, appliedAt])
+}
+
+model PluginSetting {
+  id        String   @id @default(uuid())
+  pluginId  String
+  key       String
+  valueJson String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pluginId, key])
+}
+
+model PluginJobDefinition {
+  id              String    @id @default(uuid())
+  pluginId        String
+  jobId           String
+  intervalSeconds Int
+  enabled         Boolean   @default(true)
+  lastStartedAt   DateTime?
+  lastCompletedAt DateTime?
+  lastStatus      String?
+  lastError       String?
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([pluginId, jobId])
+  @@index([enabled, lastStartedAt])
+}
+
+model PluginJobRun {
+  id         String    @id @default(uuid())
+  pluginId   String
+  jobId      String
+  status     String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  error      String?
+
+  @@index([pluginId, jobId, startedAt])
+}
+
+/// Locally cached, independently-verified copy of a plugin's marketplace entitlement.
+/// A marketplace outage preserves the last-known-good decision. Runtime policy uses this
+/// independently verified state to gate paid-plugin activation, updates, writes and jobs.
+model PluginEntitlementCache {
+  id                     String    @id @default(uuid())
+  pluginId               String    @unique
+  status                 String
+  tokenId                String?
+  generation             Int       @default(0)
+  signedTokenJson        String?
+  expiresAt              DateTime?
+  updatesThrough         DateTime?
+  offlineRecheckAfter    DateTime?
+  lastVerifiedAt         DateTime?
+  lastRefreshAttemptAt   DateTime?
+  lastRefreshSucceededAt DateTime?
+  consecutiveFailures    Int       @default(0)
+  lastError              String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  excerpt   String   @default("")
+  body      String   @default("")
+  // 'text' | 'image' | 'video'
+  type      String   @default("text")
+  imageUrl  String   @default("")
+  videoUrl  String   @default("")
+  published Boolean  @default(false)
+  pinned    Boolean  @default(false)
+  tags      String   @default("[]") // JSON array of strings
+  authorId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

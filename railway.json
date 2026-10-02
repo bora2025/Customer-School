@@ -1,0 +1,23 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "_comment": [
+    "Deliberately carries no `build` block. This file sits at the repository root, so Railway",
+    "applies it to every service built from this repo -- and a repo-root `dockerfilePath` therefore",
+    "named one Dockerfile for all of them. It said `Dockerfile`, the school backend's, which is",
+    "correct only for a school `api` service.",
+    "",
+    "For a GitHub-connected service that setting also outranks the service's own configuration and",
+    "its RAILWAY_DOCKERFILE_PATH variable, while both continue to report the correct path. The",
+    "marketplace API and the platform admin console were each built as the school backend twice",
+    "because of this, crash-looping on a CORS_ORIGINS check belonging to an application nobody had",
+    "deployed there.",
+    "",
+    "Each service now names its own Dockerfile through RAILWAY_DOCKERFILE_PATH, which is the only",
+    "place that answer belongs. The deploy policy below stays because it is generic: restart on",
+    "failure suits every service in this repository."
+  ],
+  "deploy": {
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}

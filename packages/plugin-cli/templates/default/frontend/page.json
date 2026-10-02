@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "kind": "declarative-ui",
+  "pages": [
+    {
+      "id": "records", "title": "{{displayName}}", "routePath": "records",
+      "permission": "{{publisher}}.{{name}}.view", "parameters": [],
+      "dataSources": [
+        { "id": "records", "method": "GET", "path": "records", "permission": "{{publisher}}.{{name}}.view" },
+        { "id": "create", "method": "POST", "path": "records", "permission": "{{publisher}}.{{name}}.manage" }
+      ],
+      "components": [
+        { "id": "heading", "type": "heading", "title": "{{displayName}} records" },
+        { "id": "records-table", "type": "table", "title": "Records", "source": "records", "fields": [
+          { "id": "name", "label": "Name", "sortable": true, "filterable": true },
+          { "id": "status", "label": "Status", "sortable": true, "filterable": true },
+          { "id": "createdAt", "label": "Created", "format": "datetime", "sortable": true }
+        ], "options": { "pageSize": 20, "selectable": false } },
+        { "id": "create-form", "type": "form", "title": "Create record", "source": "create", "fields": [
+          { "id": "name", "type": "text", "label": "Name", "required": true, "minLength": 1, "maxLength": 120 }
+        ], "options": { "submitLabel": "Create", "successMessage": "Record created" } },
+        { "id": "records-print", "type": "print", "title": "Records", "source": "records", "fields": [
+          { "label": "Name", "path": "name" }, { "label": "Status", "path": "status" }, { "label": "Created", "path": "createdAt" }
+        ], "options": { "formats": ["print", "csv", "pdf"], "filename": "{{name}}-records", "maximumRows": 5000 } }
+      ]
+    },
+    {
+      "id": "record-detail", "title": "{{displayName}} record", "routePath": "records/:id",
+      "permission": "{{publisher}}.{{name}}.view", "parameters": [{ "name": "id", "type": "string", "maximumLength": 120 }],
+      "dataSources": [
+        { "id": "record", "method": "GET", "path": "records/:id", "permission": "{{publisher}}.{{name}}.view" },
+        { "id": "update", "method": "PATCH", "path": "records/:id", "permission": "{{publisher}}.{{name}}.manage" }
+      ],
+      "components": [
+        { "id": "record-detail", "type": "detail", "title": "Record", "source": "record", "fields": [
+          { "label": "Name", "path": "name" }, { "label": "Status", "path": "status" }, { "label": "Created", "path": "createdAt" }
+        ] },
+        { "id": "edit-form", "type": "form", "title": "Edit record", "source": "update", "fields": [
+          { "id": "name", "type": "text", "label": "Name", "required": true, "minLength": 1, "maxLength": 120 }
+        ], "options": { "initialSource": "record", "submitLabel": "Save", "successMessage": "Record saved" } }
+      ]
+    }
+  ]
+}

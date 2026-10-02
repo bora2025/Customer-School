@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist-core",
+    "incremental": false
+  },
+  "files": ["src/main-core.ts"],
+  "exclude": ["node_modules", "test", "dist", "dist-core", "**/*spec.ts"]
+}

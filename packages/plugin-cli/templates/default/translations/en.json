@@ -1,0 +1,6 @@
+{
+  "navigation.settings": "{{displayName}} settings",
+  "page.settings.title": "{{displayName}} settings",
+  "field.enabled": "Enabled",
+  "action.save": "Save"
+}

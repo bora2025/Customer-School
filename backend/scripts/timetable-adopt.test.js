@@ -1,0 +1,26 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const test = require('node:test');
+const { DATASETS, inspect, normalize } = require('./timetable-adoption-preflight');
+const { adopt, dryRun, journalPath, parseConfirmation } = require('./timetable-adopt');
+const { drill, parseInput, routingRegistry } = require('./timetable-rollback-drill');
+
+const backupName = 'wattanam-20260925T020000Z.dump'; const now = '2026-09-25T00:00:00.000Z';
+function sources() { return { documents:[{id:'t1',name:'Main',academicYear:'2026',periodsPerDay:8,numberOfDays:5,weekend:['SATURDAY'],status:'DRAFT',createdAt:now,updatedAt:now}], subjects:[{id:'s1',timetableId:'t1',name:'Math',short:'M',classroomCount:1,createdAt:now,updatedAt:now}], classes:[{id:'c1',timetableId:'t1',name:'1A',short:'1A',createdAt:now,updatedAt:now}], classrooms:[{id:'r1',timetableId:'t1',name:'Room',short:'R',createdAt:now,updatedAt:now}], teachers:[{id:'u1',timetableId:'t1',firstName:'One',lastName:'Teacher',short:'T',classTeacherId:'c1',createdAt:now,updatedAt:now}], lessons:[{id:'l1',timetableId:'t1',teacherId:'u1',subjectId:'s1',classId:'c1',perWeek:1,lessonType:'SINGLE',createdAt:now,updatedAt:now}], entries:[{id:'e1',timetableId:'t1',lessonId:'l1',classId:'c1',teacherId:'u1',subjectId:'s1',classroomId:'r1',day:1,period:1,createdAt:now,updatedAt:now}], teacherAttendance:[{id:'a1',teacherId:'u1',date:'2026-09-25',period:1,status:'PRESENT',checkIn:now,createdAt:now,updatedAt:now}] }; }
+function fixture() {
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'wattanam-timetable-adopt-')); const archive=path.join(directory,backupName); fs.writeFileSync(archive,'timetable backup'); const backupSha256=crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex'); fs.writeFileSync(archive.replace('.dump','.manifest.json'),JSON.stringify({format:'pg_dump-custom-v1',file:backupName,installationSlug:'bora-school',sizeBytes:fs.statSync(archive).size,sha256:backupSha256}));
+  const source=sources(); const target=Object.fromEntries(DATASETS.map(({name})=>[name,new Map()])); let writes=0; let crash=false; const chunk=(rows,after,limit)=>rows.filter((row)=>after===null||row.id>after).slice(0,limit);
+  const adapter={readSourceChunk:async(name,{after,limit})=>chunk(source[name],after,limit),readTargetChunk:async(name,{after,limit})=>chunk([...target[name].values()].sort((a,b)=>a.id.localeCompare(b.id)),after,limit),targetState:async(table)=>{const dataset=DATASETS.find((item)=>item.target===table);return{table,exists:true,rowCount:target[dataset.name].size};},writeTargetChunk:async(name,rows)=>{rows.forEach((row)=>target[name].set(row.id,{...row}));writes++;if(crash&&writes===3)throw new Error('simulated Timetable crash');}};
+  return {directory,backupSha256,source,target,adapter,get writes(){return writes;},crash(value){crash=value;},close(){fs.rmSync(directory,{recursive:true,force:true});}};
+}
+
+test('guarded Timetable dry-run is zero-write', async()=>{const f=fixture();try{const pre=await inspect(f.adapter);assert.throws(()=>parseConfirmation({TIMETABLE_ADOPTION_NON_INTERACTIVE:'true',TIMETABLE_SCHOOL_SLUG:'bora-school',TIMETABLE_CONFIRM_SLUG:'wrong',TIMETABLE_SOURCE_SHA256:pre.source.sha256}),/exactly match/);const result=await dryRun({adapter:f.adapter,directory:f.directory,backupName,confirmation:{slug:'bora-school',sourceSha256:pre.source.sha256}});assert.equal(result.ready,true);assert.equal(result.zeroWriteGuarantee,true);assert.equal(f.writes,0);}finally{f.close();}});
+
+test('Timetable adoption resumes a crash and reconciles all eight datasets',async()=>{const f=fixture();try{const pre=await inspect(f.adapter);const confirmation={slug:'bora-school',sourceSha256:pre.source.sha256};f.crash(true);await assert.rejects(adopt({adapter:f.adapter,directory:f.directory,backupName,confirmation,chunkSize:1}),/simulated Timetable crash/);f.crash(false);const result=await adopt({adapter:f.adapter,directory:f.directory,backupName,confirmation,chunkSize:1});assert.equal(result.stage,'reconciled');assert.equal(result.source.sha256,result.target.sha256);for(const {name} of DATASETS)assert.deepEqual(f.target[name].get(f.source[name][0].id),normalize(name,f.source[name][0]));}finally{f.close();}});
+
+test('Timetable rollback is guarded and preserves both reconciled datasets',async()=>{const f=fixture();try{assert.throws(()=>parseInput({TIMETABLE_SCHOOL_SLUG:'bora-school'}),/ROLLBACK_DRILL=true/);assert.throws(()=>routingRegistry('auto'),/legacy or plugin/);const pre=await inspect(f.adapter);const confirmation={slug:'bora-school',sourceSha256:pre.source.sha256};await adopt({adapter:f.adapter,directory:f.directory,backupName,confirmation});const registry={routeOwner:'plugin',pluginEnabled:true};const result=await drill({adapter:f.adapter,directory:f.directory,backupName,slug:'bora-school',registry});assert.equal(result.rolledBack,true);assert.deepEqual(registry,{routeOwner:'legacy',pluginEnabled:false});assert.equal(f.source.entries.length,1);assert.equal(f.target.entries.size,1);assert.equal(JSON.parse(fs.readFileSync(journalPath(f.directory,'bora-school'),'utf8')).stage,'rolled_back');}finally{f.close();}});

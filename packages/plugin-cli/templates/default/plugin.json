@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "{{publisher}}.{{name}}",
+  "name": "{{displayName}}",
+  "description": "Describe what this plugin does.",
+  "version": "0.1.0",
+  "requiresCore": ">=0.1.0-0 <1.0.0",
+  "publisher": "{{publisher}}",
+  "license": "MIT",
+  "backendEntry": "backend/index.js",
+  "frontendEntry": "frontend/page.json",
+  "sdkVersion": "1.1.0",
+  "runtimeVersion": "1.0.0",
+  "capabilities": ["api.routes", "database.read", "database.write", "navigation.register", "permissions.register", "settings.read", "settings.write", "ui.pages"],
+  "permissions": ["{{publisher}}.{{name}}.view", "{{publisher}}.{{name}}.manage"],
+  "dependencies": {},
+  "optionalDependencies": {},
+  "migrations": [
+    {
+      "id": "001_create_widget",
+      "path": "migrations/001_create_widget.sql",
+      "checksum": "{{migrationChecksum}}",
+      "destructive": false
+    }
+  ],
+  "navigation": [
+    { "id": "records", "label": "{{displayName}}", "href": "/plugins/{{publisher}}.{{name}}/records", "permission": "{{publisher}}.{{name}}.view" }
+  ],
+  "supportedLanguages": ["en", "km"],
+  "supportUrl": "https://{{publisher}}.example/support/{{name}}",
+  "privacyUrl": "https://{{publisher}}.example/privacy/plugins/{{name}}",
+  "operational": {
+    "healthCheck": "runtime",
+    "dataClassification": ["personal-data"],
+    "backup": { "database": "required", "files": "none", "restore": "required" },
+    "uninstall": { "dataRetention": "preserve" },
+    "pricing": "marketplace"
+  }
+}

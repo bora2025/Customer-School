@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "proxies": [
+    {
+      "id": "announcements-v1",
+      "source": "src/announcements/announcements.controller.ts",
+      "ownerPlugin": "wattanam.announcements",
+      "legacyRoute": "/announcements",
+      "removeAfterCore": "2.0.0",
+      "maxSourceLines": 80
+    }
+  ]
+}

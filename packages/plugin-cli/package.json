@@ -1,0 +1,21 @@
+{
+  "name": "@wattanam/plugin-cli",
+  "version": "1.0.0",
+  "description": "wattanam-plugin: scaffold, validate, sign, package, and publish Wattanam V2 plugins using only public tooling.",
+  "bin": {
+    "wattanam-plugin": "./bin/cli.js"
+  },
+  "files": ["bin", "src", "templates"],
+  "scripts": {
+    "test": "jest"
+  },
+  "dependencies": {
+    "@wattanam/plugin-sdk": "file:../plugin-sdk",
+    "yazl": "^3.3.1",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0"
+  }
+}

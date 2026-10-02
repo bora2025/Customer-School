@@ -1,0 +1,15 @@
+{
+  "name": "wattanam-customer-school",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hostable Wattanam customer-school core and plugin host.",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "build": "npm run build:core",
+    "build:core": "npm --prefix backend run build:core && npm --prefix frontend run build:core",
+    "test:core": "node --test frontend/scripts/build-core.test.js tools/frontend-navigation-registry.test.js tools/provision-railway-school.test.js tools/railway-core-hosted-preflight.test.js",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev"
+  },
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,172 @@
+name: wattanam-core
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be digest-pinned}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wattanam}
+      POSTGRES_USER: ${POSTGRES_USER:-wattanam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [wattanam_private]
+
+  api:
+    image: ${API_IMAGE:?API_IMAGE must be digest-pinned}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PROCESS_ROLE: combined
+      WATTANAM_DISTRIBUTION: core
+      PORT: 3001
+      APP_VERSION: ${APP_VERSION:?APP_VERSION is required}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wattanam}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wattanam}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CORS_ORIGINS: ${APP_URL:?APP_URL is required}
+      PUBLIC_APP_URL: ${APP_URL:?APP_URL is required}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      BACKUP_DIR: /data/backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      PLUGIN_DIR: /data/plugins
+      PLUGIN_DATA_DIR: /data/plugin-data
+      PLUGIN_STORAGE_PROVIDER: ${PLUGIN_STORAGE_PROVIDER:-local}
+      REQUIRE_PLUGIN_BACKUP_CONTRACTS: ${REQUIRE_PLUGIN_BACKUP_CONTRACTS:-false}
+      PLUGIN_TRUSTED_KEYS: ${PLUGIN_TRUSTED_KEYS:?PLUGIN_TRUSTED_KEYS is required}
+      # Optional: leave empty for a standalone school. Set only to a trusted HTTPS Marketplace
+      # origin when the school owner chooses to connect this installation.
+      MARKETPLACE_URL: ${MARKETPLACE_URL:-}
+      UPDATE_CHANNEL: ${UPDATE_CHANNEL:-stable}
+      UPDATE_REPOSITORY_KEY_ID: ${UPDATE_REPOSITORY_KEY_ID:?UPDATE_REPOSITORY_KEY_ID is required}
+      UPDATE_REPOSITORY_PUBLIC_KEY: ${UPDATE_REPOSITORY_PUBLIC_KEY:?UPDATE_REPOSITORY_PUBLIC_KEY is required}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - api_data:/data
+    networks: [wattanam_private]
+
+  web:
+    image: ${WEB_IMAGE:?WEB_IMAGE must be digest-pinned}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      WATTANAM_DISTRIBUTION: core
+      NEXT_PUBLIC_WATTANAM_DISTRIBUTION: core
+      PORT: 3000
+      API_URL: http://api:3001
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/setup').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    networks: [wattanam_private]
+
+  gateway:
+    image: ${GATEWAY_IMAGE:?GATEWAY_IMAGE must be digest-pinned}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      API_UPSTREAM: api:3001
+      WEB_UPSTREAM: web:3000
+    ports:
+      - "${WEB_PORT:-3000}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/gateway-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks: [wattanam_private]
+
+  backup:
+    profiles: ["operations"]
+    image: ${API_IMAGE:?API_IMAGE must be digest-pinned}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      WATTANAM_DISTRIBUTION: core
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wattanam}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wattanam}
+      APP_VERSION: ${APP_VERSION:?APP_VERSION is required}
+      BACKUP_DIR: /data/backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      PLUGIN_DIR: /data/plugins
+      PLUGIN_DATA_DIR: /data/plugin-data
+      PLUGIN_STORAGE_PROVIDER: ${PLUGIN_STORAGE_PROVIDER:-local}
+      REQUIRE_PLUGIN_BACKUP_CONTRACTS: ${REQUIRE_PLUGIN_BACKUP_CONTRACTS:-false}
+    command: ["node", "scripts/backup-recovery-set.js"]
+    volumes:
+      - api_data:/data
+    networks: [wattanam_private]
+
+  postgres_restore:
+    profiles: ["recovery-drill"]
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be digest-pinned}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wattanam}
+      POSTGRES_USER: ${POSTGRES_USER:-wattanam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_restore_data:/var/lib/postgresql/data
+    networks: [wattanam_private]
+
+  restore:
+    profiles: ["recovery-drill"]
+    image: ${API_IMAGE:?API_IMAGE must be digest-pinned}
+    depends_on:
+      postgres_restore:
+        condition: service_healthy
+    environment:
+      WATTANAM_DISTRIBUTION: core
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wattanam}:${POSTGRES_PASSWORD}@postgres_restore:5432/${POSTGRES_DB:-wattanam}
+      RESTORE_DATABASE_URL: postgresql://${POSTGRES_USER:-wattanam}:${POSTGRES_PASSWORD}@postgres_restore:5432/${POSTGRES_DB:-wattanam}
+      BACKUP_DIR: /data/backups
+      PLUGIN_DIR: /restore/plugins
+      PLUGIN_DATA_DIR: /restore/plugin-data
+      PLUGIN_STORAGE_PROVIDER: local
+    command:
+      - sh
+      - -c
+      - >-
+        journal=$$(find /data/backups -maxdepth 1 -type f -name '*.recovery-set.json' | sort | tail -n 1) &&
+        test -n "$$journal" &&
+        node scripts/restore-recovery-set.js --from "$$journal" --confirm-target EMPTY --yes-replace
+        --use-restore-database-url --plugin-dir /restore/plugins --plugin-data-dir /restore/plugin-data
+    volumes:
+      - api_data:/data:ro
+      - restore_data:/restore
+    networks: [wattanam_private]
+
+volumes:
+  postgres_data:
+  api_data:
+  postgres_restore_data:
+  restore_data:
+
+networks:
+  wattanam_private:
+    driver: bridge

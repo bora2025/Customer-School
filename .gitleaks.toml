@@ -1,0 +1,12 @@
+title = "Wattanam V2 gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Env example files contain instructional placeholders, never real secrets"
+paths = ['''(^|/)\.env\.example$''']
+
+[[allowlists]]
+description = "PASSWORD_CHARS is the charset used to generate random passwords, not a secret itself"
+regexes = ['''ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789''']

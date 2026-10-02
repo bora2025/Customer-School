@@ -1,0 +1,16 @@
+# Reviewed deterministic test fixtures and instructional values from immutable history.
+# Format: commit:path:rule-id:line. Keep this list fingerprint-specific.
+7ba3bda2aefb9b43dde9a030569bfd953a66cb8b:apps/marketplace-api/src/commerce.service.spec.ts:generic-api-key:272
+e7b95c0a6718fcfa940b9569b3501d0250590d76:apps/marketplace-api/src/school-billing.service.spec.ts:generic-api-key:173
+e7b95c0a6718fcfa940b9569b3501d0250590d76:apps/marketplace-api/src/school-billing.service.spec.ts:generic-api-key:189
+e7b95c0a6718fcfa940b9569b3501d0250590d76:apps/marketplace-api/src/school-billing.service.spec.ts:generic-api-key:198
+e7b95c0a6718fcfa940b9569b3501d0250590d76:apps/marketplace-api/src/school-billing.service.spec.ts:generic-api-key:208
+1b1521ecdd45a54a4dd5dafc5b530d9c7186f2cf:apps/marketplace-api/src/school-billing.service.spec.ts:generic-api-key:30
+bfa4af4607f08ac1d8c1bf301a3e9cd59b3a50bf:apps/marketplace-api/src/school-plugin-request.service.spec.ts:generic-api-key:177
+bfa4af4607f08ac1d8c1bf301a3e9cd59b3a50bf:apps/marketplace-api/src/school-plugin-request.service.spec.ts:generic-api-key:182
+bfa4af4607f08ac1d8c1bf301a3e9cd59b3a50bf:apps/marketplace-api/src/school-plugin-request.service.spec.ts:generic-api-key:188
+bfa4af4607f08ac1d8c1bf301a3e9cd59b3a50bf:apps/marketplace-api/src/school-plugin-request.service.spec.ts:generic-api-key:211
+1fad58acf00e255d6a017c99b52a7ec094796a64:backend/scripts/jwt-secret-rotation-live-drill.js:generic-api-key:43
+1fad58acf00e255d6a017c99b52a7ec094796a64:backend/scripts/jwt-secret-rotation-live-drill.js:generic-api-key:44
+dad5467ebd1ab6cbef0c6370d70361dbc94d4e01:.env.example:generic-api-key:5
+dad5467ebd1ab6cbef0c6370d70361dbc94d4e01:backend/src/common/identity.ts:generic-api-key:27

@@ -1,0 +1,23 @@
+{
+  "name": "Wattaman",
+  "short_name": "Wattaman",
+  "description": "Modern school attendance management system",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#00C9A7",
+  "theme_color": "#00C9A7",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+'use strict';const assert=require('node:assert/strict'),test=require('node:test');const{exactMinor,exponentFor}=require('./legacy-money-minor');
+test('converts exactly representable two-decimal money',()=>{assert.deepEqual(exactMinor(12.34,'USD'),{ok:true,minor:1234,exponent:2});assert.deepEqual(exactMinor(100,'KHR'),{ok:true,minor:10000,exponent:2});});
+test('blocks values that require an unapproved rounding decision',()=>{const result=exactMinor(1.0051,'USD');assert.equal(result.ok,false);assert.match(result.reason,/requires rounding/);});
+test('supports zero- and three-decimal currencies and guarded overrides',()=>{assert.equal(exactMinor(10,'JPY').minor,10);assert.equal(exactMinor(1.234,'KWD').minor,1234);assert.throws(()=>exponentFor('ZZZ'),/explicit approval/);assert.equal(exponentFor('ZZZ',2),2);});

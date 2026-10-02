@@ -1,0 +1,36 @@
+{
+  auto_https off
+  admin off
+}
+
+:8080 {
+  encode zstd gzip
+
+  @gateway_health path /gateway-health
+  handle @gateway_health {
+    respond "ok" 200
+  }
+
+  @socket path /socket.io/*
+  handle @socket {
+    reverse_proxy {$API_UPSTREAM:api:3001}
+  }
+
+  # Marketplace browser calls must reach Next.js's allowlisted, cookie-aware server-side proxy.
+  # This exception must precede the broad /api/* rule below, which strips /api and sends ordinary
+  # school API calls directly to Nest.
+  @marketplace_proxy path /api/marketplace/*
+  handle @marketplace_proxy {
+    reverse_proxy {$WEB_UPSTREAM:web:3000}
+  }
+
+  @api path /api/*
+  handle @api {
+    uri strip_prefix /api
+    reverse_proxy {$API_UPSTREAM:api:3001}
+  }
+
+  handle {
+    reverse_proxy {$WEB_UPSTREAM:web:3000}
+  }
+}

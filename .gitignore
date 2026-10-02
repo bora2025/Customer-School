@@ -1,0 +1,80 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build and test outputs
+dist/
+dist-core/
+.core-build/
+.tmp-wattanam-*/
+.next/
+build/
+out/
+coverage/
+.nyc_output/
+.turbo/
+*.tsbuildinfo
+*build-output.txt
+build-result*.txt
+tsc_output.txt
+
+# Environment and secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Operational/runtime data
+backups/
+*.dump
+*.dump.partial
+plugins-installed/
+logs/
+*.log
+pids/
+*.pid
+*.pid.lock
+*.seed
+*.db
+*.sqlite
+*.sqlite3
+
+# Tool and framework caches
+.vercel/
+.cache/
+.parcel-cache/
+.nuxt/
+.vuepress/dist/
+.serverless/
+.fusebox/
+.dynamodb/
+.npm/
+jspm_packages/
+*.tgz
+.yarn-integrity
+.node_repl_history
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local scratch files
+tmp/
+temp_settings.txt
+tools/create-customer-school-bora3.ps1
+backend/.tmp-mp1/
+backend/.tmp-mp1-seed.sql
+frontend/test-results/
