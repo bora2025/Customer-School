@@ -2,10 +2,10 @@ FROM node:24-slim AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --legacy-peer-deps
 
-COPY . .
+COPY frontend/ .
 
 ARG NEXT_PUBLIC_API_URL=""
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL

@@ -4,20 +4,20 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl && 
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --legacy-peer-deps --ignore-scripts
 
 # The Nest webpack checker resolves source types through @prisma/client. Generate the legacy
 # superset client only inside this disposable builder for compile-time types, then separately
 # generate and bundle the reduced runtime client from the core schema. Neither legacy schema nor
 # legacy client is copied into the runner image.
-COPY prisma/schema.prisma ./prisma/schema.prisma
-COPY prisma/core ./prisma/core
+COPY backend/prisma/schema.prisma ./prisma/schema.prisma
+COPY backend/prisma/core ./prisma/core
 RUN ./node_modules/.bin/prisma generate --schema=prisma/schema.prisma \
     && ./node_modules/.bin/prisma generate --schema=prisma/core/schema.prisma
 
-COPY src ./src
-COPY nest-cli.json tsconfig.json tsconfig.core.json webpack.core.config.js ./
+COPY backend/src ./src
+COPY backend/nest-cli.json backend/tsconfig.json backend/tsconfig.core.json backend/webpack.core.config.js ./
 RUN npm run build:core
 
 FROM node:20-slim AS production-dependencies
@@ -26,12 +26,12 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl && 
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev --legacy-peer-deps --ignore-scripts
 
 # Prisma is a deliberate runtime dependency because the container deploys the reduced core
 # migrations before starting. Generate only the reduced client in this production dependency tree.
-COPY prisma/core ./prisma/core
+COPY backend/prisma/core ./prisma/core
 RUN ./node_modules/.bin/prisma generate --schema=prisma/core/schema.prisma \
     && mkdir -p node_modules/.prisma \
     && cp -R generated/core-client node_modules/.prisma/client
@@ -59,7 +59,7 @@ COPY --chown=node:node --from=production-dependencies /app/node_modules ./node_m
 COPY --chown=node:node --from=production-dependencies /app/generated ./generated
 COPY --chown=node:node --from=builder /app/dist-core ./dist-core
 COPY --chown=node:node --from=builder /app/prisma/core ./prisma/core
-COPY --chown=node:node scripts/db-toolkit.js scripts/plugin-recovery-contract.js scripts/backup-database.js scripts/backup-recovery-set.js scripts/restore-database.js scripts/restore-recovery-set.js scripts/deploy-migrations.js scripts/verify-fresh-core-database.js ./scripts/
+COPY --chown=node:node backend/scripts/db-toolkit.js backend/scripts/plugin-recovery-contract.js backend/scripts/backup-database.js backend/scripts/backup-recovery-set.js backend/scripts/restore-database.js backend/scripts/restore-recovery-set.js backend/scripts/deploy-migrations.js backend/scripts/verify-fresh-core-database.js ./scripts/
 
 RUN mkdir -p /data/backups /data/plugins /data/plugin-data /data/update-state /data/marketplace-identity \
     && chown -R node:node /data /app
