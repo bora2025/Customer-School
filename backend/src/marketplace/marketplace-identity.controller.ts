@@ -23,8 +23,23 @@ export class MarketplaceIdentityController {
   }
 
   @Post('installation/register')
-  register(@Body() body: { accountId?: string; label?: string; enrollmentToken?: string }) {
-    return this.registration.register(body?.accountId, body?.label, body?.enrollmentToken);
+  register(@Body() body: { accountId?: string; label?: string; enrollmentToken?: string; owner?: { email?: string; password?: string; code?: string } }) {
+    return this.registration.register(body?.accountId, body?.label, body?.enrollmentToken, body?.owner);
+  }
+
+  @Post('accounts')
+  createAccount(@Body() body: { email?: string; password?: string; displayName?: string }) {
+    return this.registration.createMarketplaceAccount(body);
+  }
+
+  @Post('password-resets')
+  requestPasswordReset(@Body() body: { email?: string }) {
+    return this.registration.requestMarketplacePasswordReset(body?.email);
+  }
+
+  @Post('password-resets/confirm')
+  confirmPasswordReset(@Body() body: { token?: string; newPassword?: string }) {
+    return this.registration.confirmMarketplacePasswordReset(body?.token, body?.newPassword);
   }
 
   @Post('installation/keys/rotate')

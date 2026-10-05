@@ -53,10 +53,16 @@ export class InstallationRegistrationService {
    * so keeping a copy in the school's database would only create a secret with no remaining
    * purpose.
    */
-  async register(accountId?: string, label?: string, enrollmentToken?: string) {
+  async register(
+    accountId?: string,
+    label?: string,
+    enrollmentToken?: string,
+    owner?: { email?: string; password?: string; code?: string },
+  ) {
     const config = this.requireConfig();
-    const account = accountId?.trim();
+    let account = accountId?.trim();
     const token = enrollmentToken?.trim();
+    if (token && owner) account = await this.verifyOwner(config, owner);
     if (!account && !token) {
       throw new BadRequestException('Provide a marketplace account id or the enrollment token issued for this school');
     }
@@ -109,6 +115,48 @@ export class InstallationRegistrationService {
       await this.prisma.marketplacePendingLink.deleteMany({ where: { id: 'singleton' } });
     }
     return result;
+  }
+
+  async createMarketplaceAccount(input: { email?: string; password?: string; displayName?: string }) {
+    const config = this.requireConfig();
+    const email = input?.email?.trim();
+    const displayName = input?.displayName?.trim();
+    if (!email || !displayName || !input?.password) {
+      throw new BadRequestException('Name, email, and password are required');
+    }
+    return this.postJson(config, '/v1/accounts', { email, password: input.password, displayName });
+  }
+
+  async requestMarketplacePasswordReset(email?: string) {
+    const config = this.requireConfig();
+    const normalizedEmail = email?.trim();
+    if (!normalizedEmail) throw new BadRequestException('Email is required');
+    return this.postJson(config, '/v1/password-resets', { email: normalizedEmail });
+  }
+
+  async confirmMarketplacePasswordReset(token?: string, newPassword?: string) {
+    const config = this.requireConfig();
+    const normalizedToken = token?.trim();
+    if (!normalizedToken || !newPassword) throw new BadRequestException('Reset token and new password are required');
+    return this.postJson(config, '/v1/password-resets/confirm', { token: normalizedToken, newPassword });
+  }
+
+  private async verifyOwner(
+    config: MarketplaceIdentityConfig,
+    owner: { email?: string; password?: string; code?: string },
+  ): Promise<string> {
+    const email = owner.email?.trim();
+    if (!email || !owner.password) throw new BadRequestException('Enter the marketplace owner email and password');
+    const login = await this.postJson(config, '/v1/sessions', {
+      email,
+      password: owner.password,
+      ...(owner.code?.trim() ? { code: owner.code.trim() } : {}),
+    });
+    if (login?.status === 'mfa_required') throw new BadRequestException('Enter the owner’s MFA or recovery code, then try again');
+    if (typeof login?.accountId !== 'string' || !login.accountId) {
+      throw new BadGatewayException('Marketplace sign-in did not return an account identity');
+    }
+    return login.accountId;
   }
 
   private asAutoLinkPayload(value: unknown): {

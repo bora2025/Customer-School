@@ -76,6 +76,31 @@ describe('InstallationRegistrationService', () => {
     withoutToken.mockRestore();
   });
 
+  it('verifies enrollment ownership through the backend connector before registering', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'authenticated', accountId: 'account-1', sessionToken: 'unused' }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ challengeId: 'challenge-1', nonce: 'n'.repeat(64), purpose: 'register', expiresAt: '2099-01-01T00:00:00.000Z' }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ installationId: 'school-public-id', accountId: 'account-1', keyFingerprint: 'fp' }), { status: 201 }));
+
+    await service.register(undefined, 'Main Campus', `wtn_enr_${'a'.repeat(64)}`, {
+      email: ' owner@example.com ', password: 'secret', code: '123456',
+    });
+
+    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/v1/sessions');
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ email: 'owner@example.com', password: 'secret', code: '123456' });
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toMatchObject({ accountId: 'account-1' });
+  });
+
+  it('requires MFA completion before consuming the enrollment token', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: 'mfa_required' }), { status: 200 }),
+    );
+    await expect(service.register(undefined, 'Main Campus', `wtn_enr_${'a'.repeat(64)}`, {
+      email: 'owner@example.com', password: 'secret',
+    })).rejects.toThrow('MFA or recovery code');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('registers with an enrollment token alone, omitting the unverified account id', async () => {
     const fetchMock = jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ challengeId: 'challenge-1', nonce: 'n'.repeat(64), purpose: 'register', expiresAt: '2099-01-01T00:00:00.000Z' }), { status: 201 }))
@@ -105,6 +130,24 @@ describe('InstallationRegistrationService', () => {
   it('treats a marketplace network failure as unavailable rather than crashing', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network down'));
     await expect(service.register('account-1')).rejects.toThrow('unavailable');
+  });
+
+  it('proxies account creation and password reset without persisting credentials locally', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ account: { id: 'account-1' } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ requested: true }), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ reset: true }), { status: 200 }));
+
+    await service.createMarketplaceAccount({ displayName: ' School Owner ', email: ' owner@example.com ', password: 'long-password' });
+    await service.requestMarketplacePasswordReset(' owner@example.com ');
+    await service.confirmMarketplacePasswordReset(' reset-token-value ', 'next-password');
+
+    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/v1/accounts');
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ displayName: 'School Owner', email: 'owner@example.com', password: 'long-password' });
+    expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/v1/password-resets');
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ email: 'owner@example.com' });
+    expect(new URL(String(fetchMock.mock.calls[2][0])).pathname).toBe('/v1/password-resets/confirm');
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toEqual({ token: 'reset-token-value', newPassword: 'next-password' });
   });
 
   it('only persists the newly generated key locally after the marketplace confirms rotation', async () => {

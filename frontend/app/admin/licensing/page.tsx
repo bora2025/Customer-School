@@ -43,6 +43,15 @@ export default function LicensingPage() {
   const [ownerCode, setOwnerCode] = useState('');
   const [label, setLabel] = useState('');
   const [enrollmentToken, setEnrollmentToken] = useState('');
+  const [accountDisplayName, setAccountDisplayName] = useState('');
+  const [accountEmail, setAccountEmail] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [showAccountForm, setShowAccountForm] = useState(false);
+  const [showResetForm, setShowResetForm] = useState(false);
   const [offlinePluginId, setOfflinePluginId] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -84,23 +93,17 @@ export default function LicensingPage() {
     }
     setBusy('register'); setError(''); setNotice('');
     try {
-      let verifiedAccountId = accountId.trim();
       if (enrollmentToken.trim()) {
         if (!ownerEmail.trim() || !ownerPassword) throw new Error('Enter the marketplace owner email and password.');
-        const loginResponse = await fetch('/api/marketplace/sessions', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ email: ownerEmail.trim(), password: ownerPassword, ...(ownerCode.trim() ? { code: ownerCode.trim() } : {}) }),
-        });
-        const login = await loginResponse.json().catch(() => ({}));
-        if (!loginResponse.ok) throw new Error(login.error || 'Marketplace owner sign-in failed');
-        if (login.status === 'mfa_required') throw new Error('Enter the owner’s MFA or recovery code, then try again.');
-        if (typeof login.accountId !== 'string' || !login.accountId) throw new Error('Marketplace sign-in did not return an account identity');
-        verifiedAccountId = login.accountId;
       }
       const response = await apiFetch('/api/admin/marketplace/installation/register', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-          accountId: verifiedAccountId,
+          ...(accountId.trim() ? { accountId: accountId.trim() } : {}),
           ...(enrollmentToken.trim() ? { enrollmentToken: enrollmentToken.trim() } : {}),
+          ...(enrollmentToken.trim() ? { owner: {
+            email: ownerEmail.trim(), password: ownerPassword,
+            ...(ownerCode.trim() ? { code: ownerCode.trim() } : {}),
+          } } : {}),
           ...(label.trim() ? { label: label.trim() } : {}),
         }),
       });
@@ -111,6 +114,36 @@ export default function LicensingPage() {
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Registration failed'); }
     finally { setBusy(''); }
+  }
+
+  async function createMarketplaceAccount() {
+    if (!accountDisplayName.trim() || !accountEmail.trim() || !accountPassword) return setError('Enter your name, email, and password.');
+    if (accountPassword.length < 10) return setError('Marketplace passwords must contain at least 10 characters.');
+    if (accountPassword !== accountPasswordConfirm) return setError('The password confirmation does not match.');
+    setBusy('create-account'); setError(''); setNotice('');
+    try {
+      const response = await apiFetch('/api/admin/marketplace/accounts', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: accountDisplayName.trim(), email: accountEmail.trim(), password: accountPassword }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || `Account request failed (${response.status})`);
+      setOwnerEmail(accountEmail.trim()); setAccountPassword(''); setAccountPasswordConfirm(''); setShowAccountForm(false);
+      setNotice('Marketplace account created. Ask the platform operator to create the school and send its one-time enrollment token, then complete the claim form below.');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Account request failed'); }
+    finally { setBusy(''); }
+  }
+
+  async function requestPasswordReset() {
+    if (!resetEmail.trim()) return setError('Enter the marketplace account email.');
+    await run('request-reset', '/api/admin/marketplace/password-resets', { email: resetEmail.trim() }, 'If the account exists, its password-reset instructions have been requested.');
+  }
+
+  async function confirmPasswordReset() {
+    if (!resetToken.trim() || !resetPassword) return setError('Enter the reset token and a new password.');
+    if (resetPassword.length < 10) return setError('Marketplace passwords must contain at least 10 characters.');
+    await run('confirm-reset', '/api/admin/marketplace/password-resets/confirm', { token: resetToken.trim(), newPassword: resetPassword }, 'Marketplace password reset. You can now use it in the claim form.');
+    setResetToken(''); setResetPassword('');
   }
 
   function rotate() {
@@ -194,8 +227,30 @@ export default function LicensingPage() {
                 </p>
               )}
               {!status?.registered && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="text-sm font-semibold text-slate-800">1. Marketplace account</h3>
+                  <p className="mt-1 text-xs text-slate-600">Create an owner account first. The platform operator then creates your customer-school record and sends the one-time enrollment token used in step 2.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowAccountForm(value => !value)}>{showAccountForm ? 'Hide account form' : 'Create marketplace account'}</button>
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowResetForm(value => !value)}>{showResetForm ? 'Hide password reset' : 'Forgot marketplace password?'}</button>
+                  </div>
+                  {showAccountForm && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <input className="rounded-lg border px-3 py-2" placeholder="Owner full name" value={accountDisplayName} onChange={event => setAccountDisplayName(event.target.value)} />
+                    <input type="email" autoComplete="email" className="rounded-lg border px-3 py-2" placeholder="Owner email" value={accountEmail} onChange={event => setAccountEmail(event.target.value)} />
+                    <input type="password" autoComplete="new-password" className="rounded-lg border px-3 py-2" placeholder="Password (10+ characters)" value={accountPassword} onChange={event => setAccountPassword(event.target.value)} />
+                    <input type="password" autoComplete="new-password" className="rounded-lg border px-3 py-2" placeholder="Confirm password" value={accountPasswordConfirm} onChange={event => setAccountPasswordConfirm(event.target.value)} />
+                    <button type="button" className="btn btn-primary sm:col-span-2 sm:w-fit" disabled={!!busy} onClick={createMarketplaceAccount}>{busy === 'create-account' ? 'Creating account…' : 'Send account creation request'}</button>
+                  </div>}
+                  {showResetForm && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <input type="email" autoComplete="email" className="rounded-lg border px-3 py-2" placeholder="Marketplace account email" value={resetEmail} onChange={event => setResetEmail(event.target.value)} />
+                    <button type="button" className="btn btn-secondary sm:w-fit" disabled={!!busy} onClick={requestPasswordReset}>{busy === 'request-reset' ? 'Requesting…' : 'Request reset'}</button>
+                    <input className="rounded-lg border px-3 py-2 font-mono text-xs" placeholder="Reset token from email or operator" value={resetToken} onChange={event => setResetToken(event.target.value)} />
+                    <input type="password" autoComplete="new-password" className="rounded-lg border px-3 py-2" placeholder="New password (10+ characters)" value={resetPassword} onChange={event => setResetPassword(event.target.value)} />
+                    <button type="button" className="btn btn-primary sm:col-span-2 sm:w-fit" disabled={!!busy} onClick={confirmPasswordReset}>{busy === 'confirm-reset' ? 'Resetting…' : 'Set new password'}</button>
+                  </div>}
+                </div>
                 <label className="text-sm sm:col-span-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Enrollment token</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">2. Enrollment token</span>
                   <input value={enrollmentToken} onChange={(event) => setEnrollmentToken(event.target.value)} placeholder="wtn_enr_…"
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs" />
                   <span className="mt-1 block text-xs font-normal text-slate-500">Get this from Platform Admin → Customer schools → your school → Installation enrollment. It is shown once and consumed on successful registration.</span>
