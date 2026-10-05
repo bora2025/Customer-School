@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import AuthGuard from '../../../components/AuthGuard';
+import PlatformBillingPanel from '../../../components/PlatformBillingPanel';
 import Sidebar from '../../../components/Sidebar';
 import { adminNav } from '../../../lib/admin-nav';
 import { apiFetch } from '../../../lib/api';
@@ -105,10 +106,13 @@ export default function LicensingPage() {
               {status && !status.marketplaceConfigured && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">Marketplace connection is not configured for this installation.</div>}
 
               {status?.registered ? (
-                <section className="card p-6">
-                  <h2 className="text-lg font-semibold text-slate-800">Marketplace registration complete</h2>
-                  <p className="mt-2 text-sm text-slate-600">This customer school is linked to the Marketplace{status.registeredAt ? ` since ${new Date(status.registeredAt).toLocaleDateString()}` : ''}.</p>
-                </section>
+                <>
+                  <section className="card p-6">
+                    <h2 className="text-lg font-semibold text-slate-800">Marketplace registration complete</h2>
+                    <p className="mt-2 text-sm text-slate-600">This customer school is linked to the Marketplace{status.registeredAt ? ` since ${new Date(status.registeredAt).toLocaleDateString()}` : ''}.</p>
+                  </section>
+                  <PlatformBillingPanel variant="section" />
+                </>
               ) : <>
                 {!accountRequested && <section className="card p-6">
                   <div className="mb-5">
