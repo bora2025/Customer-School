@@ -27,9 +27,9 @@ export class MarketplaceIdentityController {
     return this.registration.register(body?.accountId, body?.label, body?.enrollmentToken, body?.owner);
   }
 
-  @Post('accounts')
-  createAccount(@Body() body: { email?: string; password?: string; displayName?: string }) {
-    return this.registration.createMarketplaceAccount(body);
+  @Post('account-requests')
+  requestAccount(@Body() body: { email?: string; password?: string; displayName?: string; schoolName?: string }) {
+    return this.registration.requestMarketplaceAccount(body);
   }
 
   @Post('password-resets')

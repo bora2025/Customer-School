@@ -132,18 +132,18 @@ describe('InstallationRegistrationService', () => {
     await expect(service.register('account-1')).rejects.toThrow('unavailable');
   });
 
-  it('proxies account creation and password reset without persisting credentials locally', async () => {
+  it('proxies account requests and password reset without persisting credentials locally', async () => {
     const fetchMock = jest.spyOn(global, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ account: { id: 'account-1' } }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'request-1', status: 'PENDING' }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ requested: true }), { status: 202 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ reset: true }), { status: 200 }));
 
-    await service.createMarketplaceAccount({ displayName: ' School Owner ', email: ' owner@example.com ', password: 'long-password' });
+    await service.requestMarketplaceAccount({ schoolName: ' Wattanam School ', displayName: ' School Owner ', email: ' owner@example.com ', password: 'long-password' });
     await service.requestMarketplacePasswordReset(' owner@example.com ');
     await service.confirmMarketplacePasswordReset(' reset-token-value ', 'next-password');
 
-    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/v1/accounts');
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ displayName: 'School Owner', email: 'owner@example.com', password: 'long-password' });
+    expect(new URL(String(fetchMock.mock.calls[0][0])).pathname).toBe('/v1/account-requests');
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ schoolName: 'Wattanam School', displayName: 'School Owner', email: 'owner@example.com', password: 'long-password' });
     expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/v1/password-resets');
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ email: 'owner@example.com' });
     expect(new URL(String(fetchMock.mock.calls[2][0])).pathname).toBe('/v1/password-resets/confirm');

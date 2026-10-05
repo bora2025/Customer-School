@@ -117,14 +117,15 @@ export class InstallationRegistrationService {
     return result;
   }
 
-  async createMarketplaceAccount(input: { email?: string; password?: string; displayName?: string }) {
+  async requestMarketplaceAccount(input: { email?: string; password?: string; displayName?: string; schoolName?: string }) {
     const config = this.requireConfig();
     const email = input?.email?.trim();
     const displayName = input?.displayName?.trim();
-    if (!email || !displayName || !input?.password) {
-      throw new BadRequestException('Name, email, and password are required');
+    const schoolName = input?.schoolName?.trim();
+    if (!email || !displayName || !schoolName || !input?.password) {
+      throw new BadRequestException('School name, owner name, email, and password are required');
     }
-    return this.postJson(config, '/v1/accounts', { email, password: input.password, displayName });
+    return this.postJson(config, '/v1/account-requests', { email, password: input.password, displayName, schoolName });
   }
 
   async requestMarketplacePasswordReset(email?: string) {
