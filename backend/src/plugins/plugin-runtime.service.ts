@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown, Optional } from '@nestjs/common';
+import { createRequire } from 'node:module';
 import path from 'path';
 import semver from 'semver';
 import bcrypt from 'bcryptjs';
@@ -112,8 +113,13 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
     if (!verified.manifest.backendEntry) return;
     const entry = path.resolve(installedPath, verified.manifest.backendEntry);
     if (!entry.startsWith(`${installedPath}${path.sep}`)) throw new Error('Plugin backend entry escapes installation directory');
-    delete require.cache[require.resolve(entry)];
-    const pluginModule = require(entry) as RuntimePluginModule;
+    // Use Node's native resolver explicitly. A direct dynamic `require(entry)` is rewritten by
+    // webpack into an empty bundle context and therefore cannot load signed plugins installed on
+    // the persistent volume after the core image was built.
+    const runtimeRequire = createRequire(path.join(installedPath, '.wattanam-plugin-runtime.cjs'));
+    const resolvedEntry = runtimeRequire.resolve(entry);
+    delete runtimeRequire.cache[resolvedEntry];
+    const pluginModule = runtimeRequire(resolvedEntry) as RuntimePluginModule;
     if (pluginModule.id !== id || typeof pluginModule.activate !== 'function') throw new Error('Plugin backend entry does not implement the lifecycle contract');
 
     const capabilities = new Set(verified.manifest.capabilities);
