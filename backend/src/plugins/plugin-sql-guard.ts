@@ -19,7 +19,9 @@ export function assertNoForbiddenSql(sql: string, label: string) {
 
 export function assertPluginNamespace(pluginId: string, sql: string, label: string) {
   const namespace = `plugin_${pluginId.replace(/[^a-z0-9]/g, '_')}_`;
-  const tableReferences = [...sql.matchAll(/\b(?:TABLE|INTO|UPDATE|FROM|JOIN|REFERENCES)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?([a-zA-Z0-9_]+)"?/gi)].map((match) => match[1].toLowerCase());
+  const directReferences = [...sql.matchAll(/\b(?:TABLE|INTO|UPDATE|FROM|JOIN|REFERENCES)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?([a-zA-Z0-9_]+)"?/gi)];
+  const indexReferences = [...sql.matchAll(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?[a-zA-Z0-9_]+"?\s+ON\s+"?([a-zA-Z0-9_]+)"?/gi)];
+  const tableReferences = [...directReferences, ...indexReferences].map((match) => match[1].toLowerCase());
   if (!tableReferences.length || tableReferences.some((table) => !table.startsWith(namespace))) {
     throw new BadRequestException(`${label} may only access tables beginning with ${namespace}`);
   }

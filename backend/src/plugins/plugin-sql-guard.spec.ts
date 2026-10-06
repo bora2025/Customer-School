@@ -6,6 +6,24 @@ describe('plugin-sql-guard', () => {
     expect(() => assertNoForbiddenSql('SELECT * FROM plugin_wattanam_test_notes', 'x')).not.toThrow();
   });
 
+  it('recognizes CREATE INDEX target tables as namespace references', () => {
+    expect(() => assertPluginNamespace(
+      'wattanam.test',
+      'CREATE INDEX IF NOT EXISTS plugin_wattanam_test_notes_value_idx ON plugin_wattanam_test_notes (value)',
+      'x',
+    )).not.toThrow();
+    expect(() => assertPluginNamespace(
+      'wattanam.test',
+      'CREATE UNIQUE INDEX plugin_wattanam_test_notes_slug_idx ON plugin_wattanam_test_notes (slug)',
+      'x',
+    )).not.toThrow();
+    expect(() => assertPluginNamespace(
+      'wattanam.test',
+      'CREATE INDEX plugin_other_notes_value_idx ON plugin_other_notes (value)',
+      'x',
+    )).toThrow('only access tables beginning with plugin_wattanam_test_');
+  });
+
   it('rejects a table reference outside the plugin namespace', () => {
     expect(() => assertPluginNamespace('wattanam.test', 'SELECT * FROM "User"', 'x')).toThrow('only access tables beginning with plugin_wattanam_test_');
     expect(() => assertPluginNamespace('wattanam.test', 'SELECT * FROM plugin_other_notes', 'x')).toThrow('only access');
