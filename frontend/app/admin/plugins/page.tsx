@@ -13,7 +13,7 @@ interface PluginRecord {
   description: string;
   version: string;
   publisher: string;
-  status: 'installed' | 'active' | 'inactive' | 'failed';
+  status: 'installed' | 'activating' | 'active' | 'deactivating' | 'inactive' | 'migrating' | 'failed';
   capabilities: string[];
   permissions: string[];
   requiresCore: string | null;
@@ -328,6 +328,7 @@ export default function PluginsPage() {
   }
 
   async function lifecycle(plugin: PluginRecord, action: 'activate' | 'deactivate') {
+    if (action === 'deactivate' && !window.confirm(`Deactivate ${plugin.name}?\n\nIts pages, API routes, scheduled jobs, and live integrations will stop. Plugin data and settings will be preserved.`)) return;
     setBusy(`${plugin.id}:${action}`); setError('');
     try {
       const response = await apiFetch(`/api/plugins/${encodeURIComponent(plugin.id)}/${action}`, { method: 'POST' });
@@ -468,10 +469,10 @@ export default function PluginsPage() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold text-slate-800">{plugin.name}</h2><Status value={plugin.status} />{plugin.entitlement?.mode === 'read_only' && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Licence read-only</span>}{plugin.entitlement?.mode === 'grace' && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">Offline grace</span>}</div><p className="mt-1 font-mono text-xs text-slate-500">{plugin.id} · {plugin.version} · {plugin.publisher}</p><p className="mt-3 max-w-3xl text-sm text-slate-600">{plugin.description}</p>{plugin.entitlement && plugin.entitlement.mode !== 'unmanaged' && <p className={`mt-2 text-xs ${plugin.entitlement.mode === 'read_only' ? 'text-amber-800' : 'text-slate-500'}`}>{plugin.entitlement.reason}</p>}</div>
                     <div className="flex gap-2">{plugin.status === 'active'
-                      ? <button className="btn btn-secondary" disabled={!!busy} onClick={() => lifecycle(plugin, 'deactivate')}>Deactivate</button>
-                      : <button className="btn btn-primary" disabled={!!busy || plugin.status === 'failed' || runtime?.safeMode || plugin.entitlement?.mode === 'read_only'} onClick={() => lifecycle(plugin, 'activate')}>Activate</button>}
-                      {plugin.rollbackAvailable && <button className="btn btn-secondary" disabled={!!busy} onClick={() => rollbackPlugin(plugin)}>{busy === `${plugin.id}:rollback` ? 'Rolling back…' : 'Roll back'}</button>}
-                      {plugin.status !== 'active' && <button className="btn btn-secondary text-red-700" disabled={!!busy} onClick={() => removePlugin(plugin)}>Remove files</button>}</div>
+                      ? <button className="btn btn-secondary" disabled={!!busy} onClick={() => lifecycle(plugin, 'deactivate')}>{busy === `${plugin.id}:deactivate` ? 'Deactivating…' : 'Deactivate'}</button>
+                      : <button className="btn btn-primary" disabled={!!busy || ['activating', 'deactivating', 'migrating'].includes(plugin.status) || runtime?.safeMode || plugin.entitlement?.mode === 'read_only'} onClick={() => lifecycle(plugin, 'activate')}>{busy === `${plugin.id}:activate` ? 'Activating…' : plugin.status === 'failed' ? 'Retry activation' : 'Activate'}</button>}
+                      {plugin.rollbackAvailable && <button className="btn btn-secondary" disabled={!!busy || ['activating', 'deactivating', 'migrating'].includes(plugin.status)} onClick={() => rollbackPlugin(plugin)}>{busy === `${plugin.id}:rollback` ? 'Rolling back…' : 'Roll back'}</button>}
+                      {['installed', 'inactive', 'failed'].includes(plugin.status) && <button className="btn btn-secondary text-red-700" disabled={!!busy} onClick={() => removePlugin(plugin)}>Remove files</button>}</div>
                   </div>
                   <dl className="mt-5 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
                     <Info label="Core compatibility" value={plugin.requiresCore || 'Not declared'} />
@@ -492,7 +493,7 @@ export default function PluginsPage() {
 }
 
 function Status({ value }: { value: PluginRecord['status'] }) {
-  const style = value === 'active' ? 'bg-emerald-50 text-emerald-700' : value === 'failed' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600';
+  const style = value === 'active' ? 'bg-emerald-50 text-emerald-700' : value === 'failed' ? 'bg-red-50 text-red-700' : ['activating', 'deactivating', 'migrating'].includes(value) ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600';
   return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${style}`}>{value}</span>;
 }
 

@@ -219,9 +219,13 @@ export class PluginsService {
 
   async activate(id: string) {
     await this.entitlements?.assertCanActivate(id);
+    let activationStarted = false;
     try {
       const activation = await this.withPluginLock(id, async (tx) => {
         const plugin = await this.getTx(tx, id);
+        if (plugin.status === 'activating' || plugin.status === 'deactivating' || plugin.status === 'migrating') {
+          throw new ConflictException(`Plugin ${id} is already ${plugin.status}; wait for the current operation to finish`);
+        }
         const manifest = JSON.parse(plugin.manifestJson);
         await this.assertDependencies({ manifest } as VerifiedPluginPackage, tx);
         await fs.access(plugin.installedPath);
@@ -230,17 +234,44 @@ export class PluginsService {
         }
         const updated = await tx.pluginInstallation.update({
           where: { id },
-          data: { status: this.rollout ? 'activating' : 'active', activatedAt: this.rollout ? null : new Date(), deactivatedAt: null, lastError: null },
+          // Activation is not complete until the signed package has loaded and passed its runtime
+          // health check. Publishing "active" earlier creates a window where requests can be
+          // routed to code that is not actually available.
+          data: { status: 'activating', activatedAt: null, deactivatedAt: null, lastError: null },
         });
         const generation = this.rollout ? await this.rollout.stage(tx, plugin) : null;
         return { updated, generation };
       });
+      activationStarted = true;
       await this.runtime.load(id);
-      if (activation.generation) await this.rollout!.report(activation.generation, activation.generation.sha256);
-      return this.publicPlugin(activation.generation ? await this.get(id) : activation.updated);
+      if (activation.generation) {
+        await this.rollout!.report(activation.generation, activation.generation.sha256);
+      } else {
+        await this.withPluginLock(id, async (tx) => {
+          const plugin = await this.getTx(tx, id);
+          if (plugin.status !== 'activating') throw new ConflictException(`Plugin ${id} activation was superseded by ${plugin.status}`);
+          await tx.pluginInstallation.update({
+            where: { id },
+            data: { status: 'active', activatedAt: new Date(), deactivatedAt: null, lastError: null },
+          });
+        });
+      }
+      return this.publicPlugin(await this.get(id));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.prisma.pluginInstallation.updateMany({ where: { id }, data: { status: 'failed', lastError: message } }).catch(() => undefined);
+      if (activationStarted) {
+        await this.runtime.unload(id).catch(() => undefined);
+        // Do not overwrite another operation's final state. Only the activation attempt that still
+        // owns the transitional marker may turn it into a recoverable failure.
+        await this.prisma.pluginInstallation.updateMany({ where: { id, status: 'activating' }, data: { status: 'failed', lastError: message } }).catch(() => undefined);
+      } else {
+        // Validation failures are recoverable, but an attempt against an already-active plugin
+        // must never unload or downgrade the currently healthy runtime.
+        await this.prisma.pluginInstallation.updateMany({
+          where: { id, status: { in: ['installed', 'inactive', 'failed'] } },
+          data: { status: 'failed', lastError: message },
+        }).catch(() => undefined);
+      }
       throw error;
     }
   }
@@ -254,24 +285,47 @@ export class PluginsService {
   }
 
   async deactivate(id: string) {
-    await this.get(id);
-    const active = await this.prisma.pluginInstallation.findMany({ where: { status: 'active' }, select: { id: true, manifestJson: true } });
+    const active = await this.prisma.pluginInstallation.findMany({ where: { status: { in: ['active', 'activating'] } }, select: { id: true, manifestJson: true } });
     const dependent = active.find((candidate) => {
       try { return Object.prototype.hasOwnProperty.call(JSON.parse(candidate.manifestJson).dependencies || {}, id); } catch { return false; }
     });
     if (dependent) throw new ConflictException(`Cannot deactivate ${id}; active plugin ${dependent.id} requires it`);
-    await this.runtime.unload(id);
-    const updated = await this.withPluginLock(id, (tx) => tx.pluginInstallation.update({
-      where: { id },
-      data: { status: 'inactive', deactivatedAt: new Date() },
-    }));
-    return this.publicPlugin(updated);
+    const started = await this.withPluginLock(id, async (tx) => {
+      const plugin = await this.getTx(tx, id);
+      if (plugin.status === 'inactive' || plugin.status === 'installed') return { plugin, alreadyInactive: true };
+      if (plugin.status === 'activating' || plugin.status === 'deactivating' || plugin.status === 'migrating') {
+        throw new ConflictException(`Plugin ${id} is already ${plugin.status}; wait for the current operation to finish`);
+      }
+      const updated = await tx.pluginInstallation.update({
+        where: { id }, data: { status: 'deactivating', lastError: null },
+      });
+      return { plugin: updated, alreadyInactive: false };
+    });
+    if (started.alreadyInactive) return this.publicPlugin(started.plugin);
+    try {
+      await this.runtime.unload(id);
+      const updated = await this.withPluginLock(id, async (tx) => {
+        const plugin = await this.getTx(tx, id);
+        if (plugin.status !== 'deactivating') throw new ConflictException(`Plugin ${id} deactivation was superseded by ${plugin.status}`);
+        return tx.pluginInstallation.update({
+          where: { id }, data: { status: 'inactive', deactivatedAt: new Date(), lastError: null },
+        });
+      });
+      return this.publicPlugin(updated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.prisma.pluginInstallation.updateMany({ where: { id, status: 'deactivating' }, data: { status: 'failed', lastError: message } }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async remove(id: string) {
     const plugin = await this.withPluginLock(id, async (tx) => {
       const found = await this.getTx(tx, id);
       if (found.status === 'active') throw new ConflictException(`Deactivate ${id} before removing it`);
+      if (found.status === 'activating' || found.status === 'deactivating' || found.status === 'migrating') {
+        throw new ConflictException(`Plugin ${id} is ${found.status}; wait for the current operation to finish before removing it`);
+      }
       await tx.pluginInstallation.delete({ where: { id } });
       return found;
     });

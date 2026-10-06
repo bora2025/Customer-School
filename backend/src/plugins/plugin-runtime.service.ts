@@ -57,6 +57,19 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       this.logger.warn('PLUGIN_SAFE_MODE is enabled; no plugin code will be loaded');
       return;
     }
+    // Finish safe lifecycle outcomes after a process restart. A deactivation that lost power after
+    // unloading must stay off; a local activation interrupted before readiness must be retried by
+    // an administrator. Distributed rollout activations are reconciled below instead.
+    await this.prisma.pluginInstallation.updateMany({
+      where: { status: 'deactivating' },
+      data: { status: 'inactive', deactivatedAt: new Date(), lastError: null },
+    });
+    if (!this.rollout) {
+      await this.prisma.pluginInstallation.updateMany({
+        where: { status: 'activating' },
+        data: { status: 'failed', lastError: 'Activation was interrupted by a server restart; retry activation' },
+      });
+    }
     await this.reconcileRollouts();
     if (this.rollout) { this.rolloutTimer = setInterval(() => void this.reconcileRollouts(), 2_000); this.rolloutTimer.unref(); }
     const active = await this.prisma.pluginInstallation.findMany({ where: { status: 'active' } });
@@ -376,16 +389,19 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
   async unload(id: string) {
     const loaded = this.loaded.get(id);
     if (!loaded) return;
-    // Disable scheduling and reject fresh leases before plugin cleanup begins. Existing work must
-    // finish within the bounded drain window; otherwise deactivation fails closed.
-    await this.jobs.clear(id);
-    await loaded.cleanup?.();
-    await loaded.module.deactivate?.(loaded.context);
+    const errors: string[] = [];
+    // Every cleanup stage is attempted even when an earlier hook fails. Otherwise one faulty
+    // plugin hook can leave routes, jobs, subscriptions, or contracts live after an administrator
+    // explicitly deactivated it.
+    try { await this.jobs.clear(id); } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+    try { await loaded.cleanup?.(); } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
+    try { await loaded.module.deactivate?.(loaded.context); } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
     for (const dispose of loaded.disposers.reverse()) { try { dispose(); } catch { /* best effort */ } }
     this.extensions.clear(id);
     this.contracts?.clear(id);
     this.loaded.delete(id);
     this.logger.log(`Deactivated ${id}`);
+    if (errors.length) throw new Error(`Plugin deactivation cleanup failed: ${errors.join('; ')}`);
   }
 
   status() { return { safeMode: this.safeMode(), loaded: [...this.loaded.keys()].sort() }; }

@@ -204,8 +204,13 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
       const installedPath = path.join(pluginDir, 'wattanam.test', '1.0.0');
       await fs.mkdir(installedPath, { recursive: true });
       await fs.writeFile(path.join(installedPath, 'index.js'), 'module.exports = {};');
-      tx.pluginInstallation.findUnique.mockResolvedValue({ id: 'wattanam.test', installedPath, manifestJson: JSON.stringify(manifest({ backendEntry: 'index.js' })) });
-      tx.pluginInstallation.update.mockResolvedValue({ id: 'wattanam.test', status: 'active' });
+      tx.pluginInstallation.findUnique
+        .mockResolvedValueOnce({ id: 'wattanam.test', status: 'inactive', installedPath, manifestJson: JSON.stringify(manifest({ backendEntry: 'index.js' })) })
+        .mockResolvedValueOnce({ id: 'wattanam.test', status: 'activating' });
+      tx.pluginInstallation.update
+        .mockResolvedValueOnce({ id: 'wattanam.test', status: 'activating' })
+        .mockResolvedValueOnce({ id: 'wattanam.test', status: 'active' });
+      (service as any).get = jest.fn().mockResolvedValue({ id: 'wattanam.test', status: 'active' });
 
       const result = await service.activate('wattanam.test');
       expect(result).toMatchObject({ status: 'active' });
@@ -231,32 +236,34 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
       await expect(service.activate('wattanam.test')).rejects.toThrow();
       expect(tx.pluginInstallation.update).not.toHaveBeenCalled();
       expect(runtime.load).not.toHaveBeenCalled();
-      expect(prisma.pluginInstallation.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'wattanam.test' }, data: expect.objectContaining({ status: 'failed' }) }));
+      expect(prisma.pluginInstallation.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'wattanam.test', status: { in: ['installed', 'inactive', 'failed'] } }, data: expect.objectContaining({ status: 'failed' }) }));
     });
 
     it('marks the plugin failed when the runtime fails to load after activation commits', async () => {
       const { service, tx, prisma, runtime } = harness();
       const installedPath = path.join(pluginDir, 'wattanam.test', '1.0.0');
       await fs.mkdir(installedPath, { recursive: true });
-      tx.pluginInstallation.findUnique.mockResolvedValue({ id: 'wattanam.test', installedPath, manifestJson: JSON.stringify(manifest()) });
-      tx.pluginInstallation.update.mockResolvedValue({ id: 'wattanam.test', status: 'active' });
+      tx.pluginInstallation.findUnique.mockResolvedValue({ id: 'wattanam.test', status: 'inactive', installedPath, manifestJson: JSON.stringify(manifest()) });
+      tx.pluginInstallation.update.mockResolvedValue({ id: 'wattanam.test', status: 'activating' });
       runtime.load.mockRejectedValue(new Error('runtime exploded'));
 
       await expect(service.activate('wattanam.test')).rejects.toThrow('runtime exploded');
-      expect(prisma.pluginInstallation.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'wattanam.test' }, data: expect.objectContaining({ status: 'failed', lastError: 'runtime exploded' }) }));
+      expect(prisma.pluginInstallation.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'wattanam.test', status: 'activating' }, data: expect.objectContaining({ status: 'failed', lastError: 'runtime exploded' }) }));
     });
   });
 
   describe('deactivate and remove', () => {
-    it('unloads the runtime before taking the lock to flip status to inactive', async () => {
+    it('publishes deactivating, unloads the runtime, then publishes inactive', async () => {
       const { service, prisma, tx, runtime } = harness();
-      prisma.pluginInstallation.findUnique.mockResolvedValue({ id: 'wattanam.test' });
+      tx.pluginInstallation.findUnique
+        .mockResolvedValueOnce({ id: 'wattanam.test', status: 'active' })
+        .mockResolvedValueOnce({ id: 'wattanam.test', status: 'deactivating' });
       const order: string[] = [];
       runtime.unload.mockImplementation(async () => { order.push('unload'); });
-      tx.pluginInstallation.update.mockImplementation(async () => { order.push('update'); return { id: 'wattanam.test', status: 'inactive' }; });
+      tx.pluginInstallation.update.mockImplementation(async ({ data }: any) => { order.push(data.status); return { id: 'wattanam.test', status: data.status }; });
 
       await service.deactivate('wattanam.test');
-      expect(order).toEqual(['unload', 'update']);
+      expect(order).toEqual(['deactivating', 'unload', 'inactive']);
     });
 
     it('refuses to deactivate a dependency required by an active plugin', async () => {
