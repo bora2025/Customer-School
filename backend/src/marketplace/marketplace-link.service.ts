@@ -67,29 +67,45 @@ export class MarketplaceLinkService {
     const ts = String(Math.floor(Date.now() / 1000));
     const signature = await this.keys.sign({ installationId, requestId, ts });
     const result = await this.postJson(config, `/v1/installations/${installationId}/marketplace-links/${requestId}/exchange`, { installationId, requestId, ts, signature });
-    if (result.status === 202) return { status: 'pending' as const };
+    // Marketplace currently returns HTTP 200 with { status: 'pending' }; older deployments used
+    // HTTP 202. Accept both contracts so a waiting approval is never mistaken for a delivered
+    // credential (which would otherwise attempt to write an undefined token to disk).
+    if (result.status === 202 || result.body?.status === 'pending' || result.body?.pending === true) {
+      return { status: 'pending' as const };
+    }
     // Denied and expired are final answers, so the pending record stops being useful.
     if (result.status === 403) { await this.clearPending(); return { status: 'denied' as const }; }
     if (result.status === 410) { await this.clearPending(); return { status: 'expired' as const }; }
     if (result.status !== 200) throw new BadGatewayException(errorMessage(result.body));
-    const body = result.body as { sessionToken: string; expiresAt: string; accountId: string; accountEmail?: string; scope: string; grantId: string };
+    const body = result.body as { sessionToken?: unknown; expiresAt?: unknown; accountId?: unknown; accountEmail?: unknown; scope?: unknown; grantId?: unknown };
+    if (
+      typeof body?.sessionToken !== 'string' || !body.sessionToken ||
+      typeof body.expiresAt !== 'string' || Number.isNaN(Date.parse(body.expiresAt)) ||
+      typeof body.accountId !== 'string' || !body.accountId ||
+      typeof body.scope !== 'string' || !body.scope ||
+      typeof body.grantId !== 'string' || !body.grantId ||
+      (body.accountEmail !== undefined && typeof body.accountEmail !== 'string')
+    ) {
+      throw new BadGatewayException('Marketplace returned an invalid completed link response');
+    }
+    const accountEmail = typeof body.accountEmail === 'string' ? body.accountEmail : undefined;
     await this.tokenStore.write(body.sessionToken);
     const now = new Date();
     await this.prisma.marketplaceProxyLink.upsert({
       where: { id: 'singleton' },
       create: {
-        id: 'singleton', grantId: body.grantId, accountId: body.accountId, accountEmailMasked: maskEmail(body.accountEmail),
+        id: 'singleton', grantId: body.grantId, accountId: body.accountId, accountEmailMasked: maskEmail(accountEmail),
         scope: body.scope, linkedAt: now, expiresAt: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000), sessionExpiresAt: new Date(body.expiresAt),
       },
       update: {
-        grantId: body.grantId, accountId: body.accountId, accountEmailMasked: maskEmail(body.accountEmail),
+        grantId: body.grantId, accountId: body.accountId, accountEmailMasked: maskEmail(accountEmail),
         scope: body.scope, linkedAt: now, expiresAt: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000), sessionExpiresAt: new Date(body.expiresAt), revokedAt: null,
       },
     });
     // The request is spent; leaving it would make a later resume attempt fail with "already
     // exchanged" rather than reporting the link it successfully established.
     await this.prisma.marketplacePendingLink.deleteMany({ where: { id: 'singleton' } });
-    return { status: 'linked' as const, accountEmailMasked: maskEmail(body.accountEmail), scope: body.scope };
+    return { status: 'linked' as const, accountEmailMasked: maskEmail(accountEmail), scope: body.scope };
   }
 
   async status() {

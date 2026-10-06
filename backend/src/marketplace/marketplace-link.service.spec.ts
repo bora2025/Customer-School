@@ -23,6 +23,7 @@ function respond(status: number, body: unknown) {
 
 describe('MarketplaceLinkService pending link', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     process.env.MARKETPLACE_URL = 'http://marketplace.test';
     process.env.INSTALLATION_KEY_DIR = './marketplace-identity';
   });
@@ -76,6 +77,24 @@ describe('MarketplaceLinkService pending link', () => {
 
     await expect(new MarketplaceLinkService(prisma, keys, tokenStore).poll()).resolves.toEqual({ status: 'pending' });
     expect(prisma.marketplacePendingLink.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('accepts the current marketplace HTTP 200 pending response without writing a token', async () => {
+    const prisma = prismaDouble({ requestId: REQUEST_ID });
+    respond(200, { status: 'pending' });
+
+    await expect(new MarketplaceLinkService(prisma, keys, tokenStore).poll()).resolves.toEqual({ status: 'pending' });
+    expect(tokenStore.write).not.toHaveBeenCalled();
+    expect(prisma.marketplacePendingLink.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed completed response before writing link state', async () => {
+    const prisma = prismaDouble({ requestId: REQUEST_ID });
+    respond(200, { status: 'DELIVERED', accountId: 'account-1' });
+
+    await expect(new MarketplaceLinkService(prisma, keys, tokenStore).poll()).rejects.toThrow('invalid completed link response');
+    expect(tokenStore.write).not.toHaveBeenCalled();
+    expect(prisma.marketplaceProxyLink.upsert).not.toHaveBeenCalled();
   });
 
   it.each([
