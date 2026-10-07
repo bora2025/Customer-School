@@ -4,7 +4,7 @@ export const PLUGIN_UI_SCHEMA_VERSION = 2 as const;
 
 export type PluginUiComponentType =
   | 'heading' | 'text' | 'status' | 'card' | 'metric' | 'table' | 'form'
-  | 'detail' | 'chart' | 'file' | 'print' | 'document' | 'designer' | 'scanner' | 'filter' | 'actions';
+  | 'detail' | 'chart' | 'file' | 'print' | 'document' | 'designer' | 'scanner' | 'filter' | 'actions' | 'study-year-manager';
 
 export interface PluginUiDataSource {
   id: string;
@@ -49,7 +49,7 @@ const ROUTE = new RegExp(`^${ROUTE_SEGMENT}(?:/${ROUTE_SEGMENT})*$`);
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'status', 'card', 'metric', 'table', 'form', 'detail',
-  'chart', 'file', 'print', 'document', 'designer', 'scanner', 'filter', 'actions',
+  'chart', 'file', 'print', 'document', 'designer', 'scanner', 'filter', 'actions', 'study-year-manager',
 ]);
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
@@ -362,6 +362,17 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
             field.options.forEach((choice) => { const option = object(choice, 'filter select option'); string(option.label, 'filter option label', 120); if (!['string', 'number'].includes(typeof option.value)) throw new BadRequestException('filter option value is invalid'); });
           }
         });
+      }
+      if (type === 'study-year-manager') {
+        if (!source || sourceMethods.get(source) !== 'GET') throw new BadRequestException('Plugin UI study-year-manager requires a GET data source');
+        const options = object(component.options, 'Plugin UI study-year-manager options');
+        for (const key of ['createSource', 'setCurrentSource', 'deleteSource'] as const) {
+          const sourceId = string(options[key], `study-year-manager ${key}`, 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException(`Plugin UI study-year-manager ${key} must reference a mutation data source`);
+        }
+        for (const key of ['editRoute', 'classesRoute'] as const) {
+          if (!ROUTE.test(string(options[key], `study-year-manager ${key}`, 100))) throw new BadRequestException(`Plugin UI study-year-manager ${key} is invalid`);
+        }
       }
       return {
         id: componentId, type,

@@ -191,6 +191,16 @@ describe('Plugin UI v2 schema', () => {
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('modes');
   });
 
+  it('validates the study year management workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].dataSources.push(
+      { id: 'set-current', method: 'POST', path: 'records/:studyYearId/set-current', parameters: ['studyYearId'], autoload: false, permission: 'wattanam.test.manage' },
+      { id: 'delete-year', method: 'DELETE', path: 'records/:studyYearId', parameters: ['studyYearId'], autoload: false, permission: 'wattanam.test.manage' },
+    );
+    value.pages[0].components = [{ id: 'years', type: 'study-year-manager', source: 'record', options: { createSource: 'save', setCurrentSource: 'set-current', deleteSource: 'delete-year', editRoute: 'study-years/edit', classesRoute: 'classes' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'study-year-manager' });
+  });
+
   it.each([
     ['duplicate context field', [{ id: 'classId', type: 'text', label: 'Class' }, { id: 'classId', type: 'text', label: 'Again' }]],
     ['unsafe context field type', [{ id: 'classId', type: 'script', label: 'Class' }]],

@@ -12,6 +12,7 @@ import PluginDocumentDesigner from './PluginDocumentDesigner';
 import { usePluginUiRealtime } from '../../lib/plugin-ui-realtime';
 import PluginScanner from './PluginScanner';
 import PluginQueryFilter from './PluginQueryFilter';
+import PluginStudyYearManager from './PluginStudyYearManager';
 import { usePluginUiPresentation } from '../../lib/plugin-ui-presentation';
 import type { PluginUiPageDescriptor } from '../../lib/plugin-ui-routing';
 
@@ -46,6 +47,7 @@ export default function PluginUiRenderer({ pluginId, page, params, data, loading
     if (component.type === 'designer') return <PluginDocumentDesigner key={component.id} pluginId={pluginId} title={component.title} value={renderedData[component.source]} assets={component.options?.assetSource ? renderedData[component.options.assetSource] : []} sources={page.dataSources} params={params} options={component.options} loading={loading} error={errors[component.source]} onSaved={onRefresh} />;
     if (component.type === 'scanner') { const source = page.dataSources.find((entry) => entry.id === component.source); return source && source.method !== 'GET' && source.method !== 'DELETE' ? <PluginScanner key={component.id} pluginId={pluginId} source={source} params={params} options={component.options} onSuccess={onRefresh} /> : null; }
     if (component.type === 'filter') return <PluginQueryFilter key={component.id} fields={component.fields || []} options={component.options} onApply={onQueryFilters} />;
+    if (component.type === 'study-year-manager') return <PluginStudyYearManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
     if (component.type === 'heading') return <h2 key={component.id} className="text-xl font-semibold text-slate-800">{component.title}</h2>;
     if (component.type === 'text') return <p key={component.id} className="text-sm text-slate-600">{component.title}</p>;
     return <section key={component.id} className="card p-5 text-sm text-slate-500">{component.title || component.type} will be rendered by its LC3 component.</section>;
