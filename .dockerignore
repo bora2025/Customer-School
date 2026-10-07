@@ -9,7 +9,5 @@ backups
 .env*
 *.md
 docker-compose.yml
-frontend
 packages
-frontend/node_modules
 backend/node_modules
