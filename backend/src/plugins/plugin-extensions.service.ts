@@ -179,7 +179,7 @@ export class PluginExtensionsService {
 
   list() {
     return {
-      sdkVersion: '1.1.0',
+      sdkVersion: '1.2.0',
       permissions: [...this.permissions.values()],
       navigation: [...this.navigation.values()],
       pages: [...this.pages.values()],

@@ -19,6 +19,16 @@ export interface PluginStudentAccount {
   phone: string | null;
 }
 
+export interface CreatePluginStaffAccountInput {
+  commandKey: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  photo?: string | null;
+  passwordHash: string;
+  role: 'STAFF' | 'TEACHER';
+}
+
 export interface UpdatePluginStudentAccountInput {
   commandKey: string;
   userId: string;
@@ -47,6 +57,32 @@ export interface PluginParentAccount {
 @Injectable()
 export class PluginAccountService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async createStaff(pluginId: string, value: CreatePluginStaffAccountInput) {
+    const role = String(value?.role || '').toUpperCase();
+    if (!['STAFF', 'TEACHER'].includes(role)) throw new BadRequestException('staff role must be STAFF or TEACHER');
+    const photo = String(value?.photo || '').trim() || null;
+    if (photo && (photo.length > 2000 || !/^https:\/\//i.test(photo))) throw new BadRequestException('photo must be an HTTPS URL');
+    const input = { ...this.validate(value), photo, role: role as 'STAFF' | 'TEACHER' };
+    if (!input.email) throw new BadRequestException('staff email is required');
+    const requestHash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
+      const command = await tx.pluginAccountCommand.findUnique({ where: { pluginId_commandKey: { pluginId, commandKey: input.commandKey } } });
+      if (command) {
+        if (command.requestHash !== requestHash) throw new ConflictException('Plugin account command payload does not match its first execution');
+        const existing = await tx.user.findUnique({ where: { id: command.userId }, select: { id: true, name: true, role: true, email: true, phone: true } });
+        if (!existing || existing.role !== input.role) throw new ConflictException('Plugin account command journal references an invalid staff account');
+        return existing;
+      }
+      if (await tx.user.findUnique({ where: { email: input.email }, select: { id: true } })) throw new ConflictException('Email is already used by another account');
+      if (input.phoneNormalized && await tx.user.findUnique({ where: { phoneNormalized: input.phoneNormalized }, select: { id: true } })) throw new ConflictException('Phone number is already used by another account');
+      const id = randomUUID();
+      const account = await tx.user.create({ data: { id, name: input.name, email: input.email, phone: input.phone || undefined, phoneNormalized: input.phoneNormalized || undefined, photo: input.photo || undefined, password: input.passwordHash, role: input.role }, select: { id: true, name: true, role: true, email: true, phone: true } });
+      await tx.pluginAccountCommand.create({ data: { pluginId, commandKey: input.commandKey, requestHash, userId: id } });
+      return account;
+    });
+  }
 
   async createStudent(pluginId: string, value: CreatePluginStudentAccountInput): Promise<PluginStudentAccount> {
     const input = this.validate(value);

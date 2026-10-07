@@ -4,7 +4,7 @@ export const PLUGIN_UI_SCHEMA_VERSION = 2 as const;
 
 export type PluginUiComponentType =
   | 'heading' | 'text' | 'status' | 'card' | 'metric' | 'table' | 'form'
-  | 'detail' | 'chart' | 'file' | 'print' | 'document' | 'designer' | 'scanner' | 'filter' | 'actions' | 'study-year-manager';
+  | 'detail' | 'chart' | 'file' | 'print' | 'document' | 'designer' | 'scanner' | 'self-attendance-scanner' | 'filter' | 'actions' | 'study-year-manager' | 'class-manager' | 'officer-manager' | 'session-manager' | 'take-attendance' | 'id-card-manager' | 'attendance-report-manager' | 'attendance-dashboard' | 'attendance-window-manager';
 
 export interface PluginUiDataSource {
   id: string;
@@ -49,7 +49,7 @@ const ROUTE = new RegExp(`^${ROUTE_SEGMENT}(?:/${ROUTE_SEGMENT})*$`);
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'status', 'card', 'metric', 'table', 'form', 'detail',
-  'chart', 'file', 'print', 'document', 'designer', 'scanner', 'filter', 'actions', 'study-year-manager',
+  'chart', 'file', 'print', 'document', 'designer', 'scanner', 'self-attendance-scanner', 'filter', 'actions', 'study-year-manager', 'class-manager', 'officer-manager', 'session-manager', 'take-attendance', 'id-card-manager', 'attendance-report-manager', 'attendance-dashboard', 'attendance-window-manager',
 ]);
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
@@ -320,7 +320,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           if (!sourceIds.has(assetSource) || sourceMethods.get(assetSource) !== 'GET') throw new BadRequestException('Plugin UI designer assetSource must reference a GET data source');
         }
       }
-      if (type === 'scanner') {
+      if (type === 'scanner' || type === 'self-attendance-scanner') {
         if (!source || sourceMethods.get(source) === 'GET' || sourceMethods.get(source) === 'DELETE') throw new BadRequestException('Plugin UI scanner requires a write data source');
         const options = object(component.options, 'Plugin UI scanner options');
         if (!Array.isArray(options.modes) || options.modes.length < 1 || options.modes.some((mode) => !['camera', 'keyboard'].includes(String(mode)))) throw new BadRequestException('Plugin UI scanner modes are invalid');
@@ -372,6 +372,52 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         }
         for (const key of ['editRoute', 'classesRoute'] as const) {
           if (!ROUTE.test(string(options[key], `study-year-manager ${key}`, 100))) throw new BadRequestException(`Plugin UI study-year-manager ${key} is invalid`);
+        }
+      }
+      if (type === 'class-manager') {
+        if (!source || sourceMethods.get(source) !== 'GET') throw new BadRequestException('Plugin UI class-manager requires a GET data source');
+        const options = object(component.options, 'Plugin UI class-manager options');
+        for (const key of ['studyYearsSource', 'teachersSource', 'classAdminsSource'] as const) {
+          const sourceId = string(options[key], `class-manager ${key}`, 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) !== 'GET') throw new BadRequestException(`Plugin UI class-manager ${key} must reference a GET data source`);
+        }
+        for (const key of ['createSource', 'deleteSource', 'addStudentSource', 'removeStudentSource', 'bulkUploadSource'] as const) {
+          const sourceId = string(options[key], `class-manager ${key}`, 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException(`Plugin UI class-manager ${key} must reference a mutation data source`);
+        }
+        if (options.createStudentSource !== undefined) {
+          const sourceId = string(options.createStudentSource, 'class-manager createStudentSource', 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException('Plugin UI class-manager createStudentSource must reference a mutation data source');
+        }
+        for (const key of ['studentsSource', 'availableStudentsSource'] as const) {
+          const sourceId = string(options[key], `class-manager ${key}`, 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) !== 'GET') throw new BadRequestException(`Plugin UI class-manager ${key} must reference a GET data source`);
+        }
+        for (const key of ['detailRoute', 'editRoute', 'attendanceRoute'] as const) {
+          if (!ROUTE.test(string(options[key], `class-manager ${key}`, 100))) throw new BadRequestException(`Plugin UI class-manager ${key} is invalid`);
+        }
+      }
+      if (type === 'officer-manager') {
+        if (!source || sourceMethods.get(source) !== 'GET') throw new BadRequestException('Plugin UI officer-manager requires a GET data source');
+        const options = object(component.options, 'Plugin UI officer-manager options');
+        const departmentsSource = string(options.departmentsSource, 'officer-manager departmentsSource', 100);
+        if (!sourceIds.has(departmentsSource) || sourceMethods.get(departmentsSource) !== 'GET') throw new BadRequestException('Plugin UI officer-manager departmentsSource must reference a GET data source');
+        for (const key of ['createSource', 'deactivateSource'] as const) {
+          const sourceId = string(options[key], `officer-manager ${key}`, 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException(`Plugin UI officer-manager ${key} must reference a mutation data source`);
+        }
+        for (const key of ['editRoute', 'departmentsRoute'] as const) {
+          if (!ROUTE.test(string(options[key], `officer-manager ${key}`, 100))) throw new BadRequestException(`Plugin UI officer-manager ${key} is invalid`);
+        }
+      }
+      if (type === 'session-manager') {
+        if (!source || sourceMethods.get(source) !== 'GET') throw new BadRequestException('Plugin UI session-manager requires a GET data source');
+        const options = object(component.options, 'Plugin UI session-manager options');
+        const settingsSource = string(options.settingsSource, 'session-manager settingsSource', 100);
+        if (!sourceIds.has(settingsSource) || sourceMethods.get(settingsSource) !== 'GET') throw new BadRequestException('Plugin UI session-manager settingsSource must reference a GET data source');
+        for (const key of ['saveSessionSource', 'saveSettingsSource'] as const) {
+          const sourceId = string(options[key], `session-manager ${key}`, 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException(`Plugin UI session-manager ${key} must reference a mutation data source`);
         }
       }
       return {

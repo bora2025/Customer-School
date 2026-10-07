@@ -201,6 +201,73 @@ describe('Plugin UI v2 schema', () => {
     expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'study-year-manager' });
   });
 
+  it('validates the class management workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].dataSources.push(
+      { id: 'years', method: 'GET', path: 'years', permission: 'wattanam.test.read' },
+      { id: 'teachers', method: 'GET', path: 'teachers', permission: 'wattanam.test.read' },
+      { id: 'admins', method: 'GET', path: 'admins', permission: 'wattanam.test.read' },
+      { id: 'students', method: 'GET', path: 'classes/:classId/students', parameters: ['classId'], autoload: false, permission: 'wattanam.test.read' },
+      { id: 'available', method: 'GET', path: 'classes/:classId/available', parameters: ['classId'], autoload: false, permission: 'wattanam.test.read' },
+      { id: 'delete-class', method: 'DELETE', path: 'classes/:classId', parameters: ['classId'], autoload: false, permission: 'wattanam.test.manage' },
+      { id: 'add-student', method: 'POST', path: 'classes/:classId/students', parameters: ['classId'], autoload: false, permission: 'wattanam.test.manage' },
+      { id: 'remove-student', method: 'DELETE', path: 'classes/:classId/students/:studentId', parameters: ['classId', 'studentId'], autoload: false, permission: 'wattanam.test.manage' },
+      { id: 'bulk-students', method: 'POST', path: 'classes/:classId/students/csv', parameters: ['classId'], autoload: false, permission: 'wattanam.test.manage' },
+    );
+    value.pages[0].components = [{ id: 'classes', type: 'class-manager', source: 'record', options: { studyYearsSource: 'years', teachersSource: 'teachers', classAdminsSource: 'admins', createSource: 'save', deleteSource: 'delete-class', studentsSource: 'students', availableStudentsSource: 'available', addStudentSource: 'add-student', removeStudentSource: 'remove-student', bulkUploadSource: 'bulk-students', detailRoute: 'classes', editRoute: 'classes/edit', attendanceRoute: 'attendance' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'class-manager' });
+  });
+
+  it('validates the officer management workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].dataSources.push(
+      { id: 'departments', method: 'GET', path: 'departments', permission: 'wattanam.test.read' },
+      { id: 'deactivate', method: 'PATCH', path: 'officers/:officerId', parameters: ['officerId'], autoload: false, permission: 'wattanam.test.manage' },
+    );
+    value.pages[0].components = [{ id: 'officers', type: 'officer-manager', source: 'record', options: { departmentsSource: 'departments', createSource: 'save', deactivateSource: 'deactivate', editRoute: 'officers/edit', departmentsRoute: 'departments' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'officer-manager' });
+  });
+
+  it('validates the session settings workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].dataSources.push(
+      { id: 'settings', method: 'GET', path: 'session-settings', permission: 'wattanam.test.read' },
+      { id: 'save-settings', method: 'PUT', path: 'session-settings', permission: 'wattanam.test.manage' },
+      { id: 'save-session', method: 'POST', path: 'sessions', permission: 'wattanam.test.manage' },
+    );
+    value.pages[0].components = [{ id: 'sessions', type: 'session-manager', source: 'record', options: { settingsSource: 'settings', saveSessionSource: 'save-session', saveSettingsSource: 'save-settings' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'session-manager' });
+  });
+
+  it('validates the take attendance workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].dataSources.push(
+      { id: 'sessions', method: 'GET', path: 'sessions', permission: 'wattanam.test.read' },
+      { id: 'students', method: 'GET', path: 'classes/:classId/students', parameters: ['classId'], autoload: false, permission: 'wattanam.test.read' },
+      { id: 'scan', method: 'POST', path: 'scan', permission: 'wattanam.test.manage' },
+    );
+    value.pages[0].components = [{ id: 'attendance', type: 'take-attendance', source: 'record', options: { sessionsSource: 'sessions', recordsSource: 'record', studentsSource: 'students', saveSource: 'save', scanSource: 'scan' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'take-attendance' });
+  });
+
+  it('validates the ID card management workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].components = [{ id: 'cards', type: 'id-card-manager', source: 'record', options: { mode: 'staff' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'id-card-manager' });
+  });
+
+  it('validates the attendance report workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].components = [{ id: 'reports', type: 'attendance-report-manager', source: 'record', options: { mode: 'student', reportSource: 'record' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'attendance-report-manager' });
+  });
+
+  it('validates the attendance dashboard workspace declaration', () => {
+    const value: any = valid();
+    value.pages[0].components = [{ id: 'dashboard', type: 'attendance-dashboard', source: 'record', options: { studentRecordsSource: 'record' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'attendance-dashboard' });
+  });
+
   it.each([
     ['duplicate context field', [{ id: 'classId', type: 'text', label: 'Class' }, { id: 'classId', type: 'text', label: 'Again' }]],
     ['unsafe context field type', [{ id: 'classId', type: 'script', label: 'Class' }]],

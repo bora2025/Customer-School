@@ -20,8 +20,9 @@ export const PLUGIN_CAPABILITIES = [
   'ui.pages',
 ] as const;
 export const PLUGIN_CAPABILITIES_V1_1 = ['accounts.guardian.assign', 'accounts.parent.resolve', 'accounts.student.create', 'accounts.student.update', 'crypto.hash', 'events.durable', 'readmodels.publish', 'readmodels.read'] as const;
-export const PLUGIN_SUPPORTED_CAPABILITIES = [...PLUGIN_CAPABILITIES, ...PLUGIN_CAPABILITIES_V1_1] as const;
-export const PLUGIN_SDK_VERSION = '1.1.0';
+export const PLUGIN_CAPABILITIES_V1_2 = ['accounts.staff.create'] as const;
+export const PLUGIN_SUPPORTED_CAPABILITIES = [...PLUGIN_CAPABILITIES, ...PLUGIN_CAPABILITIES_V1_1, ...PLUGIN_CAPABILITIES_V1_2] as const;
+export const PLUGIN_SDK_VERSION = '1.2.0';
 export const PLUGIN_RUNTIME_VERSION = '1.0.0';
 
 export const PLUGIN_DATA_CLASSIFICATIONS = [

@@ -38,7 +38,7 @@ export class PluginContractError extends Error {
 }
 
 export interface PluginRuntimeContext {
-  sdkVersion: '1.1.0';
+  sdkVersion: '1.2.0';
   pluginId: string;
   logger: Logger;
   dependencies: { required: Readonly<Record<string, string>>; optional: Readonly<Record<string, string>>; isAvailable(pluginId: string): Promise<boolean> };
@@ -111,6 +111,7 @@ export interface PluginRuntimeContext {
     hashBcrypt(plaintext: string, rounds?: number): Promise<string>;
   };
   accounts: {
+    createStaff(input: { commandKey: string; name: string; email: string; phone?: string | null; photo?: string | null; passwordHash: string; role: 'STAFF' | 'TEACHER' }): Promise<{ id: string; name: string; role: 'STAFF' | 'TEACHER'; email: string | null; phone: string | null }>;
     createStudent(input: { commandKey: string; name: string; email?: string | null; phone?: string | null; passwordHash: string }): Promise<{ id: string; name: string; role: 'STUDENT'; email: string | null; phone: string | null }>;
     updateStudent(input: { commandKey: string; userId: string; name: string; email?: string | null; phone?: string | null }): Promise<{ id: string; name: string; role: 'STUDENT'; email: string | null; phone: string | null }>;
     resolveParent(input: { commandKey: string; name: string; email: string; phone?: string | null; passwordHash: string }): Promise<{ id: string; name: string; role: 'PARENT'; email: string | null; phone: string | null; created: boolean }>;

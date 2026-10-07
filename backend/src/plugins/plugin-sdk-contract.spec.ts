@@ -1,4 +1,4 @@
-import { PLUGIN_CAPABILITIES, PLUGIN_CAPABILITIES_V1_1, PLUGIN_DATA_CLASSIFICATIONS, PLUGIN_SDK_VERSION, PLUGIN_RUNTIME_VERSION } from './plugin-manifest';
+import { PLUGIN_CAPABILITIES, PLUGIN_CAPABILITIES_V1_1, PLUGIN_CAPABILITIES_V1_2, PLUGIN_DATA_CLASSIFICATIONS, PLUGIN_SDK_VERSION, PLUGIN_RUNTIME_VERSION } from './plugin-manifest';
 
 /**
  * Pins the frozen SDK 1.0 contract surface (C-006). This test exists so an
@@ -37,12 +37,13 @@ describe('SDK 1.0 frozen contract surface', () => {
   });
 
   it('ships the additive consistency contract as SDK 1.1 on runtime 1.0', () => {
-    expect(PLUGIN_SDK_VERSION).toBe('1.1.0');
+    expect(PLUGIN_SDK_VERSION).toBe('1.2.0');
     expect(PLUGIN_RUNTIME_VERSION).toBe('1.0.0');
   });
 
   it('keeps new SDK 1.1 capabilities separate from the frozen 1.0 list', () => {
     expect([...PLUGIN_CAPABILITIES_V1_1].sort()).toEqual(['accounts.guardian.assign', 'accounts.parent.resolve', 'accounts.student.create', 'accounts.student.update', 'crypto.hash', 'events.durable', 'readmodels.publish', 'readmodels.read']);
+    expect([...PLUGIN_CAPABILITIES_V1_2]).toEqual(['accounts.staff.create']);
   });
 
   it('pins the operational data-classification vocabulary shared with the public SDK', () => {

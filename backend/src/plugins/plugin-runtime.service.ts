@@ -130,7 +130,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       if (!capabilities.has(capability)) throw new Error(`${id} did not declare ${capability}`);
     };
     const context: PluginRuntimeContext = {
-      sdkVersion: '1.1.0',
+      sdkVersion: '1.2.0',
       pluginId: id,
       logger,
       dependencies: {
@@ -242,6 +242,18 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
         hashBcrypt: (plaintext, rounds = 12) => { requireCapability('crypto.hash'); return bcrypt.hash(plaintext, rounds); },
       },
       accounts: {
+        createStaff: async (input) => {
+          requireCapability('accounts.staff.create');
+          if (!this.pluginAccounts) throw new Error('Core staff-account command adapter is unavailable');
+          try {
+            const account = await this.pluginAccounts.createStaff(id, input);
+            void this.audit.log({ action: 'PLUGIN_STAFF_ACCOUNT_CREATE', resource: 'USER', resourceId: account.id, metadata: { pluginId: id, commandKey: input.commandKey, role: input.role }, success: true });
+            return account as any;
+          } catch (error) {
+            void this.audit.log({ action: 'PLUGIN_STAFF_ACCOUNT_CREATE', resource: 'USER', metadata: { pluginId: id, commandKey: input.commandKey, role: input.role }, success: false, errorMessage: error instanceof Error ? error.message : String(error) });
+            throw error;
+          }
+        },
         createStudent: async (input) => {
           requireCapability('accounts.student.create');
           if (!this.pluginAccounts) throw new Error('Core student-account command adapter is unavailable');

@@ -36,6 +36,23 @@ describe('PluginAccountService', () => {
     }) });
   });
 
+  it('creates a restricted staff login with an optional photo and journals it', async () => {
+    const { service, tx } = setup();
+    const result = await service.createStaff('wattanam.academic-management', {
+      commandKey: 'officer:request-1', name: 'Teacher One', email: 'TEACHER@EXAMPLE.TEST', phone: '+855 12 345 678',
+      photo: 'https://example.test/teacher.jpg', passwordHash, role: 'TEACHER',
+    });
+    expect(result).toMatchObject({ name: 'Teacher One', role: 'TEACHER', email: 'teacher@example.test' });
+    expect(tx.user.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ role: 'TEACHER', photo: 'https://example.test/teacher.jpg', password: passwordHash }) }));
+    expect(tx.pluginAccountCommand.create).toHaveBeenCalledWith({ data: expect.objectContaining({ commandKey: 'officer:request-1' }) });
+  });
+
+  it('rejects privileged staff roles and non-HTTPS staff photos', async () => {
+    const { service } = setup();
+    await expect(service.createStaff('wattanam.academic-management', { commandKey: 'officer:request-2', name: 'Admin', email: 'admin@example.test', passwordHash, role: 'ADMIN' as any })).rejects.toThrow('STAFF or TEACHER');
+    await expect(service.createStaff('wattanam.academic-management', { commandKey: 'officer:request-3', name: 'Staff', email: 'staff@example.test', photo: 'javascript:alert(1)', passwordHash, role: 'STAFF' })).rejects.toThrow('HTTPS URL');
+  });
+
   it('returns the original account for an exact retry and does not create another user', async () => {
     const input = { commandKey: 'registration:registration-1', name: 'Student One', email: 'student@example.test', phone: null, passwordHash };
     const first = setup();
