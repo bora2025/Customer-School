@@ -67,7 +67,7 @@ export class PluginAccountService {
     if (!input.email) throw new BadRequestException('staff email is required');
     const requestHash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
       const command = await tx.pluginAccountCommand.findUnique({ where: { pluginId_commandKey: { pluginId, commandKey: input.commandKey } } });
       if (command) {
         if (command.requestHash !== requestHash) throw new ConflictException('Plugin account command payload does not match its first execution');
@@ -90,7 +90,7 @@ export class PluginAccountService {
 
     return this.prisma.$transaction(async (tx) => {
       // Serialize a single command across API replicas before checking its journal row.
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
       const existingCommand = await tx.pluginAccountCommand.findUnique({
         where: { pluginId_commandKey: { pluginId, commandKey: input.commandKey } },
       });
@@ -134,7 +134,7 @@ export class PluginAccountService {
     const input = this.validateUpdate(value);
     const requestHash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
       const existingCommand = await tx.pluginAccountCommand.findUnique({
         where: { pluginId_commandKey: { pluginId, commandKey: input.commandKey } },
       });
@@ -169,7 +169,7 @@ export class PluginAccountService {
     if (!input.email) throw new BadRequestException('parent email is required');
     const requestHash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${pluginId}:${input.commandKey}`}, 0))`;
       const existingCommand = await tx.pluginAccountCommand.findUnique({ where: { pluginId_commandKey: { pluginId, commandKey: input.commandKey } } });
       if (existingCommand) {
         if (existingCommand.requestHash !== requestHash) throw new ConflictException('Plugin account command payload does not match its first execution');

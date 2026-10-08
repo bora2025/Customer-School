@@ -6,7 +6,7 @@ describe('PluginAccountService', () => {
 
   function setup(command: any = null, user: any = null) {
     const tx = {
-      $queryRaw: jest.fn().mockResolvedValue([{ pg_advisory_xact_lock: null }]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       pluginAccountCommand: {
         findUnique: jest.fn().mockResolvedValue(command),
         create: jest.fn().mockResolvedValue({}),
@@ -43,6 +43,7 @@ describe('PluginAccountService', () => {
       photo: 'https://example.test/teacher.jpg', passwordHash, role: 'TEACHER',
     });
     expect(result).toMatchObject({ name: 'Teacher One', role: 'TEACHER', email: 'teacher@example.test' });
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.user.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ role: 'TEACHER', photo: 'https://example.test/teacher.jpg', password: passwordHash }) }));
     expect(tx.pluginAccountCommand.create).toHaveBeenCalledWith({ data: expect.objectContaining({ commandKey: 'officer:request-1' }) });
   });
