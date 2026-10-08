@@ -6,6 +6,14 @@ describe('plugin-sql-guard', () => {
     expect(() => assertNoForbiddenSql('SELECT * FROM plugin_wattanam_test_notes', 'x')).not.toThrow();
   });
 
+  it('does not mistake PostgreSQL upsert UPDATE SET syntax for a table reference', () => {
+    expect(() => assertPluginNamespace(
+      'wattanam.test',
+      'INSERT INTO plugin_wattanam_test_notes (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value',
+      'x',
+    )).not.toThrow();
+  });
+
   it('recognizes CREATE INDEX target tables as namespace references', () => {
     expect(() => assertPluginNamespace(
       'wattanam.test',
