@@ -156,6 +156,31 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
       expect(runtime.unload).not.toHaveBeenCalled();
     });
 
+    it('repairs a stranded migrating marker when the exact committed package is installed again', async () => {
+      const { service, verifier, prisma, migrations } = harness();
+      const verified = verifiedPackage({ migrations: [{ id: '001', path: 'migrations/001.sql', checksum: 'x', destructive: false }] });
+      verifier.verify.mockResolvedValue(verified);
+      const destination = path.join(pluginDir, 'wattanam.test', '1.0.0');
+      await fs.mkdir(destination, { recursive: true });
+      prisma.pluginInstallation.findUnique.mockResolvedValue({
+        id: 'wattanam.test', name: 'Test', manifestJson: JSON.stringify(verified.manifest), version: '1.0.0',
+        publisher: 'wattanam', status: 'migrating', packageSha256: verified.packageSha256,
+        installedAt: new Date(), activatedAt: null, deactivatedAt: new Date(), lastError: null,
+      });
+      prisma.pluginInstallation.update.mockResolvedValue({
+        id: 'wattanam.test', name: 'Test', manifestJson: JSON.stringify(verified.manifest), version: '1.0.0',
+        publisher: 'wattanam', status: 'inactive', packageSha256: verified.packageSha256,
+        installedAt: new Date(), activatedAt: null, deactivatedAt: new Date(), lastError: null,
+      });
+
+      await expect(service.install(Buffer.from('package'))).resolves.toMatchObject({ status: 'inactive' });
+      expect(prisma.pluginInstallation.update).toHaveBeenCalledWith({
+        where: { id: 'wattanam.test' }, data: { status: 'inactive', lastError: null },
+      });
+      expect(migrations.createRecoveryPoint).not.toHaveBeenCalled();
+      expect(migrations.apply).not.toHaveBeenCalled();
+    });
+
     it('marks the registry failed and removes both staged and destination directories when migration application fails', async () => {
       const { service, verifier, prisma, migrations } = harness();
       const verified = verifiedPackage({ migrations: [{ id: '001', path: 'migrations/001.sql', checksum: 'x', destructive: false }] });

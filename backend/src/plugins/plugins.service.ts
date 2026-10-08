@@ -151,6 +151,30 @@ export class PluginsService {
     if (confirmedPackageSha256 !== undefined && confirmedPackageSha256 !== verified.packageSha256) throw new BadRequestException('The package differs from the inspected package');
     await this.assertDependencies(verified);
     const current = await this.prisma.pluginInstallation.findUnique({ where: { id: verified.manifest.id } });
+    const root = this.pluginRoot();
+    const pluginRoot = path.join(root, verified.manifest.id);
+    const destination = path.join(pluginRoot, verified.manifest.version);
+    const sameCommittedPackage = current?.version === verified.manifest.version && current?.packageSha256 === verified.packageSha256;
+    if (sameCommittedPackage) {
+      try {
+        await fs.access(destination);
+        // Retrying an already-committed install is idempotent. Older builds set `migrating`
+        // before noticing this duplicate artifact, so also repair that stranded marker from the
+        // timestamps that describe the last stable lifecycle state.
+        if (current.status === 'migrating') {
+          const status = current.deactivatedAt ? 'inactive' : current.activatedAt ? 'active' : 'installed';
+          const recovered = await this.prisma.pluginInstallation.update({
+            where: { id: verified.manifest.id }, data: { status, lastError: null },
+          });
+          return this.publicPlugin(recovered);
+        }
+        return this.publicPlugin(current);
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT') throw error;
+        // The registry exists but its artifact does not. Continue through the normal install
+        // pipeline so the signed package repairs the missing files.
+      }
+    }
     const restoreActive = current?.status === 'active';
     if (restoreActive && !semver.gt(verified.manifest.version, current.version)) {
       throw new ConflictException(`Active plugin updates must increase the version: ${current.version} -> ${verified.manifest.version}`);
@@ -169,9 +193,6 @@ export class PluginsService {
       if (current) await this.prisma.pluginInstallation.update({ where: { id: verified.manifest.id }, data: { status: 'migrating' } }).catch(() => undefined);
     }
 
-    const root = this.pluginRoot();
-    const pluginRoot = path.join(root, verified.manifest.id);
-    const destination = path.join(pluginRoot, verified.manifest.version);
     const staging = path.join(root, '.staging', `${verified.manifest.id}-${randomUUID()}`);
     await fs.mkdir(staging, { recursive: true, mode: 0o750 });
     try {
