@@ -389,6 +389,10 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           const sourceId = string(options.createStudentSource, 'class-manager createStudentSource', 100);
           if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException('Plugin UI class-manager createStudentSource must reference a mutation data source');
         }
+        if (options.updateSource !== undefined) {
+          const sourceId = string(options.updateSource, 'class-manager updateSource', 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException('Plugin UI class-manager updateSource must reference a mutation data source');
+        }
         for (const key of ['studentsSource', 'availableStudentsSource'] as const) {
           const sourceId = string(options[key], `class-manager ${key}`, 100);
           if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) !== 'GET') throw new BadRequestException(`Plugin UI class-manager ${key} must reference a GET data source`);
