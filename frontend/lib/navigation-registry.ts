@@ -31,6 +31,35 @@ function pluginSectionLabel(pluginId: string): string {
     .join(' ');
 }
 
+/**
+ * Select a semantic icon for plugin navigation without requiring plugins to
+ * understand the host application's icon component registry. Keep the most
+ * specific routes first so, for example, ID-card and report pages do not fall
+ * back to the broader student/staff icons.
+ */
+function pluginNavigationIcon(entry: PluginNavigationExtension): string {
+  const value = `${entry.label} ${entry.href}`.toLowerCase();
+
+  if (/dashboard|overview/.test(value)) return 'dashboard';
+  if (/id[ -]?cards?|identity/.test(value)) return 'id-card';
+  if (/scanner|scan attendance|attendance scan/.test(value)) return 'scan';
+  if (/qr|self[ -]?attendance/.test(value)) return 'qr-code';
+  if (/correction|review/.test(value)) return 'edit';
+  if (/alerts?|notification/.test(value)) return 'bell';
+  if (/reports?|analytics/.test(value)) return 'bar-chart';
+  if (/settings?|configuration|windows?/.test(value)) return 'settings';
+  if (/registrations?|admissions?|enrol+l?ment/.test(value)) return 'clipboard';
+  if (/study[ -]?years?|calendar|schedule/.test(value)) return 'calendar';
+  if (/departments?|campus|organization/.test(value)) return 'building';
+  if (/subjects?|courses?/.test(value)) return 'book';
+  if (/classes?|classrooms?/.test(value)) return 'graduation';
+  if (/teachers?|students?/.test(value)) return 'users';
+  if (/officers?|staff|employees?/.test(value)) return 'briefcase';
+  if (/attendance/.test(value)) return 'check-square';
+
+  return 'layers';
+}
+
 /** Groups each plugin's contributed routes under a readable plugin heading. */
 export function pluginNavigation(entries: readonly PluginNavigationExtension[]): NavigationRegistration[] {
   const seen = new Set<string>();
@@ -40,7 +69,7 @@ export function pluginNavigation(entries: readonly PluginNavigationExtension[]):
     return {
       label: entry.label,
       href: entry.href,
-      icon: '🧩',
+      icon: pluginNavigationIcon(entry),
       ...(first ? { section: pluginSectionLabel(entry.pluginId) } : {}),
       nested: true,
       source: 'plugin' as const,

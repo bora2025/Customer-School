@@ -144,6 +144,45 @@ export const IconBriefcase = multi([
   'M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2',
 ]);
 
+export const IconBuilding = multi([
+  'M3 22h18',
+  'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18',
+  'M9 6h2',
+  'M13 6h2',
+  'M9 10h2',
+  'M13 10h2',
+  'M9 14h2',
+  'M13 14h2',
+  'M10 22v-4h4v4',
+]);
+
+export const IconQrCode = multi([
+  'M3 3h7v7H3z',
+  'M14 3h7v7h-7z',
+  'M3 14h7v7H3z',
+  'M14 14h3v3h-3z',
+  'M18 14h3',
+  'M21 17v4h-4',
+  'M14 20h1',
+  'M6 6h1',
+  'M17 6h1',
+  'M6 17h1',
+]);
+
+export const IconScan = multi([
+  'M3 7V5a2 2 0 0 1 2-2h2',
+  'M17 3h2a2 2 0 0 1 2 2v2',
+  'M21 17v2a2 2 0 0 1-2 2h-2',
+  'M7 21H5a2 2 0 0 1-2-2v-2',
+  'M7 12h10',
+  'M9 8h6v8H9z',
+]);
+
+export const IconCheckSquare = multi([
+  'M9 11l3 3L22 4',
+  'M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
+]);
+
 export const IconGraduation = multi([
   'M22 10l-10-6L2 10l10 6 10-6z',
   'M6 12v5c3 3 9 3 12 0v-5',
@@ -287,6 +326,10 @@ export const iconMap: Record<string, React.FC<IconProps>> = {
   'id-card': IconIdCard,
   ticket: IconTicket,
   briefcase: IconBriefcase,
+  building: IconBuilding,
+  'qr-code': IconQrCode,
+  scan: IconScan,
+  'check-square': IconCheckSquare,
   graduation: IconGraduation,
   shield: IconShield,
   download: IconDownload,
