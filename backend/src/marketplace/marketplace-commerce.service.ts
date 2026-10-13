@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, HttpException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import semver from 'semver';
 import { readRuntimeConfig } from '../config/environment';
@@ -243,6 +243,11 @@ export class MarketplaceCommerceService {
     try { payload = await response.json(); } catch { throw new BadGatewayException('Marketplace returned invalid JSON'); }
     if (!response.ok) {
       const message = payload && typeof payload === 'object' && 'error' in payload ? String((payload as { error: unknown }).error) : `Marketplace responded with ${response.status}`;
+      // The marketplace uses 4xx responses for actionable checkout rules (inactive price,
+      // currency mismatch, missing manual-payment account, etc.). Preserve those semantics so the
+      // school UI can tell an administrator what to fix instead of misreporting every rejection as
+      // an upstream outage. Only an invalid/unreachable response is a gateway failure.
+      if (response.status >= 400 && response.status < 500) throw new HttpException(message, response.status);
       throw new BadGatewayException(message);
     }
     return payload;

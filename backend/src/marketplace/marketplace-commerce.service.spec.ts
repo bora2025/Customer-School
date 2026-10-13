@@ -179,4 +179,18 @@ describe('MarketplaceCommerceService install', () => {
       { pluginId: 'wattanam.unapproved', version: '9.9.9', consentDigest: 'a'.repeat(64) },
     ], true)).rejects.toThrow('does not match');
   });
+
+  it('preserves an actionable marketplace checkout conflict instead of reporting a gateway outage', async () => {
+    const prisma = { installation: { findUnique: jest.fn().mockResolvedValue({ installationId: '8b398fe2-965e-44d6-8883-107b964e0f8b' }) } } as any;
+    const link = { getValidAccessToken: jest.fn().mockResolvedValue('token') } as any;
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: 'Manual payment is not configured for USD; add an active bank account and QR code first' }), {
+      status: 409, headers: { 'content-type': 'application/json' },
+    }) as any);
+    const service = new MarketplaceCommerceService(prisma, link, {} as any, {} as any, {} as any, {} as any);
+
+    await expect(service.createOrder(['2b62bde7-5e66-489b-a134-65ea103e3246'], 'USD')).rejects.toMatchObject({
+      status: 409,
+      message: 'Manual payment is not configured for USD; add an active bank account and QR code first',
+    });
+  });
 });
