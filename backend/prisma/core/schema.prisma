@@ -223,6 +223,7 @@ model MarketplaceRegistration {
 model MarketplaceSchoolControl {
   id              String   @id @default("singleton")
   access          String   @default("ACTIVE")
+  generation      Int      @default(0)
   reason          String?
   warningsJson    String   @default("[]")
   billingJson     String   @default("{}")
