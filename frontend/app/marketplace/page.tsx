@@ -118,9 +118,16 @@ export default function MarketplacePage() {
     const response = await fetch('/api/marketplace/customer/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ installationId: installation.installationId, currency: price.currency, priceIds: [price.id], idempotencyKey: crypto.randomUUID(), settlementMode }) });
     const body = await response.json(); setBusy('');
     if (!response.ok) return setMessage(body.error || 'Checkout failed');
+    if (settlementMode === 'IMMEDIATE' && body.invoice) {
+      await load();
+      setPaymentInvoiceId(body.invoice.id);
+      setPaymentAmount(((body.invoice.amountMinor - body.invoice.paidMinor) / 100).toFixed(2));
+    }
     setMessage(settlementMode === 'INVOICE'
       ? `${product.name} is licensed now and will appear on your next school invoice as a separate line.`
-      : `Order ${body.id} created. Online payment or an authorized manual invoice must settle it before activation.`);
+      : body.invoice
+        ? `Invoice ${body.invoice.invoiceNumber} is ready. Scan the bank QR, transfer the amount, then upload your receipt for approval.`
+        : `Order ${body.id} created. Payment must be approved before activation.`);
   }
 
   /** The receiving accounts in the currency of the invoice being paid. */
@@ -151,6 +158,7 @@ export default function MarketplacePage() {
     const amountMinor = Math.round(Number(paymentAmount) * 100);
     if (!invoice || !Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !paymentReference.trim()) return setMessage('Select an invoice and enter a valid amount and payment reference.');
     if (accountsForInvoice(invoice.id).length > 0 && !paymentMethodId) return setMessage('Choose the account you paid into, so finance knows which bank statement to check.');
+    if (!receiptImage) return setMessage('Attach the bank receipt screenshot before submitting payment for approval.');
     setBusy('school-payment'); setMessage('');
     const response = await fetch('/api/marketplace/customer/school-billing/payment-submissions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ invoiceId: invoice.id, provider: paymentProvider, providerReference: paymentReference.trim(), amountMinor, ...(paymentNote.trim() ? { note: paymentNote.trim() } : {}), ...(paymentMethodId ? { paymentMethodId } : {}), ...(receiptImage ? { receiptImage } : {}) }) });
     const body = await response.json(); setBusy('');
