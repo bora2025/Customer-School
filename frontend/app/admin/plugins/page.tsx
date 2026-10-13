@@ -65,6 +65,8 @@ interface CatalogProduct {
 interface MarketplaceOrder {
   id: string; status: string; currency: string; totalMinor: number; createdAt: string;
   lines: Array<{ pluginId: string; plugin?: { id: string; name: string } }>;
+  invoice?: { id: string; invoiceNumber: string; status: string; currency: string; amountMinor: number; paidMinor: number; dueAt: string };
+  message?: string;
 }
 interface StarterBundle {
   id: string; slug: string; name: string; description: string;
@@ -97,6 +99,7 @@ export default function PluginsPage() {
   const [starterBundles, setStarterBundles] = useState<StarterBundle[]>([]);
   const [catalogError, setCatalogError] = useState('');
   const [orders, setOrders] = useState<MarketplaceOrder[]>([]);
+  const [purchase, setPurchase] = useState<{ invoiceNumber: string; amountMinor: number; currency: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
 
@@ -187,12 +190,22 @@ export default function PluginsPage() {
   async function buy(product: CatalogProduct) {
     const price = product.prices[0];
     if (!price) return setError('This plugin has no available price.');
+    if (orders.some((order) => order.status === 'PENDING' && order.lines.some((line) => line.pluginId === product.id))) {
+      setError('This plugin already has a pending payment. Open Platform Billing to pay the existing invoice instead of creating another one.');
+      return;
+    }
     setBusy(`${product.id}:buy`); setError('');
     try {
       const response = await apiFetch('/api/admin/marketplace/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ priceId: price.id, currency: price.currency }) });
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json().catch(() => ({})) as MarketplaceOrder;
       if (!response.ok) throw new Error(result.message || `Order creation failed (${response.status})`);
       await loadOrders();
+      if (result.invoice) {
+        setPurchase({ invoiceNumber: result.invoice.invoiceNumber, amountMinor: result.invoice.amountMinor - result.invoice.paidMinor, currency: result.invoice.currency });
+        // Pull the new marketplace invoice and its receiving account into the school's local
+        // billing view before asking the administrator to continue there.
+        await apiFetch('/api/admin/marketplace/billing-control/sync', { method: 'POST' });
+      }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Order creation failed'); }
     finally { setBusy(''); }
   }
@@ -360,6 +373,7 @@ export default function PluginsPage() {
           <div className="page-header"><h1 className="text-2xl font-bold text-slate-800">Plugin Manager</h1><p className="mt-1 text-sm text-slate-500">Browse, buy, and install verified plugins through the Wattanam Marketplace.</p></div>
           <div className="page-body space-y-6">
             {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+            {purchase && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900"><div><strong>Invoice {purchase.invoiceNumber} created.</strong><p className="mt-1">Pay {formatMoney(purchase.amountMinor, purchase.currency)} by scanning the configured bank QR, then submit the receipt for approval.</p></div><a className="btn btn-primary" href="/admin/platform-billing">Open payment &amp; upload receipt</a></div>}
             {runtime?.safeMode && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><strong>Plugin safe mode is active.</strong> No plugin code is loaded and activation is disabled. Core administration remains available.</div>}
             {diagnostics && <section className={`card border p-6 ${diagnostics.status === 'failed' ? 'border-red-200' : diagnostics.status === 'degraded' ? 'border-amber-200' : 'border-emerald-200'}`}>
               <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-800">Plugin system health</h2><p className="mt-1 text-sm text-slate-500">Registry, artifact, runtime, licence, contract and job checks.</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${diagnostics.status === 'healthy' ? 'bg-emerald-50 text-emerald-700' : diagnostics.status === 'degraded' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700'}`}>{diagnostics.status}</span></div>
@@ -399,6 +413,7 @@ export default function PluginsPage() {
                   })}</div></div>}
                   {catalog.length > 0 && <div className="mt-4 grid gap-4 md:grid-cols-2">{catalog.map((product) => {
                     const owned = !!product.ownership?.some((entry) => entry.status === 'ACTIVE');
+                    const paymentPending = orders.some((order) => order.status === 'PENDING' && order.lines.some((line) => line.pluginId === product.id));
                     const release = product.versions[0];
                     const missingDependencies = Object.entries(release?.dependencies || {}).filter(([id]) => !plugins.some((plugin) => plugin.id === id && plugin.status === 'active'));
                     return (
@@ -419,7 +434,8 @@ export default function PluginsPage() {
                       {missingDependencies.length > 0 && <p role="alert" className="mt-2 text-xs font-medium text-amber-700">Install and activate first: {missingDependencies.map(([id, range]) => `${id} ${range}`).join(', ')}</p>}
                       {!!product.ownership?.length && <p className="mt-2 text-xs text-emerald-700">Owned: {product.ownership.map((entry) => `${entry.installationLabel || entry.installationId} (${entry.status.toLowerCase()})`).join(', ')}</p>}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {product.paid && !owned && <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => buy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy'}</button>}
+                        {product.paid && !owned && !paymentPending && <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => buy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy'}</button>}
+                        {product.paid && !owned && paymentPending && <a className="btn btn-primary" href="/admin/platform-billing">Payment pending</a>}
                         {product.compatible && (owned || !product.paid) && <button className="btn btn-primary" disabled={!!busy || missingDependencies.length > 0} onClick={() => installFromMarketplace(product)}>{busy === `${product.id}:install` ? 'Installing…' : 'Review & install'}</button>}
                       </div>
                     </div>
