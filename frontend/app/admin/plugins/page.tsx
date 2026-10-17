@@ -49,6 +49,7 @@ interface PluginExtensions { navigation: Array<{ pluginId: string; id: string; l
 interface MarketplaceLinkStatus { linked: boolean; accountEmailMasked?: string; scope?: string; expiresAt?: string; pending?: { requestId: string; startedAt: string; expiresAt: string; approvalUrl?: string } | null }
 interface CatalogProduct {
   id: string; name: string; description: string; license: string; paid: boolean;
+  promotionalDescription?: string | null; coverImage?: string | null; screenshots?: string[];
   publisher: { slug: string; displayName: string };
   prices: Array<{ id: string; currency: string; amountMinor: number }>;
   versions: Array<{
@@ -102,6 +103,7 @@ export default function PluginsPage() {
   const [purchase, setPurchase] = useState<{ invoiceNumber: string; amountMinor: number; currency: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
 
   async function load() {
     const [pluginsResponse, updatesResponse, extensionsResponse, runtimeResponse, diagnosticsResponse] = await Promise.all([apiFetch('/api/plugins'), apiFetch('/api/updates'), apiFetch('/api/plugin-api/extensions'), apiFetch('/api/plugins/runtime-status'), apiFetch('/api/plugins/diagnostics')]);
@@ -390,21 +392,27 @@ export default function PluginsPage() {
       const paymentPending = orders.some((order) => order.status === 'PENDING' && order.lines.some((line) => line.pluginId === product.id));
       const release = product.versions[0];
       const missingDependencies = Object.entries(release?.dependencies || {}).filter(([id]) => !plugins.some((plugin) => plugin.id === id && plugin.status === 'active'));
-      return <article key={product.id} className="group flex min-h-72 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
+      const action = installed?.status === 'active' ? 'active' : installed ? 'activate-installed' : product.paid && !owned ? 'buy' : 'activate';
+      return <article key={product.id} className="group flex min-h-72 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
+        {product.coverImage ? <button type="button" className="block w-full overflow-hidden bg-slate-100 text-left" onClick={() => setSelectedProduct(product)}><img src={product.coverImage} alt={`${product.name} cover`} className="aspect-[3/1] w-full object-cover transition duration-300 group-hover:scale-[1.02]" /></button> : <div className={`h-24 bg-gradient-to-br ${owned ? 'from-violet-100 to-indigo-50' : product.paid ? 'from-amber-100 to-orange-50' : 'from-emerald-100 to-cyan-50'}`} />}
+        <div className="flex flex-1 flex-col p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl ${owned ? 'bg-violet-100' : product.paid ? 'bg-amber-100' : 'bg-emerald-100'}`}>{owned ? '◆' : product.paid ? '✦' : '✓'}</div><div className="min-w-0"><h4 className="truncate font-bold text-slate-900">{product.name}</h4><p className="truncate text-xs text-slate-500">{product.publisher.displayName}</p></div></div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${product.compatible ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{product.compatible ? 'Compatible' : 'Incompatible'}</span>
         </div>
-        <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-600">{product.description}</p>
+        <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-600">{product.promotionalDescription || product.description}</p>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2.5 py-1 font-semibold ${product.paid ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>{product.paid ? (product.prices[0] ? formatMoney(product.prices[0].amountMinor, product.prices[0].currency) : 'Price unavailable') : 'Free'}</span>{owned && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">Purchased</span>}{installed && <span className="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">{installed.status === 'active' ? 'Active' : 'Installed'}</span>}</div>
         {release && <p className="mt-3 text-xs text-slate-500">Version {release.version} · Core {release.requiresCore}</p>}
         {release && <details className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-slate-700">Access and data policy</summary><InfoList label="Capabilities" values={release.capabilities} /><InfoList label="Permissions" values={release.permissions} /><InfoList label="Required plugins" values={Object.entries(release.dependencies).map(([id, range]) => `${id} ${range}`)} /><InfoList label="Optional integrations" values={Object.entries(release.optionalDependencies).map(([id, range]) => `${id} ${range}`)} /><p className="mt-2"><strong>Migrations:</strong> {release.migrationSummary.count}{release.migrationSummary.destructive ? ' · destructive change declared' : ' · non-destructive'}</p><p className="mt-2"><strong>Data:</strong> preserved when deactivated or removed; adopted after reinstall.</p></details>}
         {missingDependencies.length > 0 && <p role="alert" className="mt-3 text-xs font-medium text-amber-700">Install and activate first: {missingDependencies.map(([id, range]) => `${id} ${range}`).join(', ')}</p>}
         <div className="mt-auto flex flex-wrap gap-2 pt-5">
-          {product.paid && !owned && !paymentPending && <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => buy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy plugin'}</button>}
+          {action === 'buy' && !paymentPending && <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => buy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy'}</button>}
           {product.paid && !owned && paymentPending && <a className="btn btn-primary" href="/admin/platform-billing">Complete payment</a>}
-          {product.compatible && (owned || !product.paid) && !installed && <button className="btn btn-primary" disabled={!!busy || missingDependencies.length > 0} onClick={() => installFromMarketplace(product)}>{busy === `${product.id}:install` ? 'Installing…' : owned ? 'Install purchased plugin' : 'Review & install'}</button>}
-          {installed && <a className="btn btn-secondary" href="#installed-plugins">Manage plugin</a>}
+          {action === 'activate' && <button className="btn btn-primary" disabled={!!busy || !product.compatible || missingDependencies.length > 0} onClick={() => installFromMarketplace(product)}>{busy === `${product.id}:install` ? 'Activating…' : 'Activate'}</button>}
+          {action === 'activate-installed' && installed && <button className="btn btn-primary" disabled={!!busy || runtime?.safeMode || installed.entitlement?.mode === 'read_only'} onClick={() => lifecycle(installed, 'activate')}>{busy === `${installed.id}:activate` ? 'Activating…' : 'Activate'}</button>}
+          {action === 'active' && <button className="btn btn-secondary" disabled>✓ Active</button>}
+          <button className="btn btn-secondary" type="button" onClick={() => setSelectedProduct(product)}>View details</button>
+        </div>
         </div>
       </article>;
     })}</div>;
@@ -416,7 +424,7 @@ export default function PluginsPage() {
         <Sidebar title="Admin Panel" subtitle="Wattanam" navItems={adminNav} accentColor="indigo" />
         <div className="page-content">
           <div className="h-14 lg:hidden" />
-          <div className="page-header"><h1 className="text-2xl font-bold text-slate-800">Plugin Manager</h1><p className="mt-1 text-sm text-slate-500">Browse, buy, and install verified plugins through the Wattanam Marketplace.</p></div>
+          <div className="page-header"><h1 className="text-2xl font-bold text-slate-800">Plugin Manager</h1><p className="mt-1 text-sm text-slate-500">Discover, activate, and buy verified tools from the Wattanam Marketplace.</p></div>
           <div className="page-body space-y-6">
             {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
             {purchase && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900"><div><strong>Invoice {purchase.invoiceNumber} created.</strong><p className="mt-1">Pay {formatMoney(purchase.amountMinor, purchase.currency)} by scanning the configured bank QR, then submit the receipt for approval.</p></div><a className="btn btn-primary" href="/admin/platform-billing">Open payment &amp; upload receipt</a></div>}
@@ -505,7 +513,7 @@ export default function PluginsPage() {
             </section>
 
             <section id="installed-plugins" className="scroll-mt-6 space-y-4">
-              <div><h2 className="text-xl font-bold text-slate-900">Installed Plugins</h2><p className="mt-1 text-sm text-slate-500">Activate, deactivate, update, roll back, or remove plugin files on this school.</p></div>
+              <div><h2 className="text-xl font-bold text-slate-900">Installed Plugins</h2><p className="mt-1 text-sm text-slate-500">Activate, deactivate, update, roll back, or remove plugins on this school.</p></div>
               {plugins.length === 0 && <div className="card p-8 text-center text-sm text-slate-500">No plugins are installed.</div>}
               {plugins.map((plugin) => (
                 <article key={plugin.id} className="card p-6">
@@ -528,6 +536,7 @@ export default function PluginsPage() {
                 </article>
               ))}
             </section>
+            {selectedProduct && <PluginDetailModal product={selectedProduct} installed={plugins.find((plugin) => plugin.id === selectedProduct.id)} owned={!!selectedProduct.ownership?.some((entry) => entry.status === 'ACTIVE')} paymentPending={orders.some((order) => order.status === 'PENDING' && order.lines.some((line) => line.pluginId === selectedProduct.id))} busy={busy} onClose={() => setSelectedProduct(null)} onBuy={buy} onActivate={installFromMarketplace} onLifecycle={lifecycle} />}
           </div>
         </div>
       </div>
@@ -538,6 +547,30 @@ export default function PluginsPage() {
 function Status({ value }: { value: PluginRecord['status'] }) {
   const style = value === 'active' ? 'bg-emerald-50 text-emerald-700' : value === 'failed' ? 'bg-red-50 text-red-700' : ['activating', 'deactivating', 'migrating'].includes(value) ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600';
   return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${style}`}>{value}</span>;
+}
+
+function PluginDetailModal({ product, installed, owned, paymentPending, busy, onClose, onBuy, onActivate, onLifecycle }: {
+  product: CatalogProduct; installed?: PluginRecord; owned: boolean; paymentPending: boolean; busy: string;
+  onClose: () => void; onBuy: (product: CatalogProduct) => Promise<void>; onActivate: (product: CatalogProduct) => Promise<void>;
+  onLifecycle: (plugin: PluginRecord, action: 'activate' | 'deactivate') => Promise<void>;
+}) {
+  const release = product.versions[0];
+  return <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="plugin-detail-title" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <article className="mx-auto my-4 max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+      {product.coverImage ? <img src={product.coverImage} alt={`${product.name} cover`} className="aspect-[3/1] w-full object-cover" /> : <div className="h-40 bg-gradient-to-br from-indigo-100 via-white to-cyan-100" />}
+      <div className="p-6 sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-indigo-600">{product.publisher.displayName}</p><h2 id="plugin-detail-title" className="mt-1 text-3xl font-bold text-slate-950">{product.name}</h2><p className="mt-2 font-mono text-xs text-slate-500">{product.id}{release ? ` · Version ${release.version}` : ''}</p></div><button className="btn btn-secondary" type="button" onClick={onClose}>Close</button></div>
+        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_260px]">
+          <div><h3 className="text-lg font-bold text-slate-900">About this plugin</h3><div className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-600">{product.promotionalDescription || product.description}</div>
+            {!!product.screenshots?.length && <section className="mt-9"><h3 className="text-lg font-bold text-slate-900">Interface screenshots</h3><div className="mt-4 grid gap-4 sm:grid-cols-2">{product.screenshots.map((image, index) => <a key={`${image.slice(-20)}-${index}`} href={image} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50"><img src={image} alt={`${product.name} interface screenshot ${index + 1}`} className="aspect-video w-full object-cover transition hover:scale-[1.02]" /></a>)}</div></section>}
+          </div>
+          <aside className="h-fit rounded-2xl border border-slate-200 bg-slate-50 p-5"><dl className="space-y-4 text-sm"><div><dt className="text-xs font-semibold uppercase text-slate-500">Access</dt><dd className="mt-1 font-bold text-slate-900">{product.paid ? (product.prices[0] ? formatMoney(product.prices[0].amountMinor, product.prices[0].currency) : 'Price unavailable') : 'Free'}</dd></div><div><dt className="text-xs font-semibold uppercase text-slate-500">Compatibility</dt><dd className={`mt-1 font-semibold ${product.compatible ? 'text-emerald-700' : 'text-red-700'}`}>{product.compatible ? 'Compatible' : 'Incompatible'}</dd></div><div><dt className="text-xs font-semibold uppercase text-slate-500">Licence</dt><dd className="mt-1 text-slate-700">{product.license}</dd></div>{release && <div><dt className="text-xs font-semibold uppercase text-slate-500">Requires core</dt><dd className="mt-1 text-slate-700">{release.requiresCore}</dd></div>}</dl>
+            <div className="mt-6 grid gap-2">{installed?.status === 'active' ? <button className="btn btn-secondary" disabled>✓ Active</button> : installed ? <button className="btn btn-primary" disabled={!!busy || installed.entitlement?.mode === 'read_only'} onClick={() => void onLifecycle(installed, 'activate')}>{busy === `${installed.id}:activate` ? 'Activating…' : 'Activate'}</button> : product.paid && !owned ? paymentPending ? <a className="btn btn-primary" href="/admin/platform-billing">Complete payment</a> : <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => void onBuy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy'}</button> : <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => void onActivate(product)}>{busy === `${product.id}:install` ? 'Activating…' : 'Activate'}</button>}</div>
+          </aside>
+        </div>
+      </div>
+    </article>
+  </div>;
 }
 
 function Info({ label, value }: { label: string; value: string }) {
