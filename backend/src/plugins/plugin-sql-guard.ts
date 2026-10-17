@@ -32,14 +32,33 @@ export function assertPluginNamespace(pluginId: string, sql: string, label: stri
   // PostgreSQL upserts contain `ON CONFLICT ... DO UPDATE SET`. `UPDATE SET` is not a
   // table reference, but the deliberately small scanner below would otherwise treat `SET`
   // as the target table and reject every transactional upsert as cross-namespace SQL.
-  const referenceSql = sql.replace(/\bDO\s+UPDATE\s+SET\b/gi, 'DO UPSERT SET');
+  const referenceSql = sql
+    .replace(/\bDO\s+UPDATE\s+SET\b/gi, 'DO UPSERT SET')
+    // EXTRACT(field FROM expression) uses FROM as scalar-expression syntax,
+    // not as a relation source.
+    .replace(/\bEXTRACT\s*\(\s*[a-zA-Z_]+\s+FROM\s+/gi, 'EXTRACT(');
+  const cteNames = new Set(
+    [...referenceSql.matchAll(/(?:\bWITH|,)\s+"?([a-zA-Z0-9_]+)"?\s+AS\s*\(/gi)]
+      .map((match) => match[1].toLowerCase()),
+  );
+  const fromAndJoinReferences = [
+    ...referenceSql.matchAll(/\b(?:FROM|JOIN)\s+"?([a-zA-Z0-9_]+)"?/gi),
+  ].filter((match) => {
+    const name = match[1].toLowerCase();
+    const remainingSql = referenceSql.slice((match.index ?? 0) + match[0].length);
+    // CTEs and set-returning functions are query sources, but neither is a
+    // persistent table outside the plugin namespace. Their bodies and
+    // arguments remain in referenceSql and are independently scanned.
+    return !cteNames.has(name) && !/^\s*\(/.test(remainingSql);
+  });
   const tableReferences = [
     ...referenceSql.matchAll(/\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?([a-zA-Z0-9_]+)"?/gi),
     ...referenceSql.matchAll(/\bINSERT\s+INTO\s+"?([a-zA-Z0-9_]+)"?/gi),
     // In CREATE TRIGGER syntax, UPDATE is followed by ON rather than a target
     // table. Excluding ON prevents it from being mistaken for a table name.
     ...referenceSql.matchAll(/\bUPDATE\s+(?!ON\b)(?:ONLY\s+)?"?([a-zA-Z0-9_]+)"?/gi),
-    ...referenceSql.matchAll(/\b(?:FROM|JOIN|REFERENCES)\s+"?([a-zA-Z0-9_]+)"?/gi),
+    ...fromAndJoinReferences,
+    ...referenceSql.matchAll(/\bREFERENCES\s+"?([a-zA-Z0-9_]+)"?/gi),
     ...referenceSql.matchAll(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?[a-zA-Z0-9_]+"?\s+ON\s+"?([a-zA-Z0-9_]+)"?/gi),
     ...referenceSql.matchAll(/\bCREATE\s+(?:CONSTRAINT\s+)?TRIGGER\s+"?[a-zA-Z0-9_]+"?[\s\S]*?\bON\s+"?([a-zA-Z0-9_]+)"?/gi),
   ].map((match) => match[1].toLowerCase());

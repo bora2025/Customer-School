@@ -33,6 +33,23 @@ FOR EACH ROW EXECUTE FUNCTION plugin_wattanam_test_apply();`;
     expect(() => assertPluginNamespace('wattanam.test', triggerSql, 'x')).not.toThrow();
   });
 
+  it('allows CTE and table-function sources while checking tables inside the CTE', () => {
+    const safeQuery = `WITH days AS (
+      SELECT day::date FROM generate_series($1, $2, INTERVAL '1 day') day
+      WHERE EXTRACT(ISODOW FROM day)::integer BETWEEN 1 AND 5
+    ), expected AS (
+      SELECT day FROM days
+      WHERE EXISTS (SELECT 1 FROM plugin_wattanam_test_calendar_event)
+    )
+    SELECT COUNT(*) FROM expected`;
+    expect(() => assertPluginNamespace('wattanam.test', safeQuery, 'x')).not.toThrow();
+
+    const unsafeQuery = `WITH expected AS (
+      SELECT * FROM public_employee
+    ) SELECT COUNT(*) FROM expected`;
+    expect(() => assertPluginNamespace('wattanam.test', unsafeQuery, 'x')).toThrow('only access');
+  });
+
   it('recognizes CREATE INDEX target tables as namespace references', () => {
     expect(() => assertPluginNamespace(
       'wattanam.test',
