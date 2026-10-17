@@ -14,6 +14,25 @@ describe('plugin-sql-guard', () => {
     )).not.toThrow();
   });
 
+  it('distinguishes PL/pgSQL variables and trigger events from table references', () => {
+    const functionSql = `CREATE FUNCTION plugin_wattanam_test_apply() RETURNS trigger AS $$
+DECLARE
+  approved_days INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO approved_days
+  FROM plugin_wattanam_test_permissions
+  WHERE employee_id = NEW.employee_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;`;
+    expect(() => assertPluginNamespace('wattanam.test', functionSql, 'x')).not.toThrow();
+
+    const triggerSql = `CREATE TRIGGER plugin_wattanam_test_apply_trigger
+BEFORE INSERT OR UPDATE ON plugin_wattanam_test_payroll
+FOR EACH ROW EXECUTE FUNCTION plugin_wattanam_test_apply();`;
+    expect(() => assertPluginNamespace('wattanam.test', triggerSql, 'x')).not.toThrow();
+  });
+
   it('recognizes CREATE INDEX target tables as namespace references', () => {
     expect(() => assertPluginNamespace(
       'wattanam.test',

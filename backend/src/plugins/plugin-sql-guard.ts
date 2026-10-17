@@ -33,9 +33,16 @@ export function assertPluginNamespace(pluginId: string, sql: string, label: stri
   // table reference, but the deliberately small scanner below would otherwise treat `SET`
   // as the target table and reject every transactional upsert as cross-namespace SQL.
   const referenceSql = sql.replace(/\bDO\s+UPDATE\s+SET\b/gi, 'DO UPSERT SET');
-  const directReferences = [...referenceSql.matchAll(/\b(?:TABLE|INTO|UPDATE|FROM|JOIN|REFERENCES)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?([a-zA-Z0-9_]+)"?/gi)];
-  const indexReferences = [...referenceSql.matchAll(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?[a-zA-Z0-9_]+"?\s+ON\s+"?([a-zA-Z0-9_]+)"?/gi)];
-  const tableReferences = [...directReferences, ...indexReferences].map((match) => match[1].toLowerCase());
+  const tableReferences = [
+    ...referenceSql.matchAll(/\b(?:CREATE|ALTER|DROP|TRUNCATE)\s+TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?([a-zA-Z0-9_]+)"?/gi),
+    ...referenceSql.matchAll(/\bINSERT\s+INTO\s+"?([a-zA-Z0-9_]+)"?/gi),
+    // In CREATE TRIGGER syntax, UPDATE is followed by ON rather than a target
+    // table. Excluding ON prevents it from being mistaken for a table name.
+    ...referenceSql.matchAll(/\bUPDATE\s+(?!ON\b)(?:ONLY\s+)?"?([a-zA-Z0-9_]+)"?/gi),
+    ...referenceSql.matchAll(/\b(?:FROM|JOIN|REFERENCES)\s+"?([a-zA-Z0-9_]+)"?/gi),
+    ...referenceSql.matchAll(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?[a-zA-Z0-9_]+"?\s+ON\s+"?([a-zA-Z0-9_]+)"?/gi),
+    ...referenceSql.matchAll(/\bCREATE\s+(?:CONSTRAINT\s+)?TRIGGER\s+"?[a-zA-Z0-9_]+"?[\s\S]*?\bON\s+"?([a-zA-Z0-9_]+)"?/gi),
+  ].map((match) => match[1].toLowerCase());
   if (!tableReferences.length || tableReferences.some((table) => !table.startsWith(namespace))) {
     throw new BadRequestException(`${label} may only access tables beginning with ${namespace}`);
   }
