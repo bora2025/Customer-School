@@ -84,9 +84,11 @@ function samplePeople(mode: 'student' | 'staff'): Person[] { return Array.from({
 
 export default function PluginIdCardManager({ pluginId, value, data, sources, options, loading, error }: any) {
   const mode = options.mode === 'staff' ? 'staff' : 'student'; const classes = useMemo(() => rows<ClassRow>(value), [value]); const years = rows<any>(data[options.studyYearsSource]);
+  const organizationMode = pluginId === 'wattanam.organizing-management';
+  const defaultTemplate = useMemo(() => organizationMode && mode === 'staff' ? { ...DEFAULT_TEMPLATES.staff, schoolName: 'Organization', cardTitle: 'Workforce Identification Card', footerText: 'Official workforce attendance card' } : DEFAULT_TEMPLATES[mode], [organizationMode, mode]);
   const staff = rows<Person>(value); const [classId, setClassId] = useState(''); const [yearId, setYearId] = useState(''); const [students, setStudents] = useState<Person[]>([]); const [query, setQuery] = useState(''); const [busy, setBusy] = useState(false); const [loadError, setLoadError] = useState(''); const [showSamples, setShowSamples] = useState(false); const [message, setMessage] = useState('');
-  const savedTemplate = data[options.templateSource] as Partial<CardTemplate> | undefined; const [template, setTemplate] = useState<CardTemplate>(DEFAULT_TEMPLATES[mode]);
-  useEffect(() => { if (savedTemplate && !Array.isArray(savedTemplate)) setTemplate({ ...DEFAULT_TEMPLATES[mode], ...savedTemplate }); }, [savedTemplate, mode]);
+  const savedTemplate = data[options.templateSource] as Partial<CardTemplate> | undefined; const [template, setTemplate] = useState<CardTemplate>(defaultTemplate);
+  useEffect(() => { setTemplate(savedTemplate && !Array.isArray(savedTemplate) ? { ...defaultTemplate, ...savedTemplate } : defaultTemplate); }, [savedTemplate, defaultTemplate]);
   const currentYear = years.find((item) => item.isCurrent)?.id || years[0]?.id || '';
   useEffect(() => { if (!yearId && currentYear) setYearId(currentYear); }, [currentYear, yearId]);
   const visibleClasses = classes.filter((item) => !yearId || item.studyYearId === yearId); const selectedClass = classes.find((item) => item.id === classId); const selectedYear = years.find((item) => item.id === (selectedClass?.studyYearId || yearId));

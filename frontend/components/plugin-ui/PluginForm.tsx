@@ -66,7 +66,8 @@ export default function PluginForm({ pluginId, source, params, fields, options, 
         field.type === 'number' && values[field.id] !== '' ? Number(values[field.id])
           : field.type === 'json' ? JSON.parse(String(values[field.id])) : values[field.id],
       ]));
-      const endpoint = `/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(source.path, params)}`;
+      const routeValues = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value ?? '')]));
+      const endpoint = `/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(source.path, { ...routeValues, ...params })}`;
       const response = await apiFetch(endpoint, { method: source.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
