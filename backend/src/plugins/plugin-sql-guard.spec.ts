@@ -43,6 +43,24 @@ describe('plugin-sql-guard', () => {
     expect(() => assertNoForbiddenSql('COPY plugin_wattanam_test_notes TO STDOUT', 'x')).toThrow('forbidden');
   });
 
+  it('allows PL/pgSQL function block BEGIN without weakening forbidden-operation checks', () => {
+    const safeFunction = `CREATE FUNCTION plugin_wattanam_test_apply() RETURNS trigger AS $$
+BEGIN
+  NEW.value := 'ready';
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;`;
+    expect(() => assertNoForbiddenSql(safeFunction, 'x')).not.toThrow();
+
+    const unsafeFunction = `CREATE FUNCTION plugin_wattanam_test_apply() RETURNS trigger AS $body$
+BEGIN
+  GRANT ALL ON plugin_wattanam_test_notes TO public;
+  RETURN NEW;
+END;
+$body$ LANGUAGE plpgsql;`;
+    expect(() => assertNoForbiddenSql(unsafeFunction, 'x')).toThrow('forbidden');
+  });
+
   it('ignores forbidden-operation words in comments but still scans following SQL', () => {
     expect(() => assertNoForbiddenSql('-- preserve rows for rollback\nALTER TABLE plugin_wattanam_test_notes ADD COLUMN value TEXT', 'x')).not.toThrow();
     expect(() => assertNoForbiddenSql('/* rollback documentation */\nGRANT ALL ON plugin_wattanam_test_notes TO public', 'x')).toThrow('forbidden');

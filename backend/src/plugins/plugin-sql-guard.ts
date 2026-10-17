@@ -11,7 +11,17 @@ export function assertNoForbiddenSql(sql: string, label: string) {
   // Comments are documentation, not executable SQL. Ignoring them prevents words such as
   // "rollback" in a migration rationale from becoming false positives while the executable
   // statement immediately following the comment is still inspected.
-  const executableSql = sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\r\n]*/g, ' ');
+  let executableSql = sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\r\n]*/g, ' ');
+
+  // A PL/pgSQL function body uses BEGIN as a block delimiter, not as transaction
+  // control. Keep scanning every other token inside the body (GRANT, COPY, etc.)
+  // and suppress only those BEGIN tokens when the outer statement is a function.
+  if (/^\s*CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\b/i.test(executableSql)) {
+    executableSql = executableSql.replace(/(\$[a-zA-Z0-9_]*\$)([\s\S]*?)\1/g, (_match, delimiter: string, body: string) => (
+      `${delimiter}${body.replace(/\bBEGIN\b/gi, ' ')}${delimiter}`
+    ));
+  }
+
   if (/\b(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|CREATE\s+(?:ROLE|USER|EXTENSION)|ALTER\s+(?:ROLE|USER|SYSTEM)|COPY\b|PROGRAM\b|DO\s*\$|SET\s+ROLE|GRANT\b|REVOKE\b)\b/i.test(executableSql)) {
     throw new BadRequestException(`${label} contains a forbidden database operation`);
   }
