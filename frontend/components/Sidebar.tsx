@@ -413,18 +413,6 @@ export default function Sidebar({ title, subtitle, navItems, accentColor = 'indi
 
         {/* Navigation */}
         <nav ref={navRef} className="flex-1 px-2 py-3 overflow-y-auto overscroll-contain scroll-smooth">
-          {/* Back to Home */}
-          <Link
-            href="/"
-            title={sidebarOpen ? undefined : t('common.backToHome')}
-            className={`flex items-center gap-3 px-2.5 py-2 mb-1 rounded-xl text-sm ${colors.text} hover:bg-white/10 transition-colors ${sidebarOpen ? '' : 'justify-center'}`}
-          >
-            <svg viewBox="0 0 20 20" className="shrink-0" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 4l-6 6 6 6" />
-            </svg>
-            {sidebarOpen && <span className="truncate text-white/70">{t('common.backToHome')}</span>}
-          </Link>
-          <div className={`border-t border-white/10 mb-2 ${sidebarOpen ? 'mx-1' : 'mx-0'}`} />
           {effectiveNavItems.map((item, idx) => {
             // ── Active state detection ──────────────────────────────────
             // isExact: user is on exactly this page
@@ -504,6 +492,17 @@ export default function Sidebar({ title, subtitle, navItems, accentColor = 'indi
 
         {/* Bottom — compact, icon-only regardless of expand state */}
         <div className={`px-2 py-2 border-t border-white/10 flex items-center gap-0.5 ${sidebarOpen ? 'justify-center' : 'flex-col'}`}>
+          <Link
+            href="/"
+            title={t('common.backToHome')}
+            aria-label={t('common.backToHome')}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center ${colors.text} hover:bg-white/10 transition-colors`}
+          >
+            <svg viewBox="0 0 20 20" width={17} height={17} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 4l-6 6 6 6" />
+              <path d="M6 10h11" />
+            </svg>
+          </Link>
           <InstallAppButton variant="icon" className={`${colors.text} hover:bg-white/10`} />
           <button
             onClick={() => setLang(lang === 'en' ? 'kh' : 'en')}

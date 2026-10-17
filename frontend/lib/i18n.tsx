@@ -7,7 +7,7 @@ const en: Record<string, string> = {
   // Navigation
   'nav.dashboard': 'Dashboard',
   'nav.search': 'Search',
-  'nav.manageUsers': 'Manage Users',
+  'nav.manageUsers': 'Manage Admin',
   'nav.manageHub': 'Manage Hub',
   'nav.manageOfficer': 'Manage Officer',
   'nav.manageClasses': 'Manage Classes',
@@ -23,7 +23,7 @@ const en: Record<string, string> = {
   'nav.staffCards': 'Staff ID Cards',
   'nav.sessionSettings': 'Session Settings',
   'nav.holidays': 'Holidays',
-  'nav.studyYears': 'Study Years',
+  'nav.studyYears': 'Academic Years',
   'nav.settings': 'Settings',
   'nav.myClasses': 'My Classes',
   'nav.staffAttendance': 'Staff Attendance',

@@ -101,7 +101,7 @@ export default function PluginStudyYearManager({ pluginId, value, sources, optio
 
   return <div className="space-y-7">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div><h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Study Years</h1><p className="mt-1 text-base text-slate-500">Manage academic study years. Create a study year first, then create classes under it.</p></div>
+      <div><h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Academic Years</h1><p className="mt-1 text-base text-slate-500">Manage academic years. Create an academic year first, then create classes under it.</p></div>
       <button className="inline-flex min-h-11 items-center justify-center self-start rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-200" onClick={() => { setOpen((current) => !current); setFormError(''); }}>+ New Study Year</button>
     </div>
 
