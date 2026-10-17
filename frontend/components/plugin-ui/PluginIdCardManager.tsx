@@ -5,7 +5,7 @@ import QRCode from 'qrcode';
 import { apiFetch } from '../../lib/api';
 
 type Source = { id: string; method: string; path: string };
-type Person = { id: string; name?: string; nameKh?: string; studentNumber?: string; employeeNumber?: string; position?: string; photo?: string; phone?: string; email?: string; qrCode?: string; dateOfBirth?: string; address?: string; user?: { name?: string; email?: string; phone?: string; photo?: string } };
+type Person = { id: string; name?: string; nameKh?: string; studentNumber?: string; employeeNumber?: string; position?: string; photo?: string; phone?: string; email?: string; qrCode?: string; dateOfBirth?: string; address?: string; department?: { id?: string; name?: string; nameKh?: string }; user?: { name?: string; email?: string; phone?: string; photo?: string } };
 type ClassRow = { id: string; name: string; subject?: string; studentCount?: number; teacher?: { name?: string }; studyYearId?: string; studyYear?: { id: string; label?: string; isCurrent?: boolean } };
 type CardTemplate = { schoolName: string; cardTitle: string; logoUrl: string; cardSize: 'cr80-portrait' | 'cr80-landscape'; designPreset: string; primaryColor: string; accentColor: string; footerText: string; extraInfo: string; showPhone: boolean; showEmail: boolean; showAddress: boolean; showDateOfBirth: boolean };
 const STUDENT_PRESETS = [
@@ -20,9 +20,14 @@ const STUDENT_PRESETS = [
   { id: 'sky-minimal', name: 'Sky Minimal', primaryColor: '#0369a1', accentColor: '#38bdf8', cardSize: 'cr80-portrait' },
   { id: 'charcoal-pro', name: 'Charcoal Pro', primaryColor: '#111827', accentColor: '#f59e0b', cardSize: 'cr80-landscape' },
 ] as const;
+const STAFF_PRESETS = [
+  { id: 'staff-geometric-mint', name: 'Geometric Mint', description: 'Bold office employee portrait', primaryColor: '#164e3f', accentColor: '#3b9478', cardSize: 'cr80-portrait' },
+  { id: 'staff-olive-modern', name: 'Olive Modern', description: 'Rounded professional identity card', primaryColor: '#52683c', accentColor: '#a6c46a', cardSize: 'cr80-portrait' },
+  { id: 'staff-dual-cream', name: 'Cream Front & Back', description: 'Two-sided member card with QR back', primaryColor: '#292524', accentColor: '#d6b56f', cardSize: 'cr80-portrait' },
+] as const;
 const DEFAULT_TEMPLATES: Record<'student' | 'staff', CardTemplate> = {
   student: { schoolName: 'Wattanam School', cardTitle: 'Student Identification Card', logoUrl: '', cardSize: 'cr80-portrait', designPreset: 'classic-orange', primaryColor: '#ea580c', accentColor: '#f97316', footerText: 'Scan QR code for attendance', extraInfo: '', showPhone: true, showEmail: false, showAddress: true, showDateOfBirth: true },
-  staff: { schoolName: 'Wattanam School', cardTitle: 'Staff Identification Card', logoUrl: '', cardSize: 'cr80-landscape', designPreset: 'staff-professional', primaryColor: '#0f766e', accentColor: '#d97706', footerText: 'Official staff attendance card', extraInfo: '', showPhone: true, showEmail: true, showAddress: false, showDateOfBirth: false },
+  staff: { schoolName: 'Wattanam School', cardTitle: 'Office Employee ID Card', logoUrl: '', cardSize: 'cr80-portrait', designPreset: 'staff-geometric-mint', primaryColor: '#164e3f', accentColor: '#3b9478', footerText: 'Official staff attendance card', extraInfo: '', showPhone: true, showEmail: true, showAddress: false, showDateOfBirth: false },
 };
 function rows<T>(value: unknown): T[] { return Array.isArray(value) ? value as T[] : value && typeof value === 'object' && Array.isArray((value as any).items) ? (value as any).items : []; }
 function pathOf(source: Source, params: Record<string, string>) { return source.path.replace(/:([a-zA-Z][a-zA-Z0-9_]*)/g, (_, key) => encodeURIComponent(params[key] || '')); }
@@ -41,8 +46,8 @@ function IdentityCard({ person, subtitle, year, template }: { person: Person; su
   function downloadQr() { if (!qr) return; const anchor = document.createElement('a'); anchor.href = qr; anchor.download = `${number}-attendance-qr.png`; anchor.click(); }
   const phone = person.user?.phone || person.phone; const email = person.user?.email || person.email;
   const landscape = template.cardSize === 'cr80-landscape';
-  return <div className={`id-card-item ${landscape ? 'is-landscape' : 'is-portrait'}`}>
-    <article className="id-card-face" style={{ borderColor: template.primaryColor }}>
+  const hasBack = template.designPreset === 'staff-dual-cream'; const department = person.department?.nameKh || person.department?.name;
+  const front = <article className={`id-card-face preset-${template.designPreset}`} style={{ borderColor: template.primaryColor }}>
       <header className="id-card-header" style={{ background: `linear-gradient(110deg, ${template.primaryColor}, ${template.accentColor})` }}>
         {template.logoUrl && <img src={template.logoUrl} alt={`${template.schoolName} logo`} className="id-card-logo" />}
         <span className="min-w-0"><strong>{template.schoolName}</strong><small>{template.cardTitle}</small></span>
@@ -53,6 +58,7 @@ function IdentityCard({ person, subtitle, year, template }: { person: Person; su
           <h2>{personName(person)}</h2>
           <p className="id-card-number" style={{ color: template.primaryColor }}>ID: {number}</p>
           <p className="id-card-role" style={{ color: template.accentColor }}>{subtitle}</p>
+          {department && <p><b>Department:</b> {department}</p>}
           {year && <p><b>Study year:</b> {year}</p>}
           {template.showDateOfBirth && person.dateOfBirth && <p><b>Date of birth:</b> {displayDate(person.dateOfBirth)}</p>}
           {template.showPhone && phone && <p><b>Phone:</b> {phone}</p>}
@@ -63,7 +69,13 @@ function IdentityCard({ person, subtitle, year, template }: { person: Person; su
         <div className="id-card-qr-wrap">{qr ? <img src={qr} alt={`Attendance QR for ${personName(person)}`} className="id-card-qr" /> : <div className="id-card-qr-missing">QR<br />missing</div>}<span>SCAN TO ATTEND</span></div>
         <p className="id-card-footer" style={{ color: template.primaryColor }}>{template.footerText}</p>
       </div>
-    </article>
+    </article>;
+  const back = hasBack && <article className="id-card-face id-card-back preset-staff-dual-cream" style={{ borderColor: template.primaryColor }}>
+    <header className="id-card-back-header">{template.logoUrl && <img src={template.logoUrl} alt="" className="id-card-logo" />}<strong>{template.schoolName}</strong></header>
+    <div className="id-card-back-body"><h3>{personName(person)}</h3><p>{subtitle}</p><div className="id-card-back-qr">{qr ? <img src={qr} alt={`Attendance QR for ${personName(person)}`} /> : <span>QR identifier missing</span>}</div><strong>SCAN FOR ATTENDANCE</strong>{phone && <p>{phone}</p>}{email && <p>{email}</p>}{template.extraInfo && <p>{template.extraInfo}</p>}<small>ID No. {number}</small></div>
+  </article>;
+  return <div className={`id-card-item ${landscape ? 'is-landscape' : 'is-portrait'} ${hasBack ? 'has-back' : ''}`}>
+    <div className="id-card-sides">{front}{back}</div>
     <div className="id-card-actions print:hidden"><button onClick={downloadQr} disabled={!qr}>↓ QR PNG</button><button onClick={() => window.print()} style={{ color: template.primaryColor }}>Print / PDF</button></div>
   </div>;
 }
@@ -85,6 +97,7 @@ export default function PluginIdCardManager({ pluginId, value, data, sources, op
   return <section className="space-y-6"><style jsx global>{`
     .id-card-print-grid { align-items: start; justify-items: center; }
     .id-card-item { break-inside: avoid; display: flex; flex-direction: column; width: max-content; }
+    .id-card-sides { display: flex; flex-wrap: wrap; gap: 12px; }
     .id-card-face { background: #fff; border-style: solid; border-width: 2px; box-sizing: border-box; color: #0f172a; flex: none; overflow: hidden; position: relative; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .id-card-item.is-portrait .id-card-face { border-radius: 4mm; height: 86mm; width: 54mm; }
     .id-card-item.is-landscape .id-card-face { border-radius: 4mm; height: 54mm; width: 86mm; }
@@ -123,6 +136,34 @@ export default function PluginIdCardManager({ pluginId, value, data, sources, op
     .id-card-actions { display: flex; gap: 6px; padding-top: 6px; }
     .id-card-actions button { border: 1px solid #cbd5e1; border-radius: 8px; flex: 1; font-size: 11px; font-weight: 700; padding: 7px; }
     .id-card-actions button:disabled { opacity: .4; }
+    .preset-staff-geometric-mint { background: #a7ddcc; }
+    .preset-staff-geometric-mint::before, .preset-staff-geometric-mint::after { background: var(--staff-accent, #3b9478); content: ''; height: 78px; opacity: .9; position: absolute; top: 45px; transform: skewY(28deg); width: 78px; z-index: 0; }
+    .preset-staff-geometric-mint::before { left: -35px; }
+    .preset-staff-geometric-mint::after { right: -35px; transform: skewY(-28deg); }
+    .preset-staff-geometric-mint .id-card-header { background: transparent !important; color: #0f172a; height: 68px; position: relative; z-index: 1; }
+    .preset-staff-geometric-mint .id-card-header strong { font-size: 16px; text-transform: uppercase; }
+    .preset-staff-geometric-mint .id-card-photo { border-radius: 0; clip-path: polygon(50% 0, 100% 24%, 100% 76%, 50% 100%, 0 76%, 0 24%); height: 88px; width: 88px; }
+    .preset-staff-geometric-mint .id-card-body { height: calc(100% - 68px); }
+    .preset-staff-olive-modern { background: #eaffb9; }
+    .preset-staff-olive-modern .id-card-header { background: #52683c !important; border-radius: 0 0 36px 0; height: 72px; }
+    .preset-staff-olive-modern .id-card-body { height: calc(100% - 72px); }
+    .preset-staff-olive-modern .id-card-photo { border-color: #8aaa58 !important; box-shadow: 0 0 0 4px #dff7a7; }
+    .preset-staff-olive-modern .id-card-role { background: #6b814c; color: #fff !important; display: inline-block; padding: 2px 7px; }
+    .preset-staff-dual-cream { background: radial-gradient(circle at 15% 10%, #f0dfbf 0 2px, transparent 3px), linear-gradient(145deg, #fffdf7, #f3e7cf); }
+    .preset-staff-dual-cream .id-card-header { background: transparent !important; color: #292524; }
+    .preset-staff-dual-cream .id-card-photo { border-color: #d6b56f !important; }
+    .preset-staff-dual-cream:not(.id-card-back) .id-card-body { grid-template-rows: 74px minmax(0, 1fr) 0 10px; }
+    .preset-staff-dual-cream:not(.id-card-back) .id-card-qr-wrap { display: none; }
+    .id-card-back-header { align-items: center; display: flex; gap: 8px; justify-content: center; padding: 15px 10px 5px; }
+    .id-card-back-header strong { font-size: 13px; }
+    .id-card-back-body { align-items: center; display: flex; flex-direction: column; height: calc(100% - 58px); overflow: hidden; padding: 6px 14px 10px; text-align: center; }
+    .id-card-back-body h3 { font-size: 14px; font-weight: 800; margin: 0; }
+    .id-card-back-body p { font-size: 8px; line-height: 11px; margin: 1px 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .id-card-back-body > strong { font-size: 7px; letter-spacing: .05em; margin: 2px 0; }
+    .id-card-back-body small { bottom: 9px; font-size: 7px; position: absolute; }
+    .id-card-back-qr { align-items: center; background: #fff; border: 1px solid #d6b56f; display: flex; height: 82px; justify-content: center; margin: 5px 0 2px; padding: 3px; width: 82px; }
+    .id-card-back-qr img { height: 100%; width: 100%; }
+    .id-card-back-qr span { color: #dc2626; font-size: 8px; }
     @media print {
       @page { margin: 8mm; size: A4 portrait; }
       body * { visibility: hidden !important; }
@@ -130,12 +171,14 @@ export default function PluginIdCardManager({ pluginId, value, data, sources, op
       .id-card-print-grid, .id-card-print-grid * { visibility: visible !important; }
       .id-card-item.is-portrait .id-card-face { border-radius: 4mm; height: 86mm; width: 54mm; }
       .id-card-item.is-landscape .id-card-face { border-radius: 4mm; height: 54mm; width: 86mm; }
+      .id-card-item.has-back, .id-card-item.has-back .id-card-sides { display: contents; }
       .id-card-actions { display: none !important; }
     }
   `}</style><header className="flex flex-wrap items-start justify-between gap-4 print:hidden"><div><h1 className="text-3xl font-extrabold text-slate-900">{mode === 'staff' ? '👥 Staff ID Cards' : '🎓 Student ID Cards'}</h1><p className="mt-1 text-sm text-slate-500">{mode === 'staff' ? `${staff.length} staff members` : `${selectedYear?.label || 'Current study year'} · ${visibleClasses.length} classes · ${visibleClasses.reduce((sum, item) => sum + Number(item.studentCount || 0), 0)} students`}</p></div>{mode === 'student' && <select value={yearId} onChange={(event) => { setYearId(event.target.value); setClassId(''); setStudents([]); }} className="rounded-xl border px-4 py-3">{years.map((item) => <option key={item.id} value={item.id}>{item.label || item.year}{item.isCurrent ? ' (Current)' : ''}</option>)}</select>}</header>
     {(error || loadError) && <p className="rounded-xl bg-red-50 p-4 text-red-700">{error || loadError}</p>}
     {message && <p className="rounded-xl bg-emerald-50 p-4 text-emerald-700">{message}</p>}
     {mode === 'student' && <section className="rounded-2xl border bg-white p-5 shadow-sm print:hidden"><h2 className="text-lg font-bold">10 Student ID Card Templates</h2><p className="mt-1 text-sm text-slate-500">Choose an original professional design inspired by the uploaded examples, then customize its logo, information, colors, and size.</p><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{STUDENT_PRESETS.map((preset, index) => <button key={preset.id} type="button" onClick={() => setTemplate({ ...template, designPreset: preset.id, primaryColor: preset.primaryColor, accentColor: preset.accentColor, cardSize: preset.cardSize })} className={`overflow-hidden rounded-xl border-2 text-left transition ${template.designPreset === preset.id ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-slate-200 hover:border-slate-400'}`}><span className="block h-20 p-3 text-white" style={{ background: `linear-gradient(135deg, ${preset.primaryColor}, ${preset.accentColor})` }}><span className="text-lg font-black">{String(index + 1).padStart(2, '0')}</span><span className="mt-2 block text-[10px] font-bold uppercase tracking-wider">Student ID Card</span></span><span className="block bg-white px-3 py-2 text-xs font-semibold text-slate-700">{preset.name}<small className="block font-normal text-slate-400">{preset.cardSize === 'cr80-portrait' ? 'Portrait' : 'Landscape'}</small></span></button>)}</div></section>}
+    {mode === 'staff' && <section className="rounded-2xl border bg-white p-5 shadow-sm print:hidden"><h2 className="text-lg font-bold">Staff ID Card Templates</h2><p className="mt-1 text-sm text-slate-500">Choose a professional portrait design. The Cream template includes printable front and back sides with the attendance QR on the back.</p><div className="mt-4 grid gap-3 md:grid-cols-3">{STAFF_PRESETS.map((preset, index) => <button key={preset.id} type="button" onClick={() => setTemplate({ ...template, designPreset: preset.id, primaryColor: preset.primaryColor, accentColor: preset.accentColor, cardSize: preset.cardSize })} className={`overflow-hidden rounded-xl border-2 text-left transition ${template.designPreset === preset.id ? 'border-indigo-600 ring-2 ring-indigo-100' : 'border-slate-200 hover:border-slate-400'}`}><span className="flex h-24 items-end p-3 text-white" style={{ background: `linear-gradient(145deg, ${preset.primaryColor}, ${preset.accentColor})` }}><span><b className="block text-xl">0{index + 1}</b><small className="font-bold uppercase tracking-wider">{index === 2 ? 'Front + Back' : 'Staff ID Card'}</small></span></span><span className="block bg-white px-3 py-2 text-sm font-semibold text-slate-700">{preset.name}<small className="block font-normal text-slate-400">{preset.description}</small></span></button>)}</div></section>}
     <details className="rounded-2xl border bg-white p-5 shadow-sm print:hidden" open><summary className="cursor-pointer text-lg font-bold">Design & card information</summary><p className="mt-1 text-sm text-slate-500">Edit the shared {mode} card template. Attendance QR identifiers are protected and remain unchanged.</p><div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4"><label className="text-xs font-semibold">School name<input className="mt-1 w-full rounded-xl border px-3 py-2" value={template.schoolName} onChange={(e) => setTemplate({ ...template, schoolName: e.target.value })} /></label><label className="text-xs font-semibold">Card title<input className="mt-1 w-full rounded-xl border px-3 py-2" value={template.cardTitle} onChange={(e) => setTemplate({ ...template, cardTitle: e.target.value })} /></label><label className="text-xs font-semibold">Card size<select className="mt-1 w-full rounded-xl border px-3 py-2" value={template.cardSize} onChange={(e) => setTemplate({ ...template, cardSize: e.target.value as CardTemplate['cardSize'] })}><option value="cr80-portrait">CR80 Portrait · 54 × 86 mm</option><option value="cr80-landscape">CR80 Landscape · 86 × 54 mm</option></select></label><label className="text-xs font-semibold">School logo URL<input type="url" className="mt-1 w-full rounded-xl border px-3 py-2" value={template.logoUrl.startsWith('data:') ? '' : template.logoUrl} onChange={(e) => setTemplate({ ...template, logoUrl: e.target.value })} placeholder="https://school.example/logo.png" /></label><label className="text-xs font-semibold">Upload school logo<input type="file" accept="image/*" className="mt-1 block w-full text-xs" onChange={(e) => selectLogo(e.target.files?.[0])} /></label><label className="text-xs font-semibold">Primary color<input type="color" className="mt-1 h-10 w-full rounded-xl border p-1" value={template.primaryColor} onChange={(e) => setTemplate({ ...template, primaryColor: e.target.value })} /></label><label className="text-xs font-semibold">Accent color<input type="color" className="mt-1 h-10 w-full rounded-xl border p-1" value={template.accentColor} onChange={(e) => setTemplate({ ...template, accentColor: e.target.value })} /></label><div className="flex items-end">{template.logoUrl ? <span className="flex items-center gap-2"><img src={template.logoUrl} alt="Logo preview" className="h-12 w-12 rounded-full border object-contain" /><button className="text-xs text-red-600" onClick={() => setTemplate({ ...template, logoUrl: '' })}>Remove logo</button></span> : <span className="text-xs text-slate-400">No logo selected</span>}</div><label className="text-xs font-semibold md:col-span-2">Footer text<input className="mt-1 w-full rounded-xl border px-3 py-2" value={template.footerText} onChange={(e) => setTemplate({ ...template, footerText: e.target.value })} /></label><label className="text-xs font-semibold md:col-span-2">Additional card information<textarea rows={2} className="mt-1 w-full rounded-xl border px-3 py-2" value={template.extraInfo} onChange={(e) => setTemplate({ ...template, extraInfo: e.target.value })} placeholder="School address, validity, emergency contact…" /></label></div><div className="mt-4 flex flex-wrap gap-4 text-sm">{([['showPhone','Phone'],['showEmail','Email'],['showAddress','Address'],['showDateOfBirth','Date of birth']] as const).map(([key,label]) => <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={template[key]} onChange={(e) => setTemplate({ ...template, [key]: e.target.checked })} />{label}</label>)}</div><div className="mt-5 flex flex-wrap gap-2"><button disabled={busy} onClick={() => void saveTemplate()} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save Template'}</button><button onClick={() => setShowSamples(!showSamples)} className="rounded-xl border px-5 py-2.5 text-sm font-bold">{showSamples ? 'Show live cards' : 'Preview 10 sample cards'}</button><button onClick={() => setTemplate(DEFAULT_TEMPLATES[mode])} className="rounded-xl border px-5 py-2.5 text-sm">Reset design</button></div></details>
     {mode === 'student' && !classId && <><div className="flex items-center justify-between print:hidden"><h2 className="text-lg font-bold">📖 All Classes in {selectedYear?.label || 'Study Year'}</h2><button onClick={() => window.print()} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white">▣ Download All Cards</button></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{visibleClasses.map((item) => <button key={item.id} onClick={() => void openClass(item.id)} className="overflow-hidden rounded-2xl border text-left shadow-sm"><div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-5 text-white"><span className="float-right rounded-full bg-white/20 px-3 py-1 text-xs font-bold">{item.studentCount || 0} students</span><span className="text-2xl">📖</span><h3 className="mt-4 text-lg font-bold">{item.name}</h3></div><div className="flex justify-between p-4 text-sm"><span>♟ {item.teacher?.name || 'No teacher'}</span><span className="text-indigo-600">View →</span></div></button>)}</div></>}
     {(showSamples || mode === 'staff' || classId) && <><div className="flex flex-wrap items-center gap-3 rounded-2xl border bg-white p-4 shadow-sm print:hidden">{mode === 'student' && classId && !showSamples && <button onClick={() => { setClassId(''); setStudents([]); }} className="text-indigo-600">← Back to Classes</button>}<div className="min-w-52 flex-1"><strong>{showSamples ? `10 ${mode} sample cards` : mode === 'staff' ? 'All Staff' : selectedClass?.name}</strong><p className="text-xs text-slate-500">{people.length} cards ready</p></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${mode === 'staff' ? 'staff' : 'students'}…`} className="rounded-xl border px-4 py-2.5" /><button onClick={() => window.print()} disabled={!people.length} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white disabled:opacity-40">▣ Download / Print Cards ({people.length})</button></div>{busy || loading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{[1,2,3,4].map((item) => <div key={item} className="h-96 animate-pulse rounded-2xl bg-slate-100" />)}</div> : <div className="id-card-print-grid grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{people.map((person) => <IdentityCard key={person.id} person={person} template={template} subtitle={mode === 'staff' ? person.position || 'Staff' : showSamples ? 'Sample Class' : selectedClass?.name || 'Student'} year={mode === 'student' ? selectedYear?.label : undefined} />)}</div>}</>}
