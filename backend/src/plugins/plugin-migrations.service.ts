@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { VerifiedPluginPackage } from './plugin-package';
 import { PluginManifest } from './plugin-manifest';
 import { assertNoForbiddenSql, assertPluginNamespace } from './plugin-sql-guard';
+import { countTopLevelSqlStatements } from './plugin-sql-statements';
 
 const execFileAsync = promisify(execFile);
 
@@ -102,7 +103,7 @@ export class PluginMigrationsService {
     }
     assertNoForbiddenSql(sql, `Migration ${migrationId}`);
     if (!destructive && /\b(DROP\s+TABLE|TRUNCATE\b|ALTER\s+TABLE[\s\S]*?DROP\b)/i.test(sql)) throw new BadRequestException(`Migration ${migrationId} contains an undeclared destructive operation`);
-    if (!checksumPinnedLegacyFormat && !isChecksumPinnedMultiStatementMigration(manifest, migrationId, sql) && (sql.match(/;/g) || []).length > 1) throw new BadRequestException(`Migration ${migrationId} must contain exactly one SQL statement`);
+    if (!checksumPinnedLegacyFormat && !isChecksumPinnedMultiStatementMigration(manifest, migrationId, sql) && countTopLevelSqlStatements(sql) !== 1) throw new BadRequestException(`Migration ${migrationId} must contain exactly one SQL statement`);
     assertPluginNamespace(manifest.id, sql, `Migration ${migrationId}`);
     if (Buffer.byteLength(sql) > 1024 * 1024) throw new BadRequestException(`Migration ${migrationId} exceeds 1 MiB`);
   }
