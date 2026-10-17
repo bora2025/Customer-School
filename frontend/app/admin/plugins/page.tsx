@@ -131,8 +131,8 @@ export default function PluginsPage() {
     setCatalogError('');
     try {
       const [response, bundlesResponse] = await Promise.all([
-        apiFetch('/api/admin/marketplace/catalog'),
-        apiFetch('/api/admin/marketplace/starter-bundles'),
+        apiFetch('/api/admin/marketplace/catalog', { cache: 'no-store', headers: { 'cache-control': 'no-cache' } }),
+        apiFetch('/api/admin/marketplace/starter-bundles', { cache: 'no-store', headers: { 'cache-control': 'no-cache' } }),
       ]);
       const [result, bundlesResult] = await Promise.all([response.json().catch(() => ({})), bundlesResponse.json().catch(() => ({}))]);
       if (!response.ok) throw new Error(result.message || `Could not load the marketplace catalog (${response.status})`);

@@ -67,7 +67,7 @@ describe('Plugin UI v2 schema', () => {
 
     const undeclared: any = valid();
     undeclared.pages[0].dataSources[0].path = 'records/:otherId';
-    expect(() => parsePluginUiBundle(undeclared, 'wattanam.test', permissions)).toThrow('undeclared');
+    expect(() => parsePluginUiBundle(undeclared, 'wattanam.test', permissions)).toThrow('page records data source record uses an undeclared');
   });
 
   it('validates the declarative table contract', () => {

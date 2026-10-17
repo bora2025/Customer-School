@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -11,9 +11,11 @@ export class MarketplaceCommerceController {
   constructor(private readonly commerce: MarketplaceCommerceService) {}
 
   @Get('catalog')
+  @Header('Cache-Control', 'no-store')
   catalog() { return this.commerce.catalog(); }
 
   @Get('starter-bundles')
+  @Header('Cache-Control', 'no-store')
   starterBundles() { return this.commerce.starterBundles(); }
 
   @Get('orders')

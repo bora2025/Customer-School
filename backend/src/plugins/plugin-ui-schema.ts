@@ -143,8 +143,8 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       if (source.parameters !== undefined && (!Array.isArray(source.parameters) || source.parameters.some((name) => typeof name !== 'string' || !/^[a-z][a-zA-Z0-9]*$/.test(name)))) throw new BadRequestException('Plugin UI data source parameters are invalid');
       const ownParameters = new Set((source.parameters || []) as string[]);
       if (ownParameters.size !== ((source.parameters || []) as string[]).length) throw new BadRequestException('Plugin UI data source parameters are duplicated');
-      if (routeParameters(sourcePath).some((name) => !parameterNames.has(name) && !ownParameters.has(name))) throw new BadRequestException('Plugin UI data source uses an undeclared route parameter');
-      if ([...ownParameters].some((name) => !routeParameters(sourcePath).includes(name))) throw new BadRequestException('Plugin UI data source declares an unused parameter');
+      if (routeParameters(sourcePath).some((name) => !parameterNames.has(name) && !ownParameters.has(name))) throw new BadRequestException(`Plugin UI page ${id} data source ${sourceId} uses an undeclared route parameter`);
+      if ([...ownParameters].some((name) => !routeParameters(sourcePath).includes(name))) throw new BadRequestException(`Plugin UI page ${id} data source ${sourceId} declares an unused parameter`);
       if (source.autoload !== undefined && typeof source.autoload !== 'boolean') throw new BadRequestException('Plugin UI data source autoload must be boolean');
       if (ownParameters.size && source.autoload !== false) throw new BadRequestException('Plugin UI data source with runtime parameters must disable autoload');
       sourceMethods.set(sourceId, method as PluginUiDataSource['method']);
