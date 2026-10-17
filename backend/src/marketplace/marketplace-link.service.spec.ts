@@ -15,7 +15,7 @@ function prismaDouble(pending: { requestId: string } | null = null) {
 }
 
 const keys = { sign: jest.fn().mockResolvedValue('signature') } as any;
-const tokenStore = { write: jest.fn().mockResolvedValue(undefined) } as any;
+const tokenStore = { write: jest.fn().mockResolvedValue(undefined), read: jest.fn(), clear: jest.fn().mockResolvedValue(undefined) } as any;
 
 function respond(status: number, body: unknown) {
   return jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify(body), { status }));
@@ -117,5 +117,23 @@ describe('MarketplaceLinkService pending link', () => {
     const status = await new MarketplaceLinkService(prisma, keys, tokenStore).status();
 
     expect(status).toMatchObject({ linked: false, pending: { requestId: REQUEST_ID, approvalUrl: `http://marketplace.test/marketplace/link/${REQUEST_ID}` } });
+  });
+
+  it('revokes only the delegated link and preserves purchased entitlements and installed plugins', async () => {
+    const prisma = prismaDouble();
+    prisma.marketplaceProxyLink.findUnique.mockResolvedValue({ id: 'singleton', grantId: 'grant-1', revokedAt: null });
+    prisma.marketplaceProxyLink.update = jest.fn().mockResolvedValue({});
+    prisma.pluginEntitlementCache = { deleteMany: jest.fn() };
+    prisma.pluginInstallation = { deleteMany: jest.fn() };
+    tokenStore.read.mockResolvedValue(null);
+
+    await expect(new MarketplaceLinkService(prisma, keys, tokenStore).revoke()).resolves.toEqual({ revoked: true });
+
+    expect(tokenStore.clear).toHaveBeenCalled();
+    expect(prisma.marketplaceProxyLink.update).toHaveBeenCalledWith({
+      where: { id: 'singleton' }, data: { revokedAt: expect.any(Date) },
+    });
+    expect(prisma.pluginEntitlementCache.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.pluginInstallation.deleteMany).not.toHaveBeenCalled();
   });
 });

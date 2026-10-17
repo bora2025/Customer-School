@@ -276,7 +276,16 @@ export default function PluginsPage() {
       const pollResponse = await apiFetch('/api/admin/marketplace/link/poll', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
       const pollResult = await pollResponse.json().catch(() => ({}));
       if (!pollResponse.ok) throw new Error(pollResult.message || 'Linking failed');
-      if (pollResult.status === 'linked') { await loadLinkStatus(); await loadCatalog(); await loadOrders(); return; }
+      if (pollResult.status === 'linked') {
+        // Reconfirm every installed paid licence immediately after relinking. The signed local
+        // cache already keeps purchased plugins usable while unlinked; this refresh reconciles it
+        // with the permanent installation entitlement before presenting marketplace actions.
+        const entitlementResponse = await apiFetch('/api/admin/marketplace/entitlements/refresh', { method: 'POST' });
+        const entitlementResult = await entitlementResponse.json().catch(() => ({}));
+        if (!entitlementResponse.ok) throw new Error(entitlementResult.message || `Licence refresh failed (${entitlementResponse.status})`);
+        await load();
+        return;
+      }
       if (pollResult.status === 'denied') throw new Error('The marketplace account owner denied this link request.');
       if (pollResult.status === 'expired') throw new Error('The link request expired before it was approved.');
       await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -292,7 +301,7 @@ export default function PluginsPage() {
   }
 
   async function revokeLink() {
-    if (!window.confirm('Unlink this marketplace account? Buying and installing new plugins from this panel will stop working until relinked.')) return;
+    if (!window.confirm('Unlink this marketplace account? Purchased licences, installed plugins, settings, and plugin data will be kept. Buying, downloading, and updating plugins will stop until this school is relinked to the same marketplace owner account.')) return;
     setLinking(true); setError('');
     try {
       const response = await apiFetch('/api/admin/marketplace/link/revoke', { method: 'POST' });
