@@ -328,4 +328,12 @@ describe('Plugin UI v2 schema', () => {
     value.pages[0].defaultLanguage = 'fr';
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('no translations');
   });
+
+  it('accepts the registered Organizing Management UI components', () => {
+    for (const type of ['organizing-dashboard', 'organizing-reports', 'organizing-profiles']) {
+      const value: any = valid();
+      value.pages[0].components = [{ id: type, type, source: 'record' }];
+      expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type });
+    }
+  });
 });
