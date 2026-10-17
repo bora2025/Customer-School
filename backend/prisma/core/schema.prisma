@@ -348,6 +348,7 @@ model PluginEntitlementCache {
   pluginId               String    @unique
   status                 String
   tokenId                String?
+  generation             Int       @default(0)
   signedTokenJson        String?
   expiresAt              DateTime?
   updatesThrough         DateTime?
