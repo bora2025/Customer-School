@@ -364,6 +364,40 @@ export default function PluginsPage() {
     finally { setBusy(''); }
   }
 
+  const ownedCatalog = catalog.filter((product) => product.ownership?.some((entry) => entry.status === 'ACTIVE'));
+  const freeCatalog = catalog.filter((product) => !product.paid && !ownedCatalog.some((owned) => owned.id === product.id));
+  const paidCatalog = catalog.filter((product) => product.paid && !ownedCatalog.some((owned) => owned.id === product.id));
+
+  function renderCatalogProducts(products: CatalogProduct[], emptyMessage: string) {
+    if (products.length === 0) {
+      return <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">{emptyMessage}</div>;
+    }
+    return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{products.map((product) => {
+      const owned = !!product.ownership?.some((entry) => entry.status === 'ACTIVE');
+      const installed = plugins.find((plugin) => plugin.id === product.id);
+      const paymentPending = orders.some((order) => order.status === 'PENDING' && order.lines.some((line) => line.pluginId === product.id));
+      const release = product.versions[0];
+      const missingDependencies = Object.entries(release?.dependencies || {}).filter(([id]) => !plugins.some((plugin) => plugin.id === id && plugin.status === 'active'));
+      return <article key={product.id} className="group flex min-h-72 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl ${owned ? 'bg-violet-100' : product.paid ? 'bg-amber-100' : 'bg-emerald-100'}`}>{owned ? '◆' : product.paid ? '✦' : '✓'}</div><div className="min-w-0"><h4 className="truncate font-bold text-slate-900">{product.name}</h4><p className="truncate text-xs text-slate-500">{product.publisher.displayName}</p></div></div>
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${product.compatible ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{product.compatible ? 'Compatible' : 'Incompatible'}</span>
+        </div>
+        <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-600">{product.description}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2.5 py-1 font-semibold ${product.paid ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>{product.paid ? (product.prices[0] ? formatMoney(product.prices[0].amountMinor, product.prices[0].currency) : 'Price unavailable') : 'Free'}</span>{owned && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">Purchased</span>}{installed && <span className="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">{installed.status === 'active' ? 'Active' : 'Installed'}</span>}</div>
+        {release && <p className="mt-3 text-xs text-slate-500">Version {release.version} · Core {release.requiresCore}</p>}
+        {release && <details className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-slate-700">Access and data policy</summary><InfoList label="Capabilities" values={release.capabilities} /><InfoList label="Permissions" values={release.permissions} /><InfoList label="Required plugins" values={Object.entries(release.dependencies).map(([id, range]) => `${id} ${range}`)} /><InfoList label="Optional integrations" values={Object.entries(release.optionalDependencies).map(([id, range]) => `${id} ${range}`)} /><p className="mt-2"><strong>Migrations:</strong> {release.migrationSummary.count}{release.migrationSummary.destructive ? ' · destructive change declared' : ' · non-destructive'}</p><p className="mt-2"><strong>Data:</strong> preserved when deactivated or removed; adopted after reinstall.</p></details>}
+        {missingDependencies.length > 0 && <p role="alert" className="mt-3 text-xs font-medium text-amber-700">Install and activate first: {missingDependencies.map(([id, range]) => `${id} ${range}`).join(', ')}</p>}
+        <div className="mt-auto flex flex-wrap gap-2 pt-5">
+          {product.paid && !owned && !paymentPending && <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => buy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy plugin'}</button>}
+          {product.paid && !owned && paymentPending && <a className="btn btn-primary" href="/admin/platform-billing">Complete payment</a>}
+          {product.compatible && (owned || !product.paid) && !installed && <button className="btn btn-primary" disabled={!!busy || missingDependencies.length > 0} onClick={() => installFromMarketplace(product)}>{busy === `${product.id}:install` ? 'Installing…' : owned ? 'Install purchased plugin' : 'Review & install'}</button>}
+          {installed && <a className="btn btn-secondary" href="#installed-plugins">Manage plugin</a>}
+        </div>
+      </article>;
+    })}</div>;
+  }
+
   return (
     <AuthGuard allowedRoles={['SUPER_ADMIN']}>
       <div className="page-shell">
@@ -411,36 +445,16 @@ export default function PluginsPage() {
                     const paidOwned = paid.every((item) => catalog.find((product) => product.id === item.pluginId)?.ownership?.some((entry) => entry.status === 'ACTIVE'));
                     return <article key={bundle.id} className="rounded-lg border border-indigo-100 bg-white p-4"><div className="flex items-start justify-between gap-2"><div><strong>{bundle.name}</strong><p className="mt-1 text-xs text-slate-500">{bundle.description}</p></div><span className={`rounded-full px-2 py-1 text-xs font-semibold ${allCompatible ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{allCompatible ? 'Compatible' : 'Review required'}</span></div><ul className="mt-3 space-y-1 text-sm text-slate-700">{bundle.plugins.map((item) => <li key={item.pluginId}>• {item.name} {item.version || item.versionRange}{item.required ? '' : ' (optional)'}</li>)}</ul>{paid.length > 0 && <p className="mt-3 text-sm font-medium">{currencies.length === 1 ? formatMoney(total, String(currencies[0])) : 'Prices use multiple currencies'}</p>}<div className="mt-3 flex flex-wrap gap-2">{paid.length > 0 && !paidOwned && <button className="btn btn-primary" disabled={!!busy || !allCompatible} onClick={() => buyBundle(bundle)}>{busy === `${bundle.id}:buy` ? 'Creating order…' : 'Buy bundle'}</button>}<button className="btn btn-secondary" disabled={!!busy || !allCompatible || (paid.length > 0 && !paidOwned)} onClick={() => installStarterBundle(bundle)}>{busy === `${bundle.id}:install` ? 'Installing…' : paid.length > 0 && !paidOwned ? 'Purchase first' : 'Review & install bundle'}</button></div></article>;
                   })}</div></div>}
-                  {catalog.length > 0 && <div className="mt-4 grid gap-4 md:grid-cols-2">{catalog.map((product) => {
-                    const owned = !!product.ownership?.some((entry) => entry.status === 'ACTIVE');
-                    const paymentPending = orders.some((order) => order.status === 'PENDING' && order.lines.some((line) => line.pluginId === product.id));
-                    const release = product.versions[0];
-                    const missingDependencies = Object.entries(release?.dependencies || {}).filter(([id]) => !plugins.some((plugin) => plugin.id === id && plugin.status === 'active'));
-                    return (
-                    <div key={product.id} className="rounded-lg border border-slate-200 p-4">
-                      <div className="flex items-start justify-between gap-2"><div><strong className="text-slate-800">{product.name}</strong><p className="text-xs text-slate-500">{product.publisher.displayName} · {product.license}</p></div><span className={`h-fit rounded-full px-2 py-1 text-xs font-semibold ${product.compatible ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{product.compatible ? 'Compatible' : 'Incompatible'}</span></div>
-                      <p className="mt-2 text-sm text-slate-600">{product.description}</p>
-                      <div className="mt-2 text-sm font-medium text-slate-700">{product.paid ? (product.prices[0] ? formatMoney(product.prices[0].amountMinor, product.prices[0].currency) : 'Price unavailable') : 'Free'}</div>
-                      {release && <p className="mt-1 text-xs text-slate-500">Version {release.version} · requires core {release.requiresCore}</p>}
-                      {release && <details className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
-                        <summary className="cursor-pointer font-semibold text-slate-700">Installation access and data policy</summary>
-                        <InfoList label="Capabilities" values={release.capabilities} />
-                        <InfoList label="Permissions" values={release.permissions} />
-                        <InfoList label="Required plugins" values={Object.entries(release.dependencies).map(([id, range]) => `${id} ${range}`)} />
-                        <InfoList label="Optional integrations" values={Object.entries(release.optionalDependencies).map(([id, range]) => `${id} ${range}`)} />
-                        <p className="mt-2"><strong>Migrations:</strong> {release.migrationSummary.count}{release.migrationSummary.destructive ? ' · destructive change declared' : ' · non-destructive'}</p>
-                        <p className="mt-2"><strong>Data:</strong> preserved when deactivated or removed; adopted again after reinstall.</p>
-                      </details>}
-                      {missingDependencies.length > 0 && <p role="alert" className="mt-2 text-xs font-medium text-amber-700">Install and activate first: {missingDependencies.map(([id, range]) => `${id} ${range}`).join(', ')}</p>}
-                      {!!product.ownership?.length && <p className="mt-2 text-xs text-emerald-700">Owned: {product.ownership.map((entry) => `${entry.installationLabel || entry.installationId} (${entry.status.toLowerCase()})`).join(', ')}</p>}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {product.paid && !owned && !paymentPending && <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => buy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy'}</button>}
-                        {product.paid && !owned && paymentPending && <a className="btn btn-primary" href="/admin/platform-billing">Payment pending</a>}
-                        {product.compatible && (owned || !product.paid) && <button className="btn btn-primary" disabled={!!busy || missingDependencies.length > 0} onClick={() => installFromMarketplace(product)}>{busy === `${product.id}:install` ? 'Installing…' : 'Review & install'}</button>}
-                      </div>
-                    </div>
-                    );
-                  })}</div>}
+                  {catalog.length > 0 && <div className="mt-6 space-y-8">
+                    <nav aria-label="Plugin collections" className="grid gap-3 sm:grid-cols-3">
+                      <a href="#my-plugins" className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4 transition hover:border-violet-300"><span className="text-xs font-semibold uppercase tracking-wider text-violet-600">Your collection</span><div className="mt-2 flex items-end justify-between"><strong className="text-lg text-slate-900">My Plugins</strong><span className="text-3xl font-bold text-violet-700">{ownedCatalog.length}</span></div></a>
+                      <a href="#free-plugins" className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 transition hover:border-emerald-300"><span className="text-xs font-semibold uppercase tracking-wider text-emerald-600">Install anytime</span><div className="mt-2 flex items-end justify-between"><strong className="text-lg text-slate-900">Free Plugins</strong><span className="text-3xl font-bold text-emerald-700">{freeCatalog.length}</span></div></a>
+                      <a href="#paid-plugins" className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 transition hover:border-amber-300"><span className="text-xs font-semibold uppercase tracking-wider text-amber-600">Premium tools</span><div className="mt-2 flex items-end justify-between"><strong className="text-lg text-slate-900">Paid Plugins</strong><span className="text-3xl font-bold text-amber-700">{paidCatalog.length}</span></div></a>
+                    </nav>
+                    <section id="my-plugins" className="scroll-mt-6"><div className="mb-4"><h3 className="text-lg font-bold text-slate-900">My Plugins</h3><p className="mt-1 text-sm text-slate-500">Plugins purchased by this school. Install or manage them without paying again.</p></div>{renderCatalogProducts(ownedCatalog, 'No purchased plugins yet. Paid plugins appear here after payment approval.')}</section>
+                    <section id="free-plugins" className="scroll-mt-6 border-t border-slate-100 pt-7"><div className="mb-4"><h3 className="text-lg font-bold text-slate-900">Free Plugins</h3><p className="mt-1 text-sm text-slate-500">Verified tools available to install at no cost.</p></div>{renderCatalogProducts(freeCatalog, 'No free plugins are currently available.')}</section>
+                    <section id="paid-plugins" className="scroll-mt-6 border-t border-slate-100 pt-7"><div className="mb-4"><h3 className="text-lg font-bold text-slate-900">Paid Plugins</h3><p className="mt-1 text-sm text-slate-500">Premium plugins available for this school to purchase.</p></div>{renderCatalogProducts(paidCatalog, 'You already own every available paid plugin.')}</section>
+                  </div>}
                   {catalog.length === 0 && !catalogError && (
                     <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                       <p className="font-semibold">This school is linked, but the marketplace catalog is empty.</p>
@@ -478,7 +492,8 @@ export default function PluginsPage() {
               )}
             </section>
 
-            <section className="space-y-4">
+            <section id="installed-plugins" className="scroll-mt-6 space-y-4">
+              <div><h2 className="text-xl font-bold text-slate-900">Installed Plugins</h2><p className="mt-1 text-sm text-slate-500">Activate, deactivate, update, roll back, or remove plugin files on this school.</p></div>
               {plugins.length === 0 && <div className="card p-8 text-center text-sm text-slate-500">No plugins are installed.</div>}
               {plugins.map((plugin) => (
                 <article key={plugin.id} className="card p-6">
