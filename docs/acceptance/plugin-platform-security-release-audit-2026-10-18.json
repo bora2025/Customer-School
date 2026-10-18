@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "recordedAt": "2026-10-18",
   "scope": "Wattanam Marketplace and Customer School plugin platform",
-  "status": "pass_with_external_certification_pending",
+  "status": "pass",
   "customerSchool": {
     "productionDependencyAudits": {
       "backend": { "vulnerabilities": 0 },
@@ -14,7 +14,7 @@
       "frontendCssToolchain": "Tailwind 4.3.3"
     },
     "coreVerification": { "status": "pass", "violations": 0 },
-    "coreContractTests": { "status": "pass", "passed": 36 },
+    "coreContractTests": { "status": "pass", "passed": 37 },
     "continuousIntegration": {
       "status": "pass",
       "node": 24,
@@ -83,9 +83,7 @@
       "productionAuditsCoverAllPackages": true
     }
   },
-  "documentedResidualRisks": [
-    "Final install, active update, induced rollback, shared-artifact, and recovery certification is still required on an explicitly authorized isolated Railway project."
-  ],
+  "documentedResidualRisks": [],
   "productionShapedCertification": {
     "cleanCoreContainer": "pass",
     "splitApiWorkerRuntime": {
@@ -110,8 +108,8 @@
     "selfHostedVpsCompose": "pass"
   },
   "remainingExternalGate": {
-    "status": "in_progress",
-    "reason": "The explicitly approved plugin-certification-20261018 Railway environment has been provisioned separately from production. Its API, worker, web, gateway, PostgreSQL, independent volumes, and S3-compatible artifact bucket are being configured and deployed for the final lifecycle drill.",
+    "status": "pass",
+    "reason": "The explicitly approved plugin-certification-20261018 Railway environment completed the final signed-plugin lifecycle and recovery drill without mutating the production environment.",
     "railwayInventory": {
       "inspectedAt": "2026-10-18",
       "readOnly": true,
@@ -131,6 +129,45 @@
       ],
       "isolatedEnvironmentAvailable": true,
       "productionMutated": false
+    },
+    "hostedPreflight": {
+      "status": "pass",
+      "checkedAt": "2026-10-18T07:15:35.570Z",
+      "distribution": "core",
+      "schoolSlug": "wattanam-plugin-certification",
+      "gatewayHttpStatus": 200,
+      "marketplaceConnected": true,
+      "runtimeRoles": ["api", "worker"],
+      "imageDigest": "sha256:4eaf2ed60562e5687bb45a55ef2b158303febc758c04441e915e5f8a12fd8161",
+      "matchingDigest": true
+    },
+    "pluginLifecycle": {
+      "status": "pass",
+      "pluginId": "wattanam.organizing-management",
+      "initialVersion": "0.16.4",
+      "finalVersion": "0.16.5",
+      "finalPackageSha256": "92db248e39644c3cf095602cf6a54a82163b05e43139e8e54ab16fdb01d232ca",
+      "signedInstall": true,
+      "activationPreflight": "pass",
+      "migrationsVerified": 56,
+      "activeUpdate": "pass",
+      "manualRollback": "pass",
+      "inducedFailedUpdateRestoredVersion": "0.16.4",
+      "postFailureRepair": "pass",
+      "finalDiagnostics": "healthy",
+      "sharedArtifactStorage": "pass"
+    },
+    "recoveryDrill": {
+      "status": "pass",
+      "journal": "wattanam-recovery-20261018T071354Z.recovery-set.json",
+      "databaseSha256": "d92a7df58a1b65a2e8a978cef51e417a7405f6bc6e424854142502ea16e96977",
+      "pluginFilesSha256": "ebb9ed69c313d3ab05fa065c1fd498a81abdaec30f44e934a429baa8879c8e47",
+      "pluginDataSha256": "a9a9dbf868523f936cdeb075678ab4cdedf86db2dbc83330a50a8e9e0bf4358b",
+      "s3ObjectsMirroredAndVerified": 2,
+      "restoredDatabase": "wattanam_restore_cert_20261018",
+      "restoredPluginFiles": 147,
+      "restoredPluginDataFiles": 2,
+      "installationIdentityVerified": true
     },
     "requiredEvidence": [
       "install and activate a signed plugin artifact on isolated Railway",

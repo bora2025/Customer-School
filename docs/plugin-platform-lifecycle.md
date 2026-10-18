@@ -102,7 +102,7 @@ The marketplace publication pipeline must also run this gate. Organizing Managem
 - [x] Run the disposable PostgreSQL backup/restore rehearsal and the full local self-hosted VPS topology with digest-pinned core images.
 - [x] Run Organizing Management 0.17.0 against disposable PostgreSQL 16, verifying all 56 migration checksums, 18 namespaced tables, 57 routes, QR scan/report/payroll workflows, and clean namespace teardown.
 - [x] Re-certify all 13 official plugins from the separate publisher checkout against disposable PostgreSQL 16 and the current clean-core schema; all workflow certifications and 26 migration-contract tests pass with zero plugin tables/functions left behind.
-- [ ] Run the final live Railway certification project after an operator explicitly approves external infrastructure cost and supplies an isolated target.
+- [x] Run the final live Railway certification in the operator-approved isolated `plugin-certification-20261018` environment: matching digest-pinned API/worker roles, signed Organizing Management install, active update, manual and induced-failure rollback, S3 artifact verification, and recovery-set restore all pass. Production remained untouched; the evidence is recorded in `docs/acceptance/plugin-platform-security-release-audit-2026-10-18.json`.
 
 ## Certification commands
 
