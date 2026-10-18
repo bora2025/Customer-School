@@ -113,6 +113,27 @@ describe('MarketplaceCommerceService install', () => {
     expect(plugins.activate).toHaveBeenCalledWith('wattanam.announcements');
   });
 
+  it('does not start a second activation when an active update is already rolling out', async () => {
+    const artifact = Buffer.from('split-runtime-update-artifact');
+    const sha256 = createHash('sha256').update(artifact).digest('hex');
+    const manifest = { capabilities: ['api.routes'], permissions: ['wattanam.test.view'], dependencies: {}, optionalDependencies: {}, migrations: [] };
+    const updates = { index: jest.fn().mockResolvedValue({ pluginReleases: [{
+      pluginId: 'wattanam.test', version: '1.1.0', publisher: 'wattanam', manifest, sha256,
+      downloadUrl: `https://marketplace.example.com/v1/artifacts/${sha256}`,
+    }] }) } as any;
+    const plugins = {
+      install: jest.fn().mockResolvedValue({ id: 'wattanam.test', status: 'activating' }),
+      activate: jest.fn(),
+    } as any;
+    trustedPluginKeysMock.mockResolvedValue({});
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response(artifact, { status: 200, headers: { 'content-length': String(artifact.length) } }) as any);
+    const service = new MarketplaceCommerceService({} as any, { getValidAccessToken: jest.fn().mockResolvedValue('token') } as any, updates, plugins, {} as any, {} as any);
+
+    await expect(service.install('wattanam.test', '1.1.0', true, pluginInstallConsentDigest(manifest)))
+      .resolves.toMatchObject({ id: 'wattanam.test', status: 'activating' });
+    expect(plugins.activate).not.toHaveBeenCalled();
+  });
+
   it('rejects a missing or stale capability consent before downloading the artifact', async () => {
     const artifact = Buffer.from('consent-bound-artifact');
     const sha256 = createHash('sha256').update(artifact).digest('hex');

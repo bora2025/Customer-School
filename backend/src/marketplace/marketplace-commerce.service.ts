@@ -169,7 +169,14 @@ export class MarketplaceCommerceService {
     if (release.publisherKeyId && release.publisherPublicKeyPem) {
       await recordMarketplaceTrustedKey(release.publisher, release.publisherKeyId, release.publisherPublicKeyPem, this.prisma);
     }
-    return activate ? this.plugins.activate(installed.id) : installed;
+    // PluginsService.install() already reactivates an active plugin during an upgrade. In a
+    // split runtime that result remains `activating` until every required role acknowledges the
+    // staged generation. Calling activate() again races that rollout and returns a misleading
+    // 409 even though the update is progressing normally. Only start activation when install()
+    // returned a stable, non-active lifecycle state (the normal first-install path).
+    return activate && ['installed', 'inactive', 'failed'].includes(installed.status)
+      ? this.plugins.activate(installed.id)
+      : installed;
   }
 
   /** Extends the static+persisted trust allow-list with the ONE publisher key the signed index
