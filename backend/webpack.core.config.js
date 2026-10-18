@@ -5,6 +5,7 @@ module.exports = (options) => ({
   entry: {
     main: './src/main-core.ts',
     worker: './src/worker-core.ts',
+    'storage-migrate': './src/storage/storage-migrate-cli.ts',
   },
   resolve: {
     ...options.resolve,

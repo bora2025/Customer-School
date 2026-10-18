@@ -24,6 +24,13 @@ test('production application images use the supported Node 24 runtime line', () 
   }
 });
 
+test('core backend image includes the S3 recovery migration command', () => {
+  const webpack = read('backend/webpack.core.config.js');
+  const dockerfile = read('backend/Dockerfile.core');
+  assert.match(webpack, /'storage-migrate': '\.\/src\/storage\/storage-migrate-cli\.ts'/);
+  assert.match(dockerfile, /COPY --chown=node:node --from=builder \/app\/dist-core \.\/dist-core/);
+});
+
 test('frontend uses the advisory-clean Tailwind 4 build contract', () => {
   const packageJson = JSON.parse(read('frontend/package.json'));
   assert.match(packageJson.devDependencies.tailwindcss, /^\^?4\./);
