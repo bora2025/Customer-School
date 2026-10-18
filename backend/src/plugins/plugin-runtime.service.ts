@@ -31,6 +31,7 @@ import { assertPluginExecutionAllowed } from './plugin-execution-policy';
 export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(PluginRuntimeService.name);
   private readonly loaded = new Map<string, { module: RuntimePluginModule; context: PluginRuntimeContext; cleanup?: () => void; disposers: Array<() => void>; version: string; sha256: string }>();
+  private readonly loadOperations = new Map<string, Promise<void>>();
   private rolloutTimer?: NodeJS.Timeout;
 
   constructor(
@@ -120,6 +121,16 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
   }
 
   async load(id: string) {
+    const inFlight = this.loadOperations.get(id);
+    if (inFlight) return inFlight;
+    const operation = this.loadOnce(id).finally(() => {
+      if (this.loadOperations.get(id) === operation) this.loadOperations.delete(id);
+    });
+    this.loadOperations.set(id, operation);
+    return operation;
+  }
+
+  private async loadOnce(id: string) {
     if (this.safeMode()) throw new Error('Plugin activation is disabled while PLUGIN_SAFE_MODE is enabled');
     const record = await this.prisma.pluginInstallation.findUnique({ where: { id } });
     if (!record) throw new Error(`Plugin registry entry not found: ${id}`);

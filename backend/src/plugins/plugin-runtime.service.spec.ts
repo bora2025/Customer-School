@@ -78,6 +78,42 @@ describe('PluginRuntimeService', () => {
     expect((global as any).__wattanamPluginCleaned).toBe(true);
   });
 
+  it('coalesces concurrent loads of the same plugin during distributed rollout reconciliation', async () => {
+    const installedPath = path.join(directory, 'wattanam.test', '1.0.0');
+    await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });
+    await fs.mkdir(path.join(installedPath, 'frontend'), { recursive: true });
+    await fs.writeFile(path.join(installedPath, 'backend', 'index.js'), `
+      module.exports = {
+        id: 'wattanam.test',
+        async activate() {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          global.__wattanamPluginActivated = (global.__wattanamPluginActivated || 0) + 1;
+        }
+      };
+    `);
+    await fs.writeFile(path.join(installedPath, 'frontend', 'page.json'), JSON.stringify({
+      schemaVersion: 2, kind: 'declarative-ui', pages: [{
+        id: 'dashboard', title: 'Dashboard', routePath: 'dashboard', permission: 'wattanam.test.view',
+        parameters: [], dataSources: [], components: [{ id: 'title', type: 'heading', title: 'Dashboard' }],
+      }],
+    }));
+    const manifest = {
+      id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', frontendEntry: 'frontend/page.json',
+      capabilities: ['ui.pages'], permissions: ['wattanam.test.view'], dependencies: {},
+    };
+    const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: manifest.id, version: manifest.version, packageSha256: 'a'.repeat(64), installedPath }) } } as any;
+    const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest, files: new Map([['frontend/page.json', Buffer.from(await fs.readFile(path.join(installedPath, 'frontend', 'page.json')))]]) }) } as any;
+    const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
+    (extensions as any).registerPage = jest.fn().mockReturnValue(jest.fn());
+    const runtime = new PluginRuntimeService(prisma, verifier, new PluginEventBus(), extensions as any, jobs as any, settings as any, storage as any, notifications as any, directoryService as any, realtime as any, notificationQuota as any, audit as any);
+
+    await Promise.all([runtime.load(manifest.id), runtime.load(manifest.id), runtime.load(manifest.id)]);
+
+    expect(verifier.verifyInstalledDirectory).toHaveBeenCalledTimes(1);
+    expect((extensions as any).registerPage).toHaveBeenCalledTimes(1);
+    expect((global as any).__wattanamPluginActivated).toBe(1);
+  });
+
   it('replaces an already-loaded runtime when the authoritative version or digest changes', async () => {
     const firstPath = path.join(directory, 'wattanam.test', '1.0.0');
     const secondPath = path.join(directory, 'wattanam.test', '1.1.0');
