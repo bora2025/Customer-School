@@ -21,7 +21,16 @@ interface PluginRecord {
   installedAt: string;
   lastError: string | null;
   rollbackAvailable: boolean;
+  dependencyState: {
+    required: DependencyCheck[];
+    optional: DependencyCheck[];
+    requiredBy: Array<{ id: string; name: string; range: string; status: string }>;
+  };
   entitlement: { mode: 'unmanaged' | 'active' | 'grace' | 'read_only'; reason: string; expiresAt?: string | null; updatesThrough?: string | null } | null;
+}
+
+interface DependencyCheck {
+  id: string; range: string; installed: boolean; installedVersion: string | null; status: string; compatible: boolean; ready: boolean;
 }
 
 interface UpdateStatus {
@@ -59,6 +68,7 @@ interface CatalogProduct {
     migrationSummary: { count: number; destructive: boolean };
     dataRetention: { onDeactivate: 'preserve'; onRemove: 'preserve'; onReinstall: 'adopt' };
     consentDigest: string;
+    dependencyState?: DependencyCheck[];
   }>;
   compatible: boolean;
   ownership?: Array<{ installationId: string; installationLabel?: string; status: string }>;
@@ -79,12 +89,17 @@ interface StarterBundle {
 }
 interface PluginDiagnostics {
   status: 'healthy' | 'degraded' | 'failed'; safeMode: boolean; checkedAt: string;
+  deployment?: { platform: 'managed-cloud' | 'self-hosted-vps'; ready: boolean; checks: Array<{ id: string; status: 'passed' | 'failed' | 'warning'; message: string }> };
   plugins: Array<{
     id: string; status: 'healthy' | 'degraded' | 'failed'; artifact: 'present' | 'missing'; runtimeLoaded: boolean;
     entitlement?: { mode: string; reason: string } | null; contract?: { status: string; deadLetterCount?: number } | null;
     jobs: Array<{ id: string; enabled: boolean; lastStatus?: string | null; lastError?: string | null }>;
     problems: string[];
   }>;
+}
+interface ActivationPreflight {
+  ready: boolean; checkedAt: string;
+  checks: Array<{ id: string; status: 'passed' | 'failed' | 'warning'; message: string; details?: unknown }>;
 }
 
 export default function PluginsPage() {
@@ -93,6 +108,7 @@ export default function PluginsPage() {
   const [extensions, setExtensions] = useState<PluginExtensions>({ navigation: [] });
   const [runtime, setRuntime] = useState<{ safeMode: boolean; loaded: string[] } | null>(null);
   const [diagnostics, setDiagnostics] = useState<PluginDiagnostics | null>(null);
+  const [preflights, setPreflights] = useState<Record<string, ActivationPreflight>>({});
   const [linkStatus, setLinkStatus] = useState<MarketplaceLinkStatus | null>(null);
   const [registration, setRegistration] = useState<{ registered: boolean; marketplaceConfigured: boolean } | null>(null);
   const [linking, setLinking] = useState(false);
@@ -217,8 +233,8 @@ export default function PluginsPage() {
     const version = release?.version;
     if (!release || !version) return setError('No compatible version is available to install.');
     const required = Object.entries(release.dependencies || {});
-    const missing = required.filter(([id]) => !plugins.some((plugin) => plugin.id === id && plugin.status === 'active'));
-    if (missing.length) return setError(`Activate required plugins first: ${missing.map(([id, range]) => `${id} ${range}`).join(', ')}`);
+    const unresolved = release.dependencyState?.filter((dependency) => !dependency.ready) || required.filter(([id]) => !plugins.some((plugin) => plugin.id === id && plugin.status === 'active')).map(([id, range]) => ({ id, range, installedVersion: null }));
+    if (unresolved.length) return setError(`Resolve required plugins first: ${unresolved.map((dependency) => `${dependency.id} ${dependency.range}${dependency.installedVersion ? ` (installed ${dependency.installedVersion})` : ''}`).join(', ')}`);
     const consent = [
       `Install ${product.name} ${version}?`,
       '',
@@ -358,6 +374,13 @@ export default function PluginsPage() {
     if (action === 'deactivate' && !window.confirm(`Deactivate ${plugin.name}?\n\nIts pages, API routes, scheduled jobs, and live integrations will stop. Plugin data and settings will be preserved.`)) return;
     setBusy(`${plugin.id}:${action}`); setError('');
     try {
+      if (action === 'activate') {
+        const preflightResponse = await apiFetch(`/api/plugins/${encodeURIComponent(plugin.id)}/activation-preflight`, { cache: 'no-store' });
+        const preflight = await preflightResponse.json().catch(() => null) as ActivationPreflight | null;
+        if (!preflightResponse.ok || !preflight) throw new Error((preflight as any)?.message || `Activation checks could not run (${preflightResponse.status})`);
+        setPreflights((current) => ({ ...current, [plugin.id]: preflight }));
+        if (!preflight.ready) throw new Error('Activation checks found problems. Review the checks shown on this plugin and correct them before retrying.');
+      }
       const response = await apiFetch(`/api/plugins/${encodeURIComponent(plugin.id)}/${action}`, { method: 'POST' });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `${action} failed (${response.status})`);
@@ -391,7 +414,7 @@ export default function PluginsPage() {
       const installed = plugins.find((plugin) => plugin.id === product.id);
       const paymentPending = orders.some((order) => order.status === 'PENDING' && order.lines.some((line) => line.pluginId === product.id));
       const release = product.versions[0];
-      const missingDependencies = Object.entries(release?.dependencies || {}).filter(([id]) => !plugins.some((plugin) => plugin.id === id && plugin.status === 'active'));
+      const missingDependencies = release?.dependencyState?.filter((dependency) => !dependency.ready) || [];
       const action = installed?.status === 'active' ? 'active' : installed ? 'activate-installed' : product.paid && !owned ? 'buy' : 'activate';
       return <article key={product.id} className="group flex min-h-72 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
         {product.coverImage ? <button type="button" className="block w-full overflow-hidden bg-slate-100 text-left" onClick={() => setSelectedProduct(product)}><img src={product.coverImage} alt={`${product.name} cover`} className="aspect-[3/1] w-full object-cover transition duration-300 group-hover:scale-[1.02]" /></button> : <div className={`h-24 bg-gradient-to-br ${owned ? 'from-violet-100 to-indigo-50' : product.paid ? 'from-amber-100 to-orange-50' : 'from-emerald-100 to-cyan-50'}`} />}
@@ -404,7 +427,7 @@ export default function PluginsPage() {
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded-full px-2.5 py-1 font-semibold ${product.paid ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>{product.paid ? (product.prices[0] ? formatMoney(product.prices[0].amountMinor, product.prices[0].currency) : 'Price unavailable') : 'Free'}</span>{owned && <span className="rounded-full bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">Purchased</span>}{installed && <span className="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">{installed.status === 'active' ? 'Active' : 'Installed'}</span>}</div>
         {release && <p className="mt-3 text-xs text-slate-500">Version {release.version} · Core {release.requiresCore}</p>}
         {release && <details className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><summary className="cursor-pointer font-semibold text-slate-700">Access and data policy</summary><InfoList label="Capabilities" values={release.capabilities} /><InfoList label="Permissions" values={release.permissions} /><InfoList label="Required plugins" values={Object.entries(release.dependencies).map(([id, range]) => `${id} ${range}`)} /><InfoList label="Optional integrations" values={Object.entries(release.optionalDependencies).map(([id, range]) => `${id} ${range}`)} /><p className="mt-2"><strong>Migrations:</strong> {release.migrationSummary.count}{release.migrationSummary.destructive ? ' · destructive change declared' : ' · non-destructive'}</p><p className="mt-2"><strong>Data:</strong> preserved when deactivated or removed; adopted after reinstall.</p></details>}
-        {missingDependencies.length > 0 && <p role="alert" className="mt-3 text-xs font-medium text-amber-700">Install and activate first: {missingDependencies.map(([id, range]) => `${id} ${range}`).join(', ')}</p>}
+        {missingDependencies.length > 0 && <div role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-xs text-amber-800"><strong>Dependencies required</strong><ul className="mt-1 space-y-1">{missingDependencies.map((dependency) => <li key={dependency.id}>• {dependency.id} {dependency.range} — {!dependency.installed ? 'not installed' : !dependency.compatible ? `installed ${dependency.installedVersion}, incompatible` : `${dependency.status}; activate first`}</li>)}</ul></div>}
         <div className="mt-auto flex flex-wrap gap-2 pt-5">
           {action === 'buy' && !paymentPending && <button className="btn btn-primary" disabled={!!busy || !product.compatible} onClick={() => buy(product)}>{busy === `${product.id}:buy` ? 'Creating order…' : 'Buy'}</button>}
           {product.paid && !owned && paymentPending && <a className="btn btn-primary" href="/admin/platform-billing">Complete payment</a>}
@@ -433,6 +456,10 @@ export default function PluginsPage() {
               <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-slate-800">Plugin system health</h2><p className="mt-1 text-sm text-slate-500">Registry, artifact, runtime, licence, contract and job checks.</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${diagnostics.status === 'healthy' ? 'bg-emerald-50 text-emerald-700' : diagnostics.status === 'degraded' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700'}`}>{diagnostics.status}</span></div>
               {diagnostics.plugins.some((plugin) => plugin.problems.length > 0) && <div className="mt-4 space-y-2">{diagnostics.plugins.filter((plugin) => plugin.problems.length > 0).map((plugin) => <div key={plugin.id} className="rounded-lg bg-slate-50 p-3 text-sm"><strong className="text-slate-800">{plugin.id}</strong><ul className="mt-1 list-disc pl-5 text-slate-600">{plugin.problems.map((problem) => <li key={problem}>{problem}</li>)}</ul></div>)}</div>}
               {diagnostics.plugins.length === 0 && <p className="mt-4 text-sm text-slate-500">No plugins are installed; clean core is healthy.</p>}
+              {diagnostics.deployment && <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" open={!diagnostics.deployment.ready}>
+                <summary className="cursor-pointer font-medium text-slate-800">Host readiness · {diagnostics.deployment.platform === 'managed-cloud' ? 'Managed cloud' : 'Self-hosted VPS'} · {diagnostics.deployment.ready ? 'ready' : 'action required'}</summary>
+                <div className="mt-3 space-y-2">{diagnostics.deployment.checks.map((check) => <div key={check.id} className={`rounded-lg px-3 py-2 text-sm ${check.status === 'passed' ? 'bg-emerald-50 text-emerald-800' : check.status === 'warning' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-800'}`}><strong>{check.id}</strong>: {check.message}</div>)}</div>
+              </details>}
             </section>}
             <section className="card p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -530,7 +557,19 @@ export default function PluginsPage() {
                     <Info label="Capabilities" value={plugin.capabilities.join(', ') || 'None'} />
                     <Info label="Permissions" value={plugin.permissions.join(', ') || 'None'} />
                   </dl>
+                  {(plugin.dependencyState.required.length > 0 || plugin.dependencyState.optional.length > 0 || plugin.dependencyState.requiredBy.length > 0) && <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" open={plugin.dependencyState.required.some((dependency) => !dependency.ready)}>
+                    <summary className="cursor-pointer text-sm font-semibold text-slate-800">Plugin dependencies</summary>
+                    <div className="mt-3 grid gap-4 md:grid-cols-3">
+                      <DependencyList title="Required" dependencies={plugin.dependencyState.required} />
+                      <DependencyList title="Optional integrations" dependencies={plugin.dependencyState.optional} optional />
+                      <div><h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Required by</h4>{plugin.dependencyState.requiredBy.length ? <ul className="mt-2 space-y-2 text-xs text-slate-700">{plugin.dependencyState.requiredBy.map((dependent) => <li key={dependent.id} className="rounded-lg bg-white p-2"><strong>{dependent.name}</strong><span className="block text-slate-500">{dependent.range} · {dependent.status}</span></li>)}</ul> : <p className="mt-2 text-xs text-slate-500">No installed plugin depends on this plugin.</p>}</div>
+                    </div>
+                  </details>}
                   {plugin.lastError && <div className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{plugin.lastError}</div>}
+                  {preflights[plugin.id] && <details className={`mt-4 rounded-xl border p-4 ${preflights[plugin.id].ready ? 'border-emerald-200 bg-emerald-50/50' : 'border-red-200 bg-red-50/50'}`} open={!preflights[plugin.id].ready}>
+                    <summary className="cursor-pointer text-sm font-semibold text-slate-800">Activation checks · {preflights[plugin.id].ready ? 'ready' : 'action required'}</summary>
+                    <ul className="mt-3 space-y-2">{preflights[plugin.id].checks.map((check) => <li key={check.id} className="flex gap-2 text-xs"><span aria-hidden="true" className={check.status === 'passed' ? 'text-emerald-700' : check.status === 'warning' ? 'text-amber-700' : 'text-red-700'}>{check.status === 'passed' ? '✓' : check.status === 'warning' ? '!' : '×'}</span><span><strong className="text-slate-700">{check.id.replaceAll('-', ' ')}</strong><span className="ml-1 text-slate-600">{check.message}</span></span></li>)}</ul>
+                  </details>}
                   {extensions.navigation.filter((entry) => entry.pluginId === plugin.id).length > 0 && <div className="mt-4 flex flex-wrap gap-2">{extensions.navigation.filter((entry) => entry.pluginId === plugin.id).map((entry) => <a key={entry.id} href={entry.href} className="btn btn-secondary">{entry.label}</a>)}</div>}
                   <details className="mt-4 text-xs text-slate-500"><summary className="cursor-pointer">Package checksum</summary><code className="mt-2 block break-all">{plugin.packageSha256}</code></details>
                 </article>
@@ -579,4 +618,12 @@ function Info({ label, value }: { label: string; value: string }) {
 
 function InfoList({ label, values }: { label: string; values: string[] }) {
   return <p className="mt-2 break-words"><strong>{label}:</strong> {values.join(', ') || 'None'}</p>;
+}
+
+function DependencyList({ title, dependencies, optional = false }: { title: string; dependencies: DependencyCheck[]; optional?: boolean }) {
+  return <div><h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</h4>{dependencies.length ? <ul className="mt-2 space-y-2">{dependencies.map((dependency) => {
+    const state = dependency.ready ? 'Ready' : !dependency.installed ? 'Not installed' : !dependency.compatible ? `Incompatible ${dependency.installedVersion}` : `Installed ${dependency.installedVersion}; inactive`;
+    const style = dependency.ready ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : optional ? 'border-slate-200 bg-white text-slate-700' : 'border-amber-200 bg-amber-50 text-amber-800';
+    return <li key={dependency.id} className={`rounded-lg border p-2 text-xs ${style}`}><strong>{dependency.id}</strong><span className="block opacity-80">Requires {dependency.range} · {state}</span></li>;
+  })}</ul> : <p className="mt-2 text-xs text-slate-500">None</p>}</div>;
 }

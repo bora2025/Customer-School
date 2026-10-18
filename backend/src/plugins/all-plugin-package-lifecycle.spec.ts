@@ -6,12 +6,17 @@ import semver from 'semver';
 import { PluginPackageVerifier, VerifiedPluginPackage } from './plugin-package';
 import { PluginsService } from './plugins.service';
 
-const { packPlugin } = require('../../../packages/plugin-cli/src/commands/pack');
+const pluginCliRoot = process.env.PLUGIN_SOURCE_CATALOG
+  ? path.resolve(process.env.PLUGIN_SOURCE_CATALOG, '../packages/plugin-cli')
+  : path.resolve(__dirname, '../../../packages/plugin-cli');
+const { packPlugin } = require(path.join(pluginCliRoot, 'src/commands/pack'));
 
 type Packed = { artifact: Buffer; verified: VerifiedPluginPackage };
 
 function pluginSources() {
-  const root = path.resolve(__dirname, '../../../plugins');
+  const root = process.env.PLUGIN_SOURCE_CATALOG
+    ? path.resolve(process.env.PLUGIN_SOURCE_CATALOG)
+    : path.resolve(__dirname, '../../../plugins');
   return readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(root, entry.name))
@@ -85,8 +90,11 @@ describe('official plugin catalog signed-package lifecycle', () => {
 
       const parsedVersion = semver.parse(sourceManifest.version);
       expect(parsedVersion).not.toBeNull();
-      expect(parsedVersion!.patch).toBeGreaterThan(0);
-      const previousVersion = `${parsedVersion!.major}.${parsedVersion!.minor}.${parsedVersion!.patch - 1}`;
+      const previousVersion = parsedVersion!.patch > 0
+        ? `${parsedVersion!.major}.${parsedVersion!.minor}.${parsedVersion!.patch - 1}`
+        : parsedVersion!.minor > 0
+          ? `${parsedVersion!.major}.${parsedVersion!.minor - 1}.999`
+          : `${Math.max(0, parsedVersion!.major - 1)}.999.999`;
       const previousSource = path.join(directory, 'previous-sources', sourceManifest.id);
       mkdirSync(path.dirname(previousSource), { recursive: true });
       cpSync(source, previousSource, { recursive: true });
@@ -114,7 +122,29 @@ describe('official plugin catalog signed-package lifecycle', () => {
     const prisma = { pluginInstallation, $transaction: jest.fn(async (work: (client: any) => unknown) => work(tx)) } as any;
     const runtime = { load: jest.fn(async () => undefined), unload: jest.fn(async () => undefined), status: jest.fn(() => ({ safeMode: false, loaded: [] })) } as any;
     const migrations = { createRecoveryPoint: jest.fn(async () => undefined), apply: jest.fn(async () => undefined) } as any;
-    const service = new PluginsService(prisma, verifier, runtime, migrations, undefined, undefined, undefined, { assertCanActivate: jest.fn(async () => ({ mode: 'active' })) } as any);
+    const activeGenerations = new Map<string, any>();
+    const previousGenerations = new Map<string, any>();
+    const rollout = {
+      stage: jest.fn(async (_tx: any, plugin: any) => ({ ...plugin, pluginId: plugin.id, sha256: plugin.packageSha256 })),
+      report: jest.fn(async (generation: any) => {
+        const current = activeGenerations.get(generation.pluginId);
+        if (current) previousGenerations.set(generation.pluginId, current);
+        activeGenerations.set(generation.pluginId, generation);
+        const row = { ...registry.get(generation.pluginId), status: 'active', activatedAt: new Date() };
+        registry.set(generation.pluginId, row);
+        return generation;
+      }),
+      previous: jest.fn(async (id: string) => previousGenerations.get(id) || null),
+      reactivatePrevious: jest.fn(async (id: string) => {
+        const previous = previousGenerations.get(id);
+        if (!previous) throw new Error(`No healthy rollback generation exists for ${id}`);
+        const row = { ...registry.get(id), version: previous.version, packageSha256: previous.packageSha256, installedPath: previous.installedPath, manifestJson: previous.manifestJson, status: 'active', activatedAt: new Date(), lastError: null };
+        registry.set(id, row);
+        activeGenerations.set(id, previous);
+        return row;
+      }),
+    } as any;
+    const service = new PluginsService(prisma, verifier, runtime, migrations, undefined, rollout, undefined, { assertCanActivate: jest.fn(async () => ({ mode: 'active' })) } as any);
     const ordered = dependencyOrder(packed);
 
     for (const item of ordered) {
@@ -138,6 +168,12 @@ describe('official plugin catalog signed-package lifecycle', () => {
       expect(durablePluginData.get(current.verified.manifest.id)).toBe(`preserved:${current.verified.manifest.id}`);
     }
 
+    const organizingId = 'wattanam.organizing-management';
+    const organizingPrevious = previousById.get(organizingId)!;
+    await expect(service.rollback(organizingId)).resolves.toMatchObject({ id: organizingId, version: organizingPrevious.verified.manifest.version, status: 'active' });
+    expect(durablePluginData.get(organizingId)).toBe(`preserved:${organizingId}`);
+    expect(rollout.reactivatePrevious).toHaveBeenCalledWith(organizingId);
+
     for (const item of [...ordered].reverse()) {
       await expect(service.deactivate(item.verified.manifest.id)).resolves.toMatchObject({ status: 'inactive' });
       await expect(service.remove(item.verified.manifest.id)).resolves.toMatchObject({ status: 'removed', dataPreserved: true });
@@ -151,7 +187,7 @@ describe('official plugin catalog signed-package lifecycle', () => {
       expect(durablePluginData.get(item.verified.manifest.id)).toBe(`preserved:${item.verified.manifest.id}`);
     }
     expect(registry.size).toBe(packed.length);
-    expect(runtime.load).toHaveBeenCalledTimes(packed.length * 4);
-    expect(runtime.unload).toHaveBeenCalledTimes(packed.length * 4);
+    expect(runtime.load).toHaveBeenCalledTimes(packed.length * 4 + 1);
+    expect(runtime.unload).toHaveBeenCalledTimes(packed.length * 4 + 1);
   });
 });

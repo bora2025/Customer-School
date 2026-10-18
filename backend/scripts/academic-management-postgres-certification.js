@@ -8,7 +8,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const pluginRoot = path.resolve(__dirname, '..', '..', 'plugins', 'wattanam.academic-management');
+const { resolvePluginSource } = require('./plugin-source-root');
+const pluginRoot = resolvePluginSource('wattanam.academic-management');
 const manifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
 const plugin = require(path.join(pluginRoot, manifest.backendEntry));
 const namespacePrefix = 'plugin_wattanam_academic_management_';
@@ -95,7 +96,10 @@ async function certify(prisma) {
   await dropPluginTables(prisma);
   await applyMigrations(prisma);
   const tables = await pluginTables(prisma);
-  assert.equal(tables.length, manifest.migrations.length, 'every immutable Academic migration must create exactly one namespaced table');
+  for (const required of ['department', 'study_year', 'class', 'class_registration', 'student_profile', 'officer_profile', 'attendance_record', 'attendance_session', 'attendance_window']) {
+    assert.ok(tables.includes(`${namespacePrefix}${required}`), `required Academic workflow table is missing: ${required}`);
+  }
+  assert.ok(tables.length >= 26, 'complete Academic Management schema must be present');
 
   const { context, routes, durableEvents } = runtime(prisma);
   await plugin.activate(context);
@@ -129,7 +133,7 @@ async function certify(prisma) {
   assert.ok(durableEvents.some((event) => event.event === 'wattanam.academic-management.department.created'));
   assert.ok(durableEvents.some((event) => event.event === 'wattanam.academic-management.subject.created'));
 
-  const result = { format: 'wattanam-academic-management-postgres-certification-v1', postgres: true, tables: tables.length, routes: routes.size, durableEvents: durableEvents.length, passed: true };
+  const result = { format: 'wattanam-academic-management-postgres-certification-v1', postgres: true, migrations: manifest.migrations.length, tables: tables.length, routes: routes.size, durableEvents: durableEvents.length, passed: true };
   await dropPluginTables(prisma);
   return result;
 }

@@ -3,7 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 export const PLUGIN_UI_SCHEMA_VERSION = 2 as const;
 
 export type PluginUiComponentType =
-  | 'heading' | 'text' | 'status' | 'card' | 'metric' | 'table' | 'form'
+  | 'heading' | 'text' | 'workflow' | 'status' | 'card' | 'metric' | 'table' | 'form'
   | 'detail' | 'chart' | 'file' | 'print' | 'document' | 'designer' | 'scanner' | 'self-attendance-scanner' | 'filter' | 'actions' | 'study-year-manager' | 'class-manager' | 'officer-manager' | 'session-manager' | 'take-attendance' | 'id-card-manager' | 'attendance-report-manager' | 'attendance-dashboard' | 'attendance-window-manager'
   | 'organizing-dashboard' | 'organizing-reports' | 'organizing-profiles';
 
@@ -41,6 +41,7 @@ export interface PluginUiPage {
 export interface PluginUiBundle {
   schemaVersion: 2;
   kind: 'declarative-ui';
+  portability?: 'universal';
   pages: PluginUiPage[];
 }
 
@@ -49,9 +50,16 @@ const ROUTE_SEGMENT = '(?:[a-z0-9][a-z0-9_-]*|:[a-z][a-zA-Z0-9]*)';
 const ROUTE = new RegExp(`^${ROUTE_SEGMENT}(?:/${ROUTE_SEGMENT})*$`);
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const COMPONENTS = new Set<PluginUiComponentType>([
-  'heading', 'text', 'status', 'card', 'metric', 'table', 'form', 'detail',
+  'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form', 'detail',
   'chart', 'file', 'print', 'document', 'designer', 'scanner', 'self-attendance-scanner', 'filter', 'actions', 'study-year-manager', 'class-manager', 'officer-manager', 'session-manager', 'take-attendance', 'id-card-manager', 'attendance-report-manager', 'attendance-dashboard', 'attendance-window-manager',
   'organizing-dashboard', 'organizing-reports', 'organizing-profiles',
+]);
+// Universal descriptors are guaranteed to render on an unmodified core host.
+// Specialized legacy workspaces remain accepted only for older packages.
+const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
+  'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form',
+  'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner',
+  'filter', 'actions', 'id-card-manager',
 ]);
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
@@ -95,6 +103,7 @@ function inspectSafeJson(value: unknown, label: string, depth = 0): void {
 export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPermissions: Set<string>): PluginUiBundle {
   const root = object(value, 'Plugin UI descriptor');
   if (root.schemaVersion !== PLUGIN_UI_SCHEMA_VERSION || root.kind !== 'declarative-ui') throw new BadRequestException('Unsupported plugin UI schema version or kind');
+  if (root.portability !== undefined && root.portability !== 'universal') throw new BadRequestException('Plugin UI portability contract is invalid');
   if (!Array.isArray(root.pages) || root.pages.length < 1 || root.pages.length > 50) throw new BadRequestException('Plugin UI pages must contain 1 to 50 pages');
   inspectSafeJson(root, 'Plugin UI descriptor');
 
@@ -159,6 +168,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       const componentId = string(component.id, 'component id', 100);
       const type = string(component.type, 'component type', 40) as PluginUiComponentType;
       if (!ID.test(componentId) || componentIds.has(componentId) || !COMPONENTS.has(type)) throw new BadRequestException('Plugin UI component id or type is invalid');
+      if (root.portability === 'universal' && !UNIVERSAL_COMPONENTS.has(type)) throw new BadRequestException(`Universal plugin UI cannot use host-specific component ${type}`);
       componentIds.add(componentId);
       const source = component.source === undefined ? undefined : string(component.source, 'component source', 100);
       if (source && !sourceIds.has(source)) throw new BadRequestException(`Plugin UI component references unknown data source: ${source}`);
@@ -359,6 +369,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           fieldIds.add(fieldId); string(field.label, 'filter field label', 120);
           const fieldType = string(field.type, 'filter field type', 20);
           if (!['text', 'date', 'number', 'select'].includes(fieldType)) throw new BadRequestException('Plugin UI filter field type is invalid');
+          if (field.required !== undefined && typeof field.required !== 'boolean') throw new BadRequestException('Plugin UI filter field required must be boolean');
           if (fieldType === 'select') {
             if (!Array.isArray(field.options) || field.options.length < 1 || field.options.length > 100) throw new BadRequestException('Plugin UI filter select requires 1 to 100 options');
             field.options.forEach((choice) => { const option = object(choice, 'filter select option'); string(option.label, 'filter option label', 120); if (!['string', 'number'].includes(typeof option.value)) throw new BadRequestException('filter option value is invalid'); });
@@ -465,5 +476,5 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
     } else if (page.defaultLanguage !== undefined) throw new BadRequestException('Plugin UI defaultLanguage requires translations');
     return { id, title: string(page.title, `pages[${pageIndex}].title`, 200), routePath, permission, parameters, dataSources, components, ...(realtime ? { realtime } : {}), ...(translations ? { translations, defaultLanguage } : {}) };
   });
-  return { schemaVersion: 2, kind: 'declarative-ui', pages };
+  return { schemaVersion: 2, kind: 'declarative-ui', ...(root.portability === 'universal' ? { portability: 'universal' as const } : {}), pages };
 }

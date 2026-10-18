@@ -1,0 +1,24 @@
+{
+  "format": "wattanam-official-plugin-catalog-postgres-certification-v1",
+  "certifiedAt": "2026-10-18",
+  "database": "disposable PostgreSQL 16 with current clean-core migrations",
+  "sourceCatalog": "separate wattanam-v2 publisher checkout",
+  "plugins": [
+    {"id": "wattanam.academic-management", "migrations": 60, "tables": 26, "routes": 113, "passed": true},
+    {"id": "wattanam.organizing-management", "migrations": 56, "tables": 18, "routes": 57, "passed": true},
+    {"id": "wattanam.document-designer", "templates": 2, "activeInvariant": true, "assetLifecycle": true, "passed": true},
+    {"id": "wattanam.attendance-manager", "migrations": 6, "tables": 11, "routes": 29, "alertDeliveries": 4, "passed": true},
+    {"id": "wattanam.timetable", "migrations": 10, "tables": 8, "routes": 37, "collisionSerialized": true, "passed": true},
+    {"id": "wattanam.examination", "migrations": 10, "tables": 8, "routes": 31, "answerKeyRedacted": true, "passed": true},
+    {"id": "wattanam.transportation", "tables": 5, "routes": 19, "parentScoped": true, "passed": true},
+    {"id": "wattanam.communication", "tables": 3, "routes": 10, "delivery": "receiver-targeted", "passed": true},
+    {"id": "wattanam.finance", "tables": 4, "concurrentOverpaymentPrevented": true, "immutableReceipt": true, "passed": true},
+    {"id": "wattanam.human-resources", "tables": 6, "routes": 8, "concurrentApproval": "serialized", "passed": true},
+    {"id": "wattanam.learning", "migrations": 14, "tables": 13, "routes": 40, "courseAttendance": "upserted", "passed": true},
+    {"id": "wattanam.parent-portal", "tables": 1, "rowScoped": true, "optionalProvidersDegrade": true, "passed": true},
+    {"id": "wattanam.reporting", "pluginTables": 0, "keyedReadModels": true, "csvFormulaSafe": true, "passed": true}
+  ],
+  "migrationContractTests": {"passed": 26, "failed": 0},
+  "namespaceCleanup": {"pluginTablesRemaining": 0, "pluginFunctionsRemaining": 0},
+  "passed": true
+}

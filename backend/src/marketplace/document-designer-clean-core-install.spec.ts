@@ -84,8 +84,9 @@ describe('Document Designer marketplace clean-core installation', () => {
       headers: { 'content-length': String(artifact.length), 'content-type': 'application/vnd.wattanam.plugin+zip' },
     }) as any);
 
+    const prisma = {} as any;
     const service = new MarketplaceCommerceService(
-      {} as any,
+      prisma,
       { getValidAccessToken: jest.fn().mockResolvedValue('delegated-install-token') } as any,
       { index: jest.fn().mockResolvedValue({ pluginReleases: [release] }) } as any,
       plugins,
@@ -104,6 +105,7 @@ describe('Document Designer marketplace clean-core installation', () => {
       'wattanam',
       'document-designer-clean-core-test',
       publicKey,
+      prisma,
     );
     expect(plugins.activate).toHaveBeenCalledWith('wattanam.document-designer');
   });

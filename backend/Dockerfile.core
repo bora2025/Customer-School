@@ -1,4 +1,4 @@
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 
 RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
@@ -20,7 +20,7 @@ COPY backend/src ./src
 COPY backend/nest-cli.json backend/tsconfig.json backend/tsconfig.core.json backend/webpack.core.config.js ./
 RUN npm run build:core
 
-FROM node:20-slim AS production-dependencies
+FROM node:24-slim AS production-dependencies
 
 RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
@@ -36,7 +36,7 @@ RUN ./node_modules/.bin/prisma generate --schema=prisma/core/schema.prisma \
     && mkdir -p node_modules/.prisma \
     && cp -R generated/core-client node_modules/.prisma/client
 
-FROM node:20-slim AS runner
+FROM node:24-slim AS runner
 
 ARG POSTGRES_CLIENT_MAJORS="16 18"
 RUN apt-get update -qq \
@@ -70,4 +70,4 @@ ENV WATTANAM_DISTRIBUTION=core
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "mkdir -p /data/backups /data/plugins /data/plugin-data /data/update-state /data/marketplace-identity && chown -R node:node /data && gosu node node scripts/deploy-migrations.js && exec gosu node node dist-core/main.js"]
+CMD ["sh", "-c", "mkdir -p /data/backups /data/plugins /data/plugin-data /data/update-state /data/marketplace-identity && chown -R node:node /data && gosu node node scripts/deploy-migrations.js && if [ \"$PROCESS_ROLE\" = \"worker\" ]; then exec gosu node node dist-core/worker.js; else exec gosu node node dist-core/main.js; fi"]

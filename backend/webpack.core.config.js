@@ -2,7 +2,10 @@ const path = require('node:path');
 
 module.exports = (options) => ({
   ...options,
-  entry: ['./src/main-core.ts'],
+  entry: {
+    main: './src/main-core.ts',
+    worker: './src/worker-core.ts',
+  },
   resolve: {
     ...options.resolve,
     alias: {
@@ -16,6 +19,6 @@ module.exports = (options) => ({
   output: {
     ...options.output,
     path: path.resolve(__dirname, 'dist-core'),
-    filename: 'main.js',
+    filename: '[name].js',
   },
 });

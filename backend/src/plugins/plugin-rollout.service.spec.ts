@@ -33,4 +33,29 @@ describe('PluginRolloutService', () => {
     await expect(service.reactivatePrevious(previous.pluginId)).resolves.toEqual(restored);
     expect(tx.pluginInstallation.update).toHaveBeenCalledWith({ where: { id: previous.pluginId }, data: expect.objectContaining({ version: '1.0.0', packageSha256: previous.sha256, status: 'active' }) });
   });
+
+  it('marks a failed staged generation terminal so another runtime cannot promote it later', async () => {
+    const generation = { id: '00000000-0000-0000-0000-000000000003', pluginId: 'wattanam.test', generation: 3, version: '3.0.0', sha256: 'c'.repeat(64), installedPath: '/plugins/test/3', manifestJson: '{}', status: 'staging', requiredRolesJson: '["api","worker"]' };
+    const tx = { $executeRawUnsafe: jest.fn() };
+    const service = new PluginRolloutService({ $transaction: jest.fn(async (work) => work(tx)) } as any);
+    await service.fail(generation, 'health check failed');
+    expect(tx.$executeRawUnsafe).toHaveBeenNthCalledWith(1, expect.stringContaining("status='failed'"), generation.id);
+    expect(tx.$executeRawUnsafe).toHaveBeenNthCalledWith(2, expect.stringContaining('ready=false'), generation.id, 'api', generation.sha256, 'health check failed');
+  });
+
+  it('fails a split-role candidate and restores the still-authoritative active generation', async () => {
+    const generation = { id: '00000000-0000-0000-0000-000000000003', pluginId: 'wattanam.test', generation: 3, version: '3.0.0', sha256: 'c'.repeat(64), installedPath: '/plugins/test/3', manifestJson: '{}', status: 'staging', requiredRolesJson: '["api","worker"]' };
+    const previous = { ...generation, id: '00000000-0000-0000-0000-000000000001', generation: 2, version: '2.0.0', sha256: 'b'.repeat(64), installedPath: '/plugins/test/2', status: 'active' };
+    const restored = { id: generation.pluginId, version: previous.version, status: 'active' };
+    const tx = {
+      $executeRawUnsafe: jest.fn(), $queryRawUnsafe: jest.fn().mockResolvedValue([previous]),
+      pluginInstallation: { update: jest.fn().mockResolvedValue(restored), updateMany: jest.fn() },
+    };
+    const service = new PluginRolloutService({ $transaction: jest.fn(async (work) => work(tx)) } as any);
+    await expect(service.failAndRestoreAuthoritative(generation, 'worker load failed')).resolves.toEqual(restored);
+    expect(tx.pluginInstallation.update).toHaveBeenCalledWith({
+      where: { id: generation.pluginId },
+      data: expect.objectContaining({ version: previous.version, packageSha256: previous.sha256, status: 'active', lastError: expect.stringContaining('worker load failed') }),
+    });
+  });
 });

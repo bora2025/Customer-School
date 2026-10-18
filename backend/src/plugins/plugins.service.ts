@@ -11,9 +11,12 @@ import { PluginPackageVerifier, TrustedPluginKeys, VerifiedPluginPackage } from 
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginMigrationsService } from './plugin-migrations.service';
 import { PluginArtifactCacheService } from './plugin-artifact-cache.service';
-import { PluginRolloutService } from './plugin-rollout.service';
+import { ArtifactGeneration, PluginRolloutService } from './plugin-rollout.service';
 import { PluginContractRuntimeService } from './plugin-contract-runtime.service';
 import { PluginEntitlementPolicyService } from './plugin-entitlement-policy.service';
+import { parsePluginUiBundle } from './plugin-ui-schema';
+import { readMarketplaceIdentityConfig } from '../marketplace/marketplace-identity-config';
+import { assertPluginExecutionAllowed, inProcessPluginPublishers, pluginExecutionDecision } from './plugin-execution-policy';
 
 /**
  * Wall-clock ceiling for a single locked lifecycle transaction (install,
@@ -77,18 +80,66 @@ export class PluginsService {
 
   async list() {
     const plugins = await this.prisma.pluginInstallation.findMany({ orderBy: { name: 'asc' } });
+    const installedById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
     return Promise.all(plugins.map(async (plugin) => ({
       ...this.publicPlugin(plugin),
+      dependencyState: this.resolveDependencyState(plugin, plugins, installedById),
       rollbackAvailable: this.rollout ? !!await this.rollout.previous(plugin.id) : false,
       entitlement: this.entitlements ? await this.entitlements.decision(plugin.id) : null,
     })));
   }
 
+  private resolveDependencyState(plugin: any, allPlugins: any[], installedById: Map<string, any>) {
+    let manifest: any = {};
+    try { manifest = JSON.parse(plugin.manifestJson || '{}'); } catch { /* reported by diagnostics */ }
+    const resolve = (dependencies: Record<string, string> = {}) => Object.entries(dependencies).map(([id, range]) => {
+      const installed = installedById.get(id);
+      const compatible = !!installed && semver.satisfies(installed.version, range);
+      return { id, range, installed: !!installed, installedVersion: installed?.version || null, status: installed?.status || 'missing', compatible, ready: compatible && installed.status === 'active' };
+    });
+    const requiredBy = allPlugins.flatMap((candidate) => {
+      try {
+        const dependencies = JSON.parse(candidate.manifestJson || '{}').dependencies || {};
+        return dependencies[plugin.id] ? [{ id: candidate.id, name: candidate.name, range: dependencies[plugin.id], status: candidate.status }] : [];
+      } catch { return []; }
+    });
+    return { required: resolve(manifest.dependencies), optional: resolve(manifest.optionalDependencies), requiredBy };
+  }
+
   runtimeStatus() { return this.runtime.status(); }
+
+  private inspectUi(verified: VerifiedPluginPackage) {
+    const entry = verified.manifest.frontendEntry;
+    if (!entry) return { present: false, portability: null, pageCount: 0, componentTypes: [] as string[] };
+    const file = verified.files.get(entry);
+    if (!file) throw new BadRequestException(`Plugin UI entry ${entry} is missing from the signed package`);
+    let descriptor: unknown;
+    try { descriptor = JSON.parse(file.toString('utf8')); }
+    catch { throw new BadRequestException(`Plugin UI entry ${entry} is not valid JSON`); }
+    if ((descriptor as any)?.schemaVersion === 1 && Array.isArray((descriptor as any)?.pages)) {
+      if (verified.manifest.sdkVersion && semver.gte(semver.coerce(verified.manifest.sdkVersion) || '0.0.0', '1.3.0')) {
+        throw new BadRequestException('SDK 1.3 plugins must use the universal declarative UI contract');
+      }
+      const pages = (descriptor as any).pages;
+      return { present: true, portability: 'legacy-schema-1-adapter', pageCount: pages.length, componentTypes: [...new Set<string>(pages.flatMap((page: any) => (page.components || []).map((component: any) => String(component.type))))].sort() };
+    }
+    if ((descriptor as any)?.schemaVersion === 1 && (descriptor as any)?.kind === 'json-settings') {
+      return { present: true, portability: 'legacy-json-settings', pageCount: 1, componentTypes: ['json-settings'] };
+    }
+    const bundle = parsePluginUiBundle(descriptor, verified.manifest.id, new Set(verified.manifest.permissions));
+    return {
+      present: true,
+      portability: bundle.portability || 'legacy-host-components',
+      pageCount: bundle.pages.length,
+      componentTypes: [...new Set(bundle.pages.flatMap((page) => page.components.map((component) => component.type)))].sort(),
+    };
+  }
+
   async diagnostics() {
-    const [plugins, jobs] = await Promise.all([
+    const [plugins, jobs, deployment] = await Promise.all([
       this.prisma.pluginInstallation.findMany({ orderBy: { name: 'asc' } }),
       this.prisma.pluginJobDefinition.findMany({ orderBy: [{ pluginId: 'asc' }, { jobId: 'asc' }] }),
+      this.deploymentReadiness(),
     ]);
     const runtime = this.runtime.status();
     const loaded = new Set(runtime.loaded);
@@ -113,18 +164,126 @@ export class PluginsService {
       };
     }));
     return {
-      status: results.some((plugin) => plugin.status === 'failed') ? 'failed' : results.some((plugin) => plugin.status === 'degraded') ? 'degraded' : 'healthy',
-      safeMode: runtime.safeMode, checkedAt: new Date().toISOString(), plugins: results,
+      status: !deployment.ready || results.some((plugin) => plugin.status === 'failed') ? 'failed' : results.some((plugin) => plugin.status === 'degraded') || deployment.checks.some((check) => check.status === 'warning') ? 'degraded' : 'healthy',
+      safeMode: runtime.safeMode, checkedAt: new Date().toISOString(), deployment, plugins: results,
+    };
+  }
+
+  private async deploymentReadiness() {
+    type Check = { id: string; status: 'passed' | 'failed' | 'warning'; message: string };
+    const checks: Check[] = [];
+    const pass = (id: string, message: string): void => { checks.push({ id, status: 'passed', message }); };
+    const fail = (id: string, message: string): void => { checks.push({ id, status: 'failed', message }); };
+    const warn = (id: string, message: string): void => { checks.push({ id, status: 'warning', message }); };
+    const config = readRuntimeConfig();
+    const platform = process.env.RAILWAY_ENVIRONMENT_ID || process.env.RAILWAY_PROJECT_ID ? 'managed-cloud' : 'self-hosted-vps';
+    const backendPublishers = [...inProcessPluginPublishers()].sort();
+    if (backendPublishers.length) pass('backend-execution-policy', `In-process backend execution is limited to: ${backendPublishers.join(', ')}`);
+    else fail('backend-execution-policy', 'No publisher is allowed to execute backend plugin code');
+
+    for (const [id, directory] of [['plugin-files', config.pluginDir], ['plugin-data', config.pluginDataDir]] as const) {
+      try {
+        await fs.mkdir(directory, { recursive: true });
+        await fs.access(directory, fs.constants.R_OK | fs.constants.W_OK);
+        pass(id, `${directory} is readable and writable`);
+      } catch (error) { fail(id, `${directory} is not usable: ${error instanceof Error ? error.message : String(error)}`); }
+    }
+
+    try {
+      const keys = await trustedPluginKeys(this.prisma);
+      const publishers = Object.keys(keys);
+      if (publishers.length) pass('publisher-trust', `${publishers.length} publisher trust record(s) are available`);
+      else warn('publisher-trust', 'No publisher key is stored yet; link Marketplace before installing the first plugin');
+    } catch (error) { fail('publisher-trust', error instanceof Error ? error.message : String(error)); }
+
+    try {
+      const marketplace = readMarketplaceIdentityConfig();
+      if (!marketplace) warn('marketplace', 'MARKETPLACE_URL is not configured; signed marketplace discovery, purchase, and artifact recovery are unavailable');
+      else {
+        pass('marketplace', `Marketplace origin is ${marketplace.marketplaceUrl}`);
+        try {
+          await fs.mkdir(marketplace.installationKeyDir, { recursive: true });
+          await fs.access(marketplace.installationKeyDir, fs.constants.R_OK | fs.constants.W_OK);
+          pass('installation-identity', `${marketplace.installationKeyDir} can retain the school identity key`);
+        } catch (error) { fail('installation-identity', `School identity storage is unavailable: ${error instanceof Error ? error.message : String(error)}`); }
+      }
+    } catch (error) { fail('marketplace', error instanceof Error ? error.message : String(error)); }
+
+    const requiredRoles = (process.env.PLUGIN_REQUIRED_RUNTIME_ROLES || '').split(',').map((role) => role.trim()).filter(Boolean);
+    if (config.processRole === 'combined') pass('runtime-roles', 'Combined API/worker runtime uses one verified artifact generation');
+    else if (requiredRoles.includes('api') && requiredRoles.includes('worker')) pass('runtime-roles', 'Rollout requires both API and worker readiness');
+    else fail('runtime-roles', 'Split deployment must set PLUGIN_REQUIRED_RUNTIME_ROLES=api,worker on every API and worker service');
+
+    if (config.nodeEnv === 'production' && !path.isAbsolute(config.pluginDir)) fail('persistent-storage', 'PLUGIN_DIR must be an absolute persistent path in production');
+    else if (platform === 'managed-cloud' && !process.env.PLUGIN_DIR) fail('persistent-storage', 'Managed cloud must explicitly mount and set PLUGIN_DIR; container-local defaults are not durable');
+    else pass('persistent-storage', 'Plugin paths are explicit and suitable for backup/restore verification');
+
+    return { platform, ready: checks.every((check) => check.status !== 'failed'), checks };
+  }
+
+  async activationPreflight(id: string) {
+    const plugin = await this.get(id);
+    const checks: Array<{ id: string; status: 'passed' | 'failed' | 'warning'; message: string; details?: unknown }> = [];
+    let verified: VerifiedPluginPackage | null = null;
+    const pass = (checkId: string, message: string, details?: unknown) => checks.push({ id: checkId, status: 'passed', message, ...(details === undefined ? {} : { details }) });
+    const fail = (checkId: string, error: unknown) => checks.push({ id: checkId, status: 'failed', message: error instanceof Error ? error.message : String(error) });
+
+    try {
+      verified = await this.verifier.verifyInstalledDirectory(plugin.installedPath, await trustedPluginKeys(this.prisma), readRuntimeConfig().appVersion);
+      if (verified.manifest.id !== plugin.id || verified.manifest.version !== plugin.version) throw new Error(`Installed identity ${verified.manifest.id}@${verified.manifest.version} does not match registry ${plugin.id}@${plugin.version}`);
+      pass('artifact-integrity', 'Installed files, checksums, publisher signature, identity, and core compatibility are valid');
+    } catch (error) { fail('artifact-integrity', error); }
+
+    if (verified) {
+      try {
+        const execution = assertPluginExecutionAllowed(verified.manifest);
+        pass('execution-policy', execution.reason, execution);
+      } catch (error) { fail('execution-policy', error); }
+      try {
+        const ui = this.inspectUi(verified);
+        pass('ui-contract', ui.present ? `UI contract is valid (${ui.portability}, ${ui.pageCount} pages)` : 'Plugin does not declare a UI', ui);
+      } catch (error) { fail('ui-contract', error); }
+      try { await this.assertDependencies(verified); pass('dependencies', 'Required plugin dependencies are installed and compatible'); }
+      catch (error) { fail('dependencies', error); }
+      try {
+        const applied = await this.prisma.pluginMigration.findMany({ where: { pluginId: id }, select: { migrationId: true, checksum: true } });
+        const appliedById = new Map(applied.map((migration) => [migration.migrationId, migration.checksum]));
+        const missing = verified.manifest.migrations.filter((migration) => !appliedById.has(migration.id)).map((migration) => migration.id);
+        const changed = verified.manifest.migrations.filter((migration) => appliedById.has(migration.id) && appliedById.get(migration.id) !== migration.checksum).map((migration) => migration.id);
+        if (missing.length || changed.length) throw new Error(`Migration state is inconsistent${missing.length ? `; not applied: ${missing.join(', ')}` : ''}${changed.length ? `; checksum mismatch: ${changed.join(', ')}` : ''}`);
+        pass('migrations', `${verified.manifest.migrations.length} declared migrations are applied with matching checksums`);
+      } catch (error) { fail('migrations', error); }
+    }
+
+    try {
+      const entitlement = this.entitlements ? await this.entitlements.decision(id) : null;
+      if (entitlement?.mode === 'read_only') throw new Error(entitlement.reason || 'Plugin entitlement is read-only');
+      pass('entitlement', entitlement ? `Entitlement permits activation (${entitlement.mode})` : 'No external entitlement is required', entitlement);
+    } catch (error) { fail('entitlement', error); }
+
+    const runtime = this.runtime.status();
+    if (runtime.safeMode) fail('runtime', new Error('Plugin activation is disabled while PLUGIN_SAFE_MODE is enabled'));
+    else if (plugin.status === 'active' && !runtime.loaded.includes(id)) fail('runtime', new Error('Registry says active but the plugin runtime is not loaded'));
+    else pass('runtime', plugin.status === 'active' ? 'Plugin runtime is loaded' : 'Plugin runtime is available for activation');
+
+    return {
+      plugin: { id: plugin.id, name: plugin.name, version: plugin.version, status: plugin.status },
+      ready: checks.every((check) => check.status !== 'failed'),
+      checkedAt: new Date().toISOString(),
+      checks,
     };
   }
   contractHealth(id: string) { if (!this.contracts) throw new ConflictException('Plugin contract runtime is unavailable'); return this.contracts.health(id); }
   replayDeadLetter(id: string, deadLetterId: string) { if (!this.contracts) throw new ConflictException('Plugin contract runtime is unavailable'); return this.contracts.replay(id, deadLetterId); }
 
   async inspect(packageBuffer: Buffer) {
-    const verified = await this.verifier.verify(packageBuffer, await trustedPluginKeys(), readRuntimeConfig().appVersion);
+    const verified = await this.verifier.verify(packageBuffer, await trustedPluginKeys(this.prisma), readRuntimeConfig().appVersion);
     await this.assertDependencies(verified);
+    const ui = this.inspectUi(verified);
+    const execution = pluginExecutionDecision(verified.manifest);
     return {
       packageSha256: verified.packageSha256,
+      checks: { signature: 'valid', coreCompatibility: 'compatible', dependencies: 'satisfied', execution, ui },
       plugin: {
         id: verified.manifest.id, name: verified.manifest.name, description: verified.manifest.description,
         version: verified.manifest.version, publisher: verified.manifest.publisher, requiresCore: verified.manifest.requiresCore,
@@ -146,7 +305,9 @@ export class PluginsService {
    */
   async install(packageBuffer: Buffer, confirmedPackageSha256?: string, trustedKeys?: TrustedPluginKeys) {
     const coreVersion = readRuntimeConfig().appVersion;
-    const verified = await this.verifier.verify(packageBuffer, trustedKeys ?? await trustedPluginKeys(), coreVersion);
+    const verified = await this.verifier.verify(packageBuffer, trustedKeys ?? await trustedPluginKeys(this.prisma), coreVersion);
+    assertPluginExecutionAllowed(verified.manifest);
+    this.inspectUi(verified);
     await this.artifactCache?.seed(packageBuffer, verified.packageSha256);
     if (confirmedPackageSha256 !== undefined && confirmedPackageSha256 !== verified.packageSha256) throw new BadRequestException('The package differs from the inspected package');
     await this.assertDependencies(verified);
@@ -184,7 +345,14 @@ export class PluginsService {
     // signed artifact under the normal migration/locking pipeline, then reactivate it below.
     if (restoreActive) await this.runtime.unload(verified.manifest.id);
     if (verified.manifest.migrations.length > 0) {
-      await this.migrations.createRecoveryPoint();
+      try {
+        await this.migrations.createRecoveryPoint();
+      } catch (error) {
+        // The authoritative registry still points at the previous active generation here. A
+        // recovery-point failure must therefore restore its runtime before the update exits.
+        if (restoreActive) await this.runtime.load(verified.manifest.id).catch(() => undefined);
+        throw error;
+      }
       // Visible progress marker: committed in its own short transaction (not the
       // locked install transaction below) so a concurrent reader — an admin
       // screen, a health check — can see "migrating" while the real work runs,
@@ -194,7 +362,13 @@ export class PluginsService {
     }
 
     const staging = path.join(root, '.staging', `${verified.manifest.id}-${randomUUID()}`);
-    await fs.mkdir(staging, { recursive: true, mode: 0o750 });
+    try {
+      await fs.mkdir(staging, { recursive: true, mode: 0o750 });
+    } catch (error) {
+      if (restoreActive) await this.runtime.load(verified.manifest.id).catch(() => undefined);
+      throw error;
+    }
+    let previousRestored = false;
     try {
       for (const [name, content] of verified.files) {
         const target = path.resolve(staging, name);
@@ -218,19 +392,40 @@ export class PluginsService {
             update: { ...this.registryData(verified, destination), status: 'installed', activatedAt: null, deactivatedAt: null, lastError: null },
           });
         });
-        if (restoreActive) return this.activate(verified.manifest.id);
+        // Await inside this try so an asynchronous activation/health failure is handled by the
+        // automatic previous-version restoration below instead of escaping past its catch block.
+        if (restoreActive) return await this.activate(verified.manifest.id);
         return this.publicPlugin(registered);
       } catch (error) {
         await fs.rm(destination, { recursive: true, force: true });
         const message = error instanceof Error ? error.message : String(error);
-        await this.prisma.pluginInstallation.updateMany({ where: { id: verified.manifest.id }, data: { status: 'failed', lastError: message } }).catch(() => undefined);
+        if (restoreActive && current) {
+          try {
+            await this.prisma.pluginInstallation.update({
+              where: { id: current.id },
+              data: {
+                name: current.name, version: current.version, publisher: current.publisher,
+                manifestJson: current.manifestJson, packageSha256: current.packageSha256,
+                installedPath: current.installedPath, status: 'active', activatedAt: current.activatedAt || new Date(),
+                deactivatedAt: null, lastError: null,
+              },
+            });
+            await this.runtime.load(current.id);
+            previousRestored = true;
+          } catch (restoreError) {
+            const restoreMessage = restoreError instanceof Error ? restoreError.message : String(restoreError);
+            await this.prisma.pluginInstallation.updateMany({ where: { id: verified.manifest.id }, data: { status: 'failed', lastError: `${message}; automatic rollback failed: ${restoreMessage}` } }).catch(() => undefined);
+          }
+        } else {
+          await this.prisma.pluginInstallation.updateMany({ where: { id: verified.manifest.id }, data: { status: 'failed', lastError: message } }).catch(() => undefined);
+        }
         throw error;
       }
     } catch (error) {
       await fs.rm(staging, { recursive: true, force: true });
       // Failures before the registry swap leave the previous active installation authoritative.
       // Restore its runtime so a transient package/filesystem failure does not create downtime.
-      if (restoreActive) {
+      if (restoreActive && !previousRestored) {
         const registered = await this.prisma.pluginInstallation.findUnique({ where: { id: verified.manifest.id } }).catch(() => null);
         if (registered?.status === 'active') await this.runtime.load(verified.manifest.id).catch(() => undefined);
       }
@@ -241,6 +436,7 @@ export class PluginsService {
   async activate(id: string) {
     await this.entitlements?.assertCanActivate(id);
     let activationStarted = false;
+    let stagedGeneration: ArtifactGeneration | null = null;
     try {
       const activation = await this.withPluginLock(id, async (tx) => {
         const plugin = await this.getTx(tx, id);
@@ -261,6 +457,7 @@ export class PluginsService {
           data: { status: 'activating', activatedAt: null, deactivatedAt: null, lastError: null },
         });
         const generation = this.rollout ? await this.rollout.stage(tx, plugin) : null;
+        stagedGeneration = generation;
         return { updated, generation };
       });
       activationStarted = true;
@@ -280,6 +477,7 @@ export class PluginsService {
       return this.publicPlugin(await this.get(id));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (stagedGeneration && this.rollout) await this.rollout.fail(stagedGeneration, message).catch(() => undefined);
       if (activationStarted) {
         await this.runtime.unload(id).catch(() => undefined);
         // Do not overwrite another operation's final state. Only the activation attempt that still

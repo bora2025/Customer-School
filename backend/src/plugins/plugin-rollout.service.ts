@@ -27,6 +27,38 @@ export class PluginRolloutService {
     return this.promoteIfReady(generation.id);
   }
 
+  async fail(generation: ArtifactGeneration, error: string) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('UPDATE "PluginArtifactGeneration" SET status=\'failed\' WHERE id=$1::uuid AND status=\'staging\'', generation.id);
+      await tx.$executeRawUnsafe('INSERT INTO "PluginArtifactReadiness" ("generationId",role,sha256,ready,error) VALUES ($1::uuid,$2,$3,false,$4) ON CONFLICT ("generationId",role) DO UPDATE SET ready=false,error=EXCLUDED.error,"checkedAt"=NOW()', generation.id, this.role(), generation.sha256, error);
+    });
+  }
+
+  async failAndRestoreAuthoritative(generation: ArtifactGeneration, error: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('UPDATE "PluginArtifactGeneration" SET status=\'failed\' WHERE id=$1::uuid AND status=\'staging\'', generation.id);
+      await tx.$executeRawUnsafe('INSERT INTO "PluginArtifactReadiness" ("generationId",role,sha256,ready,error) VALUES ($1::uuid,$2,$3,false,$4) ON CONFLICT ("generationId",role) DO UPDATE SET ready=false,error=EXCLUDED.error,"checkedAt"=NOW()', generation.id, this.role(), generation.sha256, error);
+      const rows = await tx.$queryRawUnsafe<ArtifactGeneration[]>('SELECT * FROM "PluginArtifactGeneration" WHERE "pluginId"=$1 AND status=\'active\' AND id<>$2::uuid ORDER BY generation DESC LIMIT 1 FOR UPDATE', generation.pluginId, generation.id);
+      const previous = rows[0];
+      if (!previous) {
+        await tx.pluginInstallation.updateMany({
+          where: { id: generation.pluginId, status: 'activating' },
+          data: { status: 'failed', lastError: error },
+        });
+        return null;
+      }
+      return tx.pluginInstallation.update({
+        where: { id: generation.pluginId },
+        data: {
+          version: previous.version, packageSha256: previous.sha256,
+          installedPath: previous.installedPath, manifestJson: previous.manifestJson,
+          status: 'active', activatedAt: new Date(), deactivatedAt: null,
+          lastError: `Update ${generation.version} failed and was automatically restored: ${error}`,
+        },
+      });
+    });
+  }
+
   async promoteIfReady(generationId: string) {
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRawUnsafe<ArtifactGeneration[]>('SELECT * FROM "PluginArtifactGeneration" WHERE id=$1::uuid FOR UPDATE', generationId);

@@ -1,7 +1,12 @@
 node_modules
+**/node_modules
 .next
+**/.next
+**/.core-build
 dist
+**/dist
 build
+**/build
 .git
 backups
 *.dump

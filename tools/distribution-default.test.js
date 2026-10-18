@@ -6,18 +6,26 @@ const test = require('node:test');
 const root = path.resolve(__dirname, '..');
 const source = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('LC2-002: runtime upgrades stay compatible while new-school provisioning is core-first', () => {
+test('LC2-002: legacy compatibility stays explicit while every new deployment path is core-first', () => {
   const environment = source('backend/src/config/environment.ts');
-  const compose = source('docker-compose.yml');
+  const compose = source('docker-compose.core.yml');
   const provisioner = source('tools/provision-railway-school.js');
+  const backendImage = source('backend/Dockerfile.core');
+  const frontendImage = source('frontend/Dockerfile.core');
   const rootExample = source('.env.example');
   const backendExample = source('backend/.env.example');
 
+  // The runtime keeps the legacy default solely for existing-school compatibility.
   assert.match(environment, /WATTANAM_DISTRIBUTION\?\.trim\(\)\.toLowerCase\(\) \|\| 'legacy-full'/);
-  assert.equal((compose.match(/WATTANAM_DISTRIBUTION: \$\{WATTANAM_DISTRIBUTION:-legacy-full\}/g) || []).length, 2);
+  assert.equal((compose.match(/WATTANAM_DISTRIBUTION: core/g) || []).length, 5);
+  assert.doesNotMatch(compose, /legacy-full/);
+  assert.match(backendImage, /ENV WATTANAM_DISTRIBUTION=core/);
+  assert.match(frontendImage, /ENV WATTANAM_DISTRIBUTION=core/);
   assert.match(provisioner, /arg\('distribution'\) \|\| 'core'/);
   assert.match(provisioner, /WATTANAM_DISTRIBUTION: distribution/);
-  assert.match(rootExample, /^WATTANAM_DISTRIBUTION=legacy-full$/m);
+  // The self-hosted root example is a new deployment; the backend-only developer example keeps
+  // legacy-full so an existing source checkout is never silently cut over.
+  assert.match(rootExample, /^WATTANAM_DISTRIBUTION=core$/m);
   assert.match(backendExample, /^WATTANAM_DISTRIBUTION=legacy-full$/m);
   assert.match(provisioner, /legacy-full is an explicit migration\/rollback compatibility mode/);
 });

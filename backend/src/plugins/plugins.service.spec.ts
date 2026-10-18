@@ -30,12 +30,13 @@ function harness() {
   };
   const prisma = {
     pluginInstallation: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    pluginMigration: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn((work: (tx: any) => unknown, _options?: unknown) => work(tx)),
   } as any;
-  const verifier = { verify: jest.fn() } as any;
+  const verifier = { verify: jest.fn(), verifyInstalledDirectory: jest.fn() } as any;
   const runtime = { load: jest.fn().mockResolvedValue(undefined), unload: jest.fn().mockResolvedValue(undefined), status: jest.fn().mockReturnValue({ safeMode: false, loaded: [] }) } as any;
   const migrations = { apply: jest.fn().mockResolvedValue(undefined), createRecoveryPoint: jest.fn().mockResolvedValue(undefined) } as any;
-  const entitlements = { assertCanActivate: jest.fn().mockResolvedValue({ mode: 'active' }) } as any;
+  const entitlements = { assertCanActivate: jest.fn().mockResolvedValue({ mode: 'active' }), decision: jest.fn().mockResolvedValue({ mode: 'active', reason: 'Licensed' }) } as any;
   const service = new PluginsService(prisma, verifier, runtime, migrations, undefined, undefined, undefined, entitlements);
   return { service, prisma, tx, verifier, runtime, migrations, entitlements };
 }
@@ -46,7 +47,7 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
 
   beforeEach(async () => {
     pluginDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wattanam-plugins-service-'));
-    process.env = { ...originalEnv, NODE_ENV: 'test', DATABASE_URL: 'postgresql://localhost/test', APP_VERSION: '0.1.0', PLUGIN_DIR: pluginDir, PLUGIN_TRUSTED_KEYS: '{}' };
+    process.env = { ...originalEnv, NODE_ENV: 'test', DATABASE_URL: 'postgresql://localhost/test', APP_VERSION: '0.1.0', PLUGIN_DIR: pluginDir, PLUGIN_DATA_DIR: pluginDir, PLUGIN_TRUSTED_KEYS: '{}' };
   });
 
   afterEach(async () => {
@@ -55,6 +56,42 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
   });
 
   describe('diagnostics', () => {
+    it('resolves required, optional, incompatible, and reverse dependencies from plugin manifests', async () => {
+      const { service, prisma } = harness();
+      prisma.pluginInstallation.findMany.mockResolvedValue([
+        { id: 'wattanam.base', name: 'Base', version: '1.4.0', status: 'active', manifestJson: JSON.stringify(manifest({ id: 'wattanam.base', version: '1.4.0' })) },
+        { id: 'wattanam.feature', name: 'Feature', version: '2.0.0', status: 'inactive', manifestJson: JSON.stringify({ ...manifest({ id: 'wattanam.feature', version: '2.0.0', dependencies: { 'wattanam.base': '^2.0.0' } }), optionalDependencies: { 'wattanam.messages': '^1.0.0' } }) },
+      ]);
+      const result = await service.list();
+      expect(result.find((plugin) => plugin.id === 'wattanam.feature')?.dependencyState).toMatchObject({
+        required: [{ id: 'wattanam.base', installedVersion: '1.4.0', compatible: false, ready: false }],
+        optional: [{ id: 'wattanam.messages', installed: false, status: 'missing', ready: false }],
+      });
+      expect(result.find((plugin) => plugin.id === 'wattanam.base')?.dependencyState.requiredBy).toEqual([
+        expect.objectContaining({ id: 'wattanam.feature', range: '^2.0.0' }),
+      ]);
+    });
+
+    it('explains which host prerequisites are missing on a self-hosted VPS', async () => {
+      const { service } = harness();
+      const readiness = await (service as any).deploymentReadiness();
+      expect(readiness).toMatchObject({ platform: 'self-hosted-vps', ready: true });
+      expect(readiness.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'plugin-files', status: 'passed' }),
+        expect.objectContaining({ id: 'marketplace', status: 'warning', message: expect.stringContaining('MARKETPLACE_URL') }),
+        expect.objectContaining({ id: 'runtime-roles', status: 'passed' }),
+      ]));
+    });
+
+    it('blocks a split API/worker deployment that cannot prove both artifact roles are ready', async () => {
+      process.env.PROCESS_ROLE = 'api';
+      delete process.env.PLUGIN_REQUIRED_RUNTIME_ROLES;
+      const { service } = harness();
+      const readiness = await (service as any).deploymentReadiness();
+      expect(readiness.ready).toBe(false);
+      expect(readiness.checks).toContainEqual(expect.objectContaining({ id: 'runtime-roles', status: 'failed', message: expect.stringContaining('api,worker') }));
+    });
+
     it('reports missing artifacts, runtime drift, licence state and failed jobs in one health result', async () => {
       const { service, prisma, runtime, entitlements } = harness();
       prisma.pluginInstallation.findMany.mockResolvedValue([{
@@ -67,6 +104,42 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
         status: 'failed', safeMode: false,
         plugins: [{ id: 'wattanam.test', status: 'failed', artifact: 'missing', runtimeLoaded: false, entitlement: { mode: 'read_only' }, jobs: [{ id: 'digest', lastStatus: 'failed' }] }],
       });
+    });
+
+    it('returns an actionable activation preflight covering signed artifacts, UI, migrations, entitlement, and runtime', async () => {
+      const { service, prisma, verifier } = harness();
+      const verified = verifiedPackage();
+      prisma.pluginInstallation.findUnique.mockResolvedValue({
+        id: 'wattanam.test', name: 'Test', version: '1.0.0', status: 'installed', installedPath: path.join(pluginDir, 'wattanam.test', '1.0.0'),
+      });
+      verifier.verifyInstalledDirectory.mockResolvedValue(verified);
+      await expect(service.activationPreflight('wattanam.test')).resolves.toMatchObject({
+        ready: true,
+        plugin: { id: 'wattanam.test', version: '1.0.0', status: 'installed' },
+        checks: [
+          { id: 'artifact-integrity', status: 'passed' },
+          { id: 'execution-policy', status: 'passed' },
+          { id: 'ui-contract', status: 'passed' },
+          { id: 'dependencies', status: 'passed' },
+          { id: 'migrations', status: 'passed' },
+          { id: 'entitlement', status: 'passed' },
+          { id: 'runtime', status: 'passed' },
+        ],
+      });
+    });
+
+    it('reports exact preflight failures without mutating the installation', async () => {
+      const { service, prisma, verifier, entitlements } = harness();
+      prisma.pluginInstallation.findUnique.mockResolvedValue({ id: 'wattanam.test', name: 'Test', version: '1.0.0', status: 'inactive', installedPath: 'missing' });
+      verifier.verifyInstalledDirectory.mockRejectedValue(new Error('Checksum verification failed for backend/index.js'));
+      entitlements.decision.mockResolvedValue({ mode: 'read_only', reason: 'Licence expired' });
+      const result = await service.activationPreflight('wattanam.test');
+      expect(result.ready).toBe(false);
+      expect(result.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'artifact-integrity', status: 'failed', message: 'Checksum verification failed for backend/index.js' }),
+        expect.objectContaining({ id: 'entitlement', status: 'failed', message: 'Licence expired' }),
+      ]));
+      expect(prisma.pluginInstallation.update).not.toHaveBeenCalled();
     });
   });
 
@@ -146,6 +219,69 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
       await expect(service.install(Buffer.from('package'))).resolves.toMatchObject({ version: '1.1.0', status: 'active' });
       expect(runtime.unload).toHaveBeenCalledWith('wattanam.test');
       expect(activate).toHaveBeenCalledWith('wattanam.test');
+    });
+
+    it('automatically restores the previous active registry and runtime when the new version cannot activate', async () => {
+      const { service, verifier, prisma, tx, runtime } = harness();
+      const verified = verifiedPackage({ version: '1.1.0' });
+      const previous = {
+        id: 'wattanam.test', name: 'Test', version: '1.0.0', publisher: 'wattanam', status: 'active',
+        manifestJson: JSON.stringify(manifest({ version: '1.0.0' })), packageSha256: 'b'.repeat(64),
+        installedPath: path.join(pluginDir, 'wattanam.test', '1.0.0'), activatedAt: new Date(),
+      };
+      verifier.verify.mockResolvedValue(verified);
+      prisma.pluginInstallation.findUnique.mockResolvedValue(previous);
+      tx.pluginInstallation.upsert.mockResolvedValue({ ...previous, version: '1.1.0', status: 'installed' });
+      jest.spyOn(service, 'activate').mockRejectedValue(new Error('new health check failed'));
+
+      await expect(service.install(Buffer.from('package'))).rejects.toThrow('new health check failed');
+      expect(prisma.pluginInstallation.update).toHaveBeenCalledWith({
+        where: { id: previous.id },
+        data: expect.objectContaining({ version: '1.0.0', packageSha256: previous.packageSha256, installedPath: previous.installedPath, status: 'active', lastError: null }),
+      });
+      expect(runtime.load).toHaveBeenCalledWith(previous.id);
+    });
+
+    it('keeps the previous active runtime online when migration recovery-point creation fails', async () => {
+      const { service, verifier, prisma, migrations, runtime } = harness();
+      const verified = verifiedPackage({
+        version: '1.1.0',
+        migrations: [{ id: '001', path: 'migrations/001.sql', checksum: 'x', destructive: false }],
+      });
+      const previous = { id: 'wattanam.test', status: 'active', version: '1.0.0' };
+      verifier.verify.mockResolvedValue(verified);
+      prisma.pluginInstallation.findUnique.mockResolvedValue(previous);
+      migrations.createRecoveryPoint.mockRejectedValue(new Error('backup unavailable'));
+
+      await expect(service.install(Buffer.from('package'))).rejects.toThrow('backup unavailable');
+      expect(runtime.unload).toHaveBeenCalledWith(previous.id);
+      expect(runtime.load).toHaveBeenCalledTimes(1);
+      expect(runtime.load).toHaveBeenCalledWith(previous.id);
+      expect(migrations.apply).not.toHaveBeenCalled();
+    });
+
+    it('restores the previous active registry and runtime exactly once when update migration fails', async () => {
+      const { service, verifier, prisma, migrations, runtime } = harness();
+      const verified = verifiedPackage({
+        version: '1.1.0',
+        migrations: [{ id: '001', path: 'migrations/001.sql', checksum: 'x', destructive: false }],
+      });
+      const previous = {
+        id: 'wattanam.test', name: 'Test', version: '1.0.0', publisher: 'wattanam', status: 'active',
+        manifestJson: JSON.stringify(manifest({ version: '1.0.0' })), packageSha256: 'b'.repeat(64),
+        installedPath: path.join(pluginDir, 'wattanam.test', '1.0.0'), activatedAt: new Date(),
+      };
+      verifier.verify.mockResolvedValue(verified);
+      prisma.pluginInstallation.findUnique.mockResolvedValue(previous);
+      migrations.apply.mockRejectedValue(new Error('migration exploded'));
+
+      await expect(service.install(Buffer.from('package'))).rejects.toThrow('migration exploded');
+      expect(prisma.pluginInstallation.update).toHaveBeenCalledWith({
+        where: { id: previous.id },
+        data: expect.objectContaining({ version: previous.version, packageSha256: previous.packageSha256, status: 'active' }),
+      });
+      expect(runtime.load).toHaveBeenCalledTimes(1);
+      expect(runtime.load).toHaveBeenCalledWith(previous.id);
     });
 
     it('rejects replacing an active plugin with the same or an older version', async () => {

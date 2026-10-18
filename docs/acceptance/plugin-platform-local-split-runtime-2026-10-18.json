@@ -1,0 +1,70 @@
+{
+  "format": "wattanam-split-runtime-certification-v1",
+  "certifiedAt": "2026-10-18T04:29:25.266Z",
+  "profile": "local-production-shaped",
+  "distribution": "core",
+  "image": {
+    "reference": "wattanam-core-cert:local",
+    "digest": "sha256:3836ec454e8c73d21c2fcccb43cdae98ea3d8cc17a582d5b8440f4ef49f2a614",
+    "apiAndWorkerDigestMatch": true
+  },
+  "currentImageRevalidation": {
+    "certifiedAt": "2026-10-18T06:14:15.057Z",
+    "reference": "wattanam-customer-school-api-core:recovery-cert",
+    "digest": "sha256:7e2e72d62de8ac3e55e27505049fdd00fde6bb4a730427136185c0af90a3e8e2",
+    "node": "v24.22.0",
+    "postgres": "16",
+    "storageProvider": "s3",
+    "localStorageRejectedForSplitProduction": true,
+    "api": {
+      "processRole": "api",
+      "readinessStatus": 200,
+      "databaseStatus": "up"
+    },
+    "worker": {
+      "processRole": "worker",
+      "readinessStatus": 200,
+      "distribution": "core"
+    },
+    "apiAndWorkerDigestMatch": true,
+    "disposableResourcesRemoved": true
+  },
+  "roles": {
+    "required": ["api", "worker"],
+    "api": {
+      "processRole": "api",
+      "status": "running",
+      "healthStatus": 200,
+      "healthBody": {"status": "ok", "service": "wattanam-api"}
+    },
+    "worker": {
+      "processRole": "worker",
+      "status": "running",
+      "livenessStatus": 200,
+      "readinessStatus": 200,
+      "readinessBody": {"status": "ready", "role": "worker", "distribution": "core"}
+    }
+  },
+  "sharedArtifactStorage": {
+    "provider": "s3-compatible",
+    "tls": true,
+    "apiWrite": true,
+    "workerRead": true,
+    "contentMatched": true
+  },
+  "databaseRecovery": {
+    "report": "plugin-platform-local-core-restore-2026-10-18.json",
+    "reportSha256": "ba04b9d0aea8625c4da082bca90409b9aac9956932b7d31e666ea86739dad687",
+    "passed": true,
+    "exactMatch": true
+  },
+  "productionDependencyAudit": {
+    "command": "npm audit --omit=dev --json",
+    "totalVulnerabilities": 0
+  },
+  "passed": true,
+  "limitations": [
+    "This certifies the Railway-shaped split topology locally; it is not evidence from a live Railway project.",
+    "The current-image revalidation proves S3 configuration enforcement and role readiness; the earlier TLS S3 transfer result and automated artifact-cache suites remain the object-transfer evidence."
+  ]
+}

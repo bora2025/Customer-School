@@ -31,7 +31,20 @@ export class MarketplaceCommerceService {
     const coreVersion = readRuntimeConfig().appVersion;
     const url = new URL('/v1/catalog', config.marketplaceUrl);
     url.searchParams.set('coreVersion', coreVersion);
-    return this.getJson(config, url, token);
+    const catalog = await this.getJson(config, url, token) as Array<any>;
+    const installed = await this.prisma.pluginInstallation.findMany({ select: { id: true, name: true, version: true, status: true } });
+    const installedById = new Map(installed.map((plugin) => [plugin.id, plugin]));
+    return catalog.map((product) => ({
+      ...product,
+      versions: (product.versions || []).map((release: any) => ({
+        ...release,
+        dependencyState: Object.entries(release.dependencies || {}).map(([id, range]) => {
+          const plugin = installedById.get(id);
+          const compatible = !!plugin && semver.satisfies(plugin.version, String(range));
+          return { id, range, installed: !!plugin, installedVersion: plugin?.version || null, status: plugin?.status || 'missing', compatible, ready: compatible && plugin.status === 'active' };
+        }),
+      })),
+    }));
   }
 
   async starterBundles() {
@@ -154,7 +167,7 @@ export class MarketplaceCommerceService {
     // recognizes this publisher -- those calls only ever read trustedPluginKeys(), not this
     // one-off merge, so without this the plugin would install but could never actually run.
     if (release.publisherKeyId && release.publisherPublicKeyPem) {
-      await recordMarketplaceTrustedKey(release.publisher, release.publisherKeyId, release.publisherPublicKeyPem);
+      await recordMarketplaceTrustedKey(release.publisher, release.publisherKeyId, release.publisherPublicKeyPem, this.prisma);
     }
     return activate ? this.plugins.activate(installed.id) : installed;
   }
@@ -166,7 +179,7 @@ export class MarketplaceCommerceService {
    * later call (including this same plugin's own activate() a few lines down) picks it up from
    * trustedPluginKeys() itself. */
   private async mergeTrustedKeys(release: { publisher: string; publisherKeyId?: string; publisherPublicKeyPem?: string }): Promise<TrustedPluginKeys> {
-    const base = await trustedPluginKeys();
+    const base = await trustedPluginKeys(this.prisma);
     if (!release.publisherKeyId || !release.publisherPublicKeyPem) return base;
     return {
       ...base,

@@ -4,6 +4,6 @@
     "outDir": "./dist-core",
     "incremental": false
   },
-  "files": ["src/main-core.ts"],
+  "files": ["src/main-core.ts", "src/worker-core.ts"],
   "exclude": ["node_modules", "test", "dist", "dist-core", "**/*spec.ts"]
 }

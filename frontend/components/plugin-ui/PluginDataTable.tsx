@@ -82,14 +82,14 @@ export default function PluginDataTable({
   }
 
   if (loading) return <section className="card p-6" aria-busy="true"><div className="h-5 w-40 animate-pulse rounded bg-slate-200" /><div className="mt-4 h-28 animate-pulse rounded bg-slate-100" /><span className="sr-only">Loading table</span></section>;
-  if (error) return <section className="card border-red-200 p-6" role="alert"><h2 className="font-semibold text-red-800">{title || 'Table'}</h2><p className="mt-2 text-sm text-red-700">{error}</p></section>;
+  if (error) return <section className="card border-red-200 p-6" role="alert"><div className="flex items-start gap-3"><span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-full bg-red-100 font-bold text-red-700">!</span><div><h2 className="font-semibold text-red-800">{title || 'Table'} could not be loaded</h2><p className="mt-1 text-sm text-red-700">{error}</p><p className="mt-2 text-xs text-red-600">Refresh the page. If this continues, check plugin permissions and runtime status.</p></div></div></section>;
 
   return <section className="card overflow-hidden">
     <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
       <div><h2 className="font-semibold text-slate-800">{title || 'Records'}</h2>{selectable && selected.size > 0 && <p className="text-xs text-slate-500">{selected.size} selected</p>}</div>
       <label className="text-sm text-slate-600">Filter <input className="ml-2 rounded-lg border border-slate-300 px-3 py-2" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }} type="search" /></label>
     </div>
-    {sourceRows.length === 0 ? <div className="p-10 text-center text-sm text-slate-500">No records found.</div> : filtered.length === 0 ? <div className="p-10 text-center text-sm text-slate-500">No records match this filter.</div> : <div className="overflow-x-auto">
+    {sourceRows.length === 0 ? <div className="p-12 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-400" aria-hidden="true">◇</div><h3 className="mt-4 font-semibold text-slate-800">No records yet</h3><p className="mt-1 text-sm text-slate-500">Create the first record using the form on this page.</p></div> : filtered.length === 0 ? <div className="p-12 text-center"><h3 className="font-semibold text-slate-800">No matching records</h3><p className="mt-1 text-sm text-slate-500">Clear or change the filter to see more results.</p></div> : <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50"><tr>
           {selectable && <th className="w-12 px-4 py-3"><input aria-label="Select all visible rows" type="checkbox" checked={allVisibleSelected} onChange={toggleAll} /></th>}

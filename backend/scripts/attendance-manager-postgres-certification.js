@@ -4,7 +4,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..', '..', 'plugins', 'wattanam.attendance-manager');
+const { resolvePluginSource } = require('./plugin-source-root');
+const root = resolvePluginSource('wattanam.attendance-manager');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'plugin.json'), 'utf8'));
 const plugin = require(path.join(root, manifest.backendEntry));
 const prefix = 'plugin_wattanam_attendance_manager_';
@@ -100,7 +101,7 @@ async function certify(prisma) {
 
   const summary = await route('GET', 'reports/summary').handler({ principal, query: { classId: 'class-1', date: today } });
   assert.deepEqual(summary, [{ personType: 'STUDENT', status: 'PERMISSION', count: 1 }]);
-  const csv = await route('GET', 'reports/export.csv').handler({ principal, query: { classId: 'class-1', date: today } });
+  const csv = await route('GET', 'reports/export-csv').handler({ principal, query: { classId: 'class-1', date: today } });
   assert.match(csv.content, /Student One/); assert.match(csv.content, /S001/);
   const studentProjection = projections.filter(([name]) => name === 'student-attendance-summary').at(-1)?.[3];
   assert.ok(studentProjection); assert.equal(JSON.stringify(studentProjection).includes('markedById'), false);

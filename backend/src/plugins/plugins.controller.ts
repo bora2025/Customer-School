@@ -25,6 +25,9 @@ export class PluginsController {
   @Get('diagnostics')
   diagnostics() { return this.plugins.diagnostics(); }
 
+  @Get(':id/activation-preflight')
+  activationPreflight(@Param('id') id: string) { return this.plugins.activationPreflight(id); }
+
   @Get(':id/contract-health')
   contractHealth(@Param('id') id: string) { return this.plugins.contractHealth(id); }
 

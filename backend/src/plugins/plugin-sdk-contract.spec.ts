@@ -36,8 +36,8 @@ describe('SDK 1.0 frozen contract surface', () => {
     ]);
   });
 
-  it('ships the additive consistency contract as SDK 1.1 on runtime 1.0', () => {
-    expect(PLUGIN_SDK_VERSION).toBe('1.2.0');
+  it('ships the universal UI and public error contract as SDK 1.3 on runtime 1.0', () => {
+    expect(PLUGIN_SDK_VERSION).toBe('1.3.0');
     expect(PLUGIN_RUNTIME_VERSION).toBe('1.0.0');
   });
 

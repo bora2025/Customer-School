@@ -1,0 +1,55 @@
+{
+  "format": "wattanam-self-hosted-vps-certification-v1",
+  "certifiedAt": "2026-10-18T04:54:16.748Z",
+  "profile": "docker-compose.core.yml",
+  "distribution": "core",
+  "images": {
+    "postgres": "sha256:33f923b05f64ca54ac4401c01126a6b92afe839a0aa0a52bc5aeb5cc958e5f20",
+    "api": "sha256:64d64b80dc1641a5d914a762bb32c75ee9c6cae697a1b367dbde8d51ce5e1939",
+    "web": "sha256:077022f1d3e4cdb620c19f99bc0c7234be025331145c48b6dabd0a48cd32cec6",
+    "gateway": "sha256:adc9ddf6c8a7c5a4601ed5379b7953a29c92d0b8f7d77446cc42f8cf368cd844"
+  },
+  "topology": {
+    "postgres": "healthy",
+    "api": "healthy",
+    "web": "healthy",
+    "gateway": "healthy",
+    "isolatedRestorePostgres": "healthy"
+  },
+  "routes": {
+    "/gateway-health": 200,
+    "/setup": 200,
+    "/admin/plugins": 200,
+    "/api/health": 200,
+    "/api/health/ready": 200,
+    "/api/version": 200
+  },
+  "runtime": {
+    "environment": "production",
+    "reportedDistribution": "core",
+    "databaseReadiness": "up"
+  },
+  "recoverySet": {
+    "journal": "wattanam-recovery-20261018T044827Z.recovery-set.json",
+    "databaseSha256": "1354564c2c477ba2184ecb060ede12a7eacadfbb7270873dcdcff2805f919330",
+    "pluginFilesSha256": "e2419fec69b83547a718427e91d4e8a6ba99e2844ad02c09ba78b2d22cd117fd",
+    "pluginDataSha256": "e2419fec69b83547a718427e91d4e8a6ba99e2844ad02c09ba78b2d22cd117fd",
+    "contractVerification": true,
+    "isolatedDatabaseRestoreVerified": true,
+    "isolatedPluginFilesRestoreVerified": true
+  },
+  "productionDependencyAudit": {
+    "backendVulnerabilities": 0,
+    "frontendVulnerabilities": 0
+  },
+  "dockerContext": {
+    "beforeBytesApproximate": 1390000000,
+    "afterBytes": 498590,
+    "generatedDependenciesExcluded": true
+  },
+  "passed": true,
+  "limitations": [
+    "This local disposable topology certifies the self-hosted VPS profile, not a live customer VPS.",
+    "A live isolated Railway certification remains externally gated."
+  ]
+}

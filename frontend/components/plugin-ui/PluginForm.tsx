@@ -11,7 +11,8 @@ type Field = {
   options?: Array<{ label: string; value: string }>; visibleWhen?: { field: string; equals: string | number | boolean };
 };
 
-export default function PluginForm({ pluginId, source, params, fields, options, initialData, onSuccess }: {
+export default function PluginForm({ title, pluginId, source, params, fields, options, initialData, onSuccess }: {
+  title?: string;
   pluginId: string;
   source: { method: 'POST' | 'PUT' | 'PATCH'; path: string };
   params: Record<string, string>;
@@ -80,16 +81,18 @@ export default function PluginForm({ pluginId, source, params, fields, options, 
     finally { setBusy(false); }
   }
 
-  return <form className="card max-w-3xl space-y-5 p-6" onSubmit={submit} noValidate>
+  return <form className="card max-w-5xl space-y-5 overflow-hidden p-0" onSubmit={submit} noValidate>
+    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-indigo-50/60 px-6 py-5"><h2 className="text-lg font-bold text-slate-950">{title || 'Details'}</h2><p className="mt-1 text-xs text-slate-500">Fields marked with an asterisk are required. Changes are validated before saving.</p></div>
+    <div className="space-y-4 px-6" aria-live="polite">
     {serverError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{serverError}</div>}
     {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{success}</div>}
-    {fields.filter(visible).map((field) => <label key={field.id} className="block text-sm font-medium text-slate-700">{field.label}{field.required && <span aria-hidden="true" className="text-red-600"> *</span>}
+    </div><div className="grid gap-5 px-6 sm:grid-cols-2">{fields.filter(visible).map((field) => <label key={field.id} className={`block text-sm font-medium text-slate-700 ${field.type === 'textarea' || field.type === 'json' ? 'sm:col-span-2' : ''}`}>{field.label}{field.required && <span aria-hidden="true" className="text-red-600"> *</span>}
       {field.type === 'textarea' || field.type === 'json' ? <textarea className={`mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 ${field.type === 'json' ? 'min-h-64 font-mono text-xs' : 'min-h-28'}`} value={String(values[field.id] ?? '')} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />
       : field.type === 'select' ? <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={String(values[field.id] ?? '')} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}><option value="">Select…</option>{field.options?.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select>
       : field.type === 'checkbox' ? <input className="ml-3" type="checkbox" checked={Boolean(values[field.id])} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.checked }))} />
       : <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" type={field.type === 'datetime' ? 'datetime-local' : field.type} value={String(values[field.id] ?? '')} disabled={field.disabled || busy} min={field.min} max={field.max} minLength={field.minLength} maxLength={field.maxLength} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />}
       {errors[field.id] && <span id={`${field.id}-error`} className="mt-1 block text-xs font-normal text-red-600">{errors[field.id]}</span>}
-    </label>)}
-    <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : options?.submitLabel || 'Save'}</button>
+    </label>)}</div>
+    <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-6 py-4"><button className="btn btn-primary min-w-32" type="submit" disabled={busy} aria-busy={busy}>{busy ? 'Saving…' : options?.submitLabel || 'Save'}</button></div>
   </form>;
 }

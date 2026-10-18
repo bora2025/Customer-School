@@ -60,7 +60,7 @@ describe('PluginRuntimeService', () => {
       };
     `);
     const manifest = {
-      id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js',
+      id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: [], permissions: [], dependencies: {},
     };
     const prisma = {
@@ -78,6 +78,42 @@ describe('PluginRuntimeService', () => {
     expect((global as any).__wattanamPluginCleaned).toBe(true);
   });
 
+  it('replaces an already-loaded runtime when the authoritative version or digest changes', async () => {
+    const firstPath = path.join(directory, 'wattanam.test', '1.0.0');
+    const secondPath = path.join(directory, 'wattanam.test', '1.1.0');
+    for (const [installedPath, version] of [[firstPath, '1.0.0'], [secondPath, '1.1.0']]) {
+      await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });
+      await fs.writeFile(path.join(installedPath, 'backend', 'index.js'), `
+        module.exports = {
+          id: 'wattanam.test',
+          activate() {
+            global.__wattanamLoadedVersions = [...(global.__wattanamLoadedVersions || []), '${version}'];
+            return () => { global.__wattanamCleanupCount = (global.__wattanamCleanupCount || 0) + 1; };
+          }
+        };
+      `);
+    }
+    const records = [
+      { id: 'wattanam.test', version: '1.0.0', packageSha256: 'a'.repeat(64), installedPath: firstPath },
+      { id: 'wattanam.test', version: '1.1.0', packageSha256: 'b'.repeat(64), installedPath: secondPath },
+    ];
+    const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValueOnce(records[0]).mockResolvedValueOnce(records[1]) } } as any;
+    const verifier = { verifyInstalledDirectory: jest.fn(async (installedPath: string) => ({ manifest: {
+      id: 'wattanam.test', version: installedPath.endsWith('1.1.0') ? '1.1.0' : '1.0.0', publisher: 'wattanam',
+      backendEntry: 'backend/index.js', capabilities: [], permissions: [], dependencies: {},
+    } })) } as any;
+    const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
+    const runtime = new PluginRuntimeService(prisma, verifier, new PluginEventBus(), extensions as any, jobs as any, settings as any, storage as any, notifications as any, directoryService as any, realtime as any, notificationQuota as any, audit as any);
+
+    await runtime.load('wattanam.test');
+    await runtime.load('wattanam.test');
+
+    expect((global as any).__wattanamLoadedVersions).toEqual(['1.0.0', '1.1.0']);
+    expect((global as any).__wattanamCleanupCount).toBe(1);
+    delete (global as any).__wattanamLoadedVersions;
+    delete (global as any).__wattanamCleanupCount;
+  });
+
   it('binds Academic contract dispatch only for the active plugin lifecycle', async () => {
     const installedPath = path.join(directory, 'wattanam.academic-management', '1.0.0');
     await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });
@@ -85,7 +121,7 @@ describe('PluginRuntimeService', () => {
       module.exports = { id: 'wattanam.academic-management', activate() {} };
     `);
     const manifest = {
-      id: 'wattanam.academic-management', version: '1.0.0', backendEntry: 'backend/index.js',
+      id: 'wattanam.academic-management', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: [], permissions: [], dependencies: {},
     };
     const prisma = {
@@ -141,7 +177,7 @@ describe('PluginRuntimeService', () => {
       };
     `);
     const manifest = {
-      id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js',
+      id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: ['notifications.send'], permissions: [], dependencies: {},
     };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) } } as any;
@@ -164,7 +200,7 @@ describe('PluginRuntimeService', () => {
         activate(context) { return context.notifications.sendEmail('parent@example.com', 'Reminder', 'Body'); }
       };
     `);
-    const manifest = { id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js', capabilities: [], permissions: [], dependencies: {} };
+    const manifest = { id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: [], permissions: [], dependencies: {} };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) } } as any;
     const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
     const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
@@ -189,7 +225,7 @@ describe('PluginRuntimeService', () => {
         }
       };
     `);
-    const manifest = { id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js', capabilities: ['accounts.student.create', 'accounts.student.update'], permissions: [], dependencies: {} };
+    const manifest = { id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: ['accounts.student.create', 'accounts.student.update'], permissions: [], dependencies: {} };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) } } as any;
     const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
     const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
@@ -225,7 +261,7 @@ describe('PluginRuntimeService', () => {
       };
     `);
     const manifest = {
-      id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js',
+      id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: ['database.read', 'database.write', 'directory.read', 'realtime.notify'], permissions: [], dependencies: {},
     };
     const prisma = {
@@ -260,7 +296,7 @@ describe('PluginRuntimeService', () => {
         activate(context) { return context.database.execute('DELETE FROM plugin_wattanam_test_notes WHERE id = $1', ['n1']); }
       };
     `);
-    const manifest = { id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js', capabilities: ['database.read'], permissions: [], dependencies: {} };
+    const manifest = { id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: ['database.read'], permissions: [], dependencies: {} };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) }, $executeRawUnsafe: jest.fn() } as any;
     const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
     const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
@@ -286,7 +322,7 @@ describe('PluginRuntimeService', () => {
       };
     `);
     const manifest = {
-      id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js',
+      id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: ['notifications.send', 'directory.read'], permissions: [], dependencies: {},
     };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) } } as any;
@@ -316,7 +352,7 @@ describe('PluginRuntimeService', () => {
         }
       };
     `);
-    const manifest = { id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js', capabilities: ['notifications.send'], permissions: [], dependencies: {} };
+    const manifest = { id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: ['notifications.send'], permissions: [], dependencies: {} };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) } } as any;
     const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
     const [extensions, jobs, settings, storage, notifications, directoryService, realtime, , audit] = dependencies();
@@ -343,7 +379,7 @@ describe('PluginRuntimeService', () => {
         async activate(context) { await context.notifications.sendSms('+85512345678', 'Body'); }
       };
     `);
-    const manifest = { id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js', capabilities: ['notifications.send'], permissions: [], dependencies: {} };
+    const manifest = { id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: ['notifications.send'], permissions: [], dependencies: {} };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) } } as any;
     const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
     const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
@@ -370,7 +406,7 @@ describe('PluginRuntimeService', () => {
       };
     `);
     const manifest = {
-      id: 'wattanam.test', version: '1.0.0', backendEntry: 'backend/index.js',
+      id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: ['directory.read'], permissions: [], dependencies: {},
     };
     const prisma = {

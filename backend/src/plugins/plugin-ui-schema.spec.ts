@@ -1,8 +1,13 @@
 import { parsePluginUiBundle } from './plugin-ui-schema';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const permissions = new Set(['wattanam.test.read', 'wattanam.test.manage']);
+const pluginCatalogRoot = process.env.PLUGIN_SOURCE_CATALOG
+  ? path.resolve(process.env.PLUGIN_SOURCE_CATALOG)
+  : path.resolve(process.cwd(), '../plugins');
+const pluginRoot = (id: string) => path.join(pluginCatalogRoot, id);
+const catalogIt = (id: string) => existsSync(path.join(pluginRoot(id), 'plugin.json')) ? it : it.skip;
 
 function valid() {
   return {
@@ -116,10 +121,10 @@ describe('Plugin UI v2 schema', () => {
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('form field id or type');
   });
 
-  it('validates the Document Designer edit page against its declared permissions', () => {
-    const pluginRoot = path.resolve(process.cwd(), '../plugins/wattanam.document-designer');
-    const descriptor = JSON.parse(readFileSync(path.join(pluginRoot, 'frontend/page.json'), 'utf8'));
-    const manifest = JSON.parse(readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
+  catalogIt('wattanam.document-designer')('validates the Document Designer edit page against its declared permissions', () => {
+    const root = pluginRoot('wattanam.document-designer');
+    const descriptor = JSON.parse(readFileSync(path.join(root, 'frontend/page.json'), 'utf8'));
+    const manifest = JSON.parse(readFileSync(path.join(root, 'plugin.json'), 'utf8'));
     const bundle = parsePluginUiBundle(descriptor, 'wattanam.document-designer', new Set(manifest.permissions));
     const detail = bundle.pages.find((page) => page.id === 'template-detail');
     expect(detail?.components.some((component) => component.type === 'document')).toBe(true);
@@ -289,10 +294,10 @@ describe('Plugin UI v2 schema', () => {
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('GET data sources');
   });
 
-  it('validates the Attendance Manager camera/USB, report, and study-year UI bundle', () => {
-    const pluginRoot = path.resolve(__dirname, '../../../plugins/wattanam.attendance-manager');
-    const manifest = JSON.parse(readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
-    const descriptor = JSON.parse(readFileSync(path.join(pluginRoot, 'frontend/page.json'), 'utf8'));
+  catalogIt('wattanam.attendance-manager')('validates the Attendance Manager camera/USB, report, and study-year UI bundle', () => {
+    const root = pluginRoot('wattanam.attendance-manager');
+    const manifest = JSON.parse(readFileSync(path.join(root, 'plugin.json'), 'utf8'));
+    const descriptor = JSON.parse(readFileSync(path.join(root, 'frontend/page.json'), 'utf8'));
     const bundle = parsePluginUiBundle(descriptor, manifest.id, new Set(manifest.permissions));
 
     expect(bundle.pages.map((page) => page.id)).toEqual(['attendance', 'scanner', 'corrections', 'correction-edit', 'alerts', 'reports', 'study-years', 'settings']);
@@ -301,9 +306,10 @@ describe('Plugin UI v2 schema', () => {
     expect(bundle.pages.find((page) => page.id === 'reports')?.components).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'filter' }), expect.objectContaining({ type: 'print' })]));
   });
 
-  it('validates the complete Academic Management UI bundle including roster actions', () => {
-    const manifest = JSON.parse(readFileSync(path.resolve(process.cwd(), '..', 'plugins', 'wattanam.academic-management', 'plugin.json'), 'utf8'));
-    const bundle = JSON.parse(readFileSync(path.resolve(process.cwd(), '..', 'plugins', 'wattanam.academic-management', 'frontend', 'page.json'), 'utf8'));
+  catalogIt('wattanam.academic-management')('validates the complete Academic Management UI bundle including roster actions', () => {
+    const root = pluginRoot('wattanam.academic-management');
+    const manifest = JSON.parse(readFileSync(path.join(root, 'plugin.json'), 'utf8'));
+    const bundle = JSON.parse(readFileSync(path.join(root, 'frontend', 'page.json'), 'utf8'));
     const parsed = parsePluginUiBundle(bundle, manifest.id, new Set(manifest.permissions));
     const roster = parsed.pages.find((page) => page.id === 'class-students');
     expect(roster).toBeDefined();
@@ -335,5 +341,16 @@ describe('Plugin UI v2 schema', () => {
       value.pages[0].components = [{ id: type, type, source: 'record' }];
       expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type });
     }
+  });
+
+  it('enforces the universal UI portability contract without breaking legacy packages', () => {
+    const portable: any = valid();
+    portable.portability = 'universal';
+    portable.pages[0].components = [{ id: 'flow', type: 'workflow', title: 'Setup', options: { steps: [{ label: 'People', route: 'people' }] } }];
+    expect(parsePluginUiBundle(portable, 'wattanam.test', permissions)).toMatchObject({ portability: 'universal' });
+    portable.pages[0].components = [{ id: 'legacy', type: 'organizing-dashboard', source: 'record' }];
+    expect(() => parsePluginUiBundle(portable, 'wattanam.test', permissions)).toThrow('host-specific component');
+    delete portable.portability;
+    expect(parsePluginUiBundle(portable, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'organizing-dashboard' });
   });
 });

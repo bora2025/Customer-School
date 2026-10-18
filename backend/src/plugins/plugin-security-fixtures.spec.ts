@@ -110,7 +110,7 @@ describe('C-007 malicious-fixture suite: SSRF and secret access', () => {
     process.env.DATABASE_URL = 'postgresql://localhost/test';
     process.env.APP_VERSION = '0.1.0';
     process.env.PLUGIN_TRUSTED_KEYS = '{}';
-    const manifest = { id: 'wattanam.ssrftest', version: '1.0.0', backendEntry: 'backend/index.js', capabilities: [], permissions: [], dependencies: {} };
+    const manifest = { id: 'wattanam.ssrftest', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: [], permissions: [], dependencies: {} };
     const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.ssrftest', version: '1.0.0', installedPath }) } } as any;
     const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
     const noop = () => undefined;
@@ -132,7 +132,7 @@ describe('C-007 malicious-fixture suite: SSRF and secret access', () => {
     // proof behind both the SSRF and secret-access claims: there is no sanctioned surface
     // for either, only the explicitly capability-gated SDK methods below.
     expect((global as any).__wattanamContextKeys).toEqual([
-      'accounts', 'crypto', 'database', 'dependencies', 'directory', 'durableEvents', 'events', 'jobs', 'logger', 'navigation', 'notifications',
+      'accounts', 'crypto', 'database', 'dependencies', 'directory', 'durableEvents', 'errors', 'events', 'jobs', 'logger', 'navigation', 'notifications',
       'permissions', 'pluginId', 'readModels', 'realtime', 'routes', 'sdkVersion', 'settings', 'storage',
     ]);
     delete (global as any).__wattanamContextKeys;

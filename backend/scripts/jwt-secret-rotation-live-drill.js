@@ -13,6 +13,7 @@
  */
 'use strict';
 
+const { randomBytes } = require('node:crypto');
 const { JwtService } = require('@nestjs/jwt');
 const { verifyJwtWithRotationSupport } = require('../dist/auth/jwt-verification');
 
@@ -40,8 +41,10 @@ function deploy(env) {
 }
 
 async function main() {
-  const secretV1 = 'jwt-secret-v1-at-least-32-characters-long';
-  const secretV2 = 'jwt-secret-v2-at-least-32-characters-long';
+  // Generate isolated drill keys for every run. Fixed example keys are easy to copy into a real
+  // environment accidentally and are correctly flagged by repository secret scanners.
+  const secretV1 = randomBytes(32).toString('base64url');
+  const secretV2 = randomBytes(32).toString('base64url');
   const payload = { sub: 'user-1', email: 'drill@example.test', role: 'ADMIN' };
 
   console.log('== Step 0: day-1 deploy -- a token signed before rotation support existed has no kid at all ==');

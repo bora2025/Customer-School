@@ -1,0 +1,33 @@
+{
+  "format": "wattanam-plugin-postgres-certification-v1",
+  "certifiedAt": "2026-10-18",
+  "pluginId": "wattanam.organizing-management",
+  "pluginVersion": "0.17.0",
+  "database": "disposable PostgreSQL 16",
+  "migrations": {
+    "verifiedChecksums": 56,
+    "applied": 56,
+    "namespacedTables": 18,
+    "cleanupTablesRemaining": 0,
+    "cleanupFunctionsRemaining": 0
+  },
+  "runtime": {
+    "health": "ready",
+    "registeredRoutes": 57
+  },
+  "workflows": [
+    "organization profile",
+    "position creation",
+    "employee creation",
+    "seven-day attendance settings",
+    "USB QR check-in",
+    "idempotent scan replay",
+    "camera QR check-out",
+    "attendance reporting",
+    "salary configuration",
+    "good-job reward",
+    "attendance-based payroll",
+    "dashboard aggregation"
+  ],
+  "passed": true
+}

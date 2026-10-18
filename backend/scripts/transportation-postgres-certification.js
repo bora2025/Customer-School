@@ -4,7 +4,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '..', '..', 'plugins', 'wattanam.transportation');
+const { resolvePluginSource } = require('./plugin-source-root');
+const root = resolvePluginSource('wattanam.transportation');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'plugin.json'), 'utf8'));
 const plugin = require(path.join(root, manifest.backendEntry));
 const prefix = 'plugin_wattanam_transportation_';

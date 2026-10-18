@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-18",
+  "scope": "Wattanam Marketplace and Customer School plugin platform",
+  "status": "pass_with_external_certification_pending",
+  "customerSchool": {
+    "productionDependencyAudits": {
+      "backend": { "vulnerabilities": 0 },
+      "frontend": { "vulnerabilities": 0 }
+    },
+    "buildDependencyAudits": {
+      "backendHighOrCritical": 0,
+      "frontendTotal": 0,
+      "frontendCssToolchain": "Tailwind 4.3.3"
+    },
+    "coreVerification": { "status": "pass", "violations": 0 },
+    "coreContractTests": { "status": "pass", "passed": 36 },
+    "continuousIntegration": {
+      "status": "pass",
+      "node": 24,
+      "cleanCoreBuild": true,
+      "atomicPluginHostContracts": true,
+      "recoveryContracts": true,
+      "postgresCertificationHarnesses": 26,
+      "fullHistorySecretScan": "pass"
+    },
+    "runtime": {
+      "node": "24.22.0",
+      "cleanCoreImageBuild": "pass",
+      "backendSplitRoleImageBuild": "pass",
+      "backendSplitRoleImageManifestDigest": "sha256:7e2e72d62de8ac3e55e27505049fdd00fde6bb4a730427136185c0af90a3e8e2",
+      "backendEntrypoints": ["dist-core/main.js", "dist-core/worker.js"],
+      "frontendImageBuild": "pass",
+      "frontendHttpSmoke": { "status": "pass", "path": "/login", "httpStatus": 200 },
+      "nonRootUid": 1001,
+      "runtimeNpmToolchainPresent": false,
+      "productionVulnerabilities": 0
+    },
+    "railwayInfrastructureAsCode": {
+      "status": "pass",
+      "sdkVersion": "3.16.0",
+      "cliVersion": "5.70.0",
+      "plan": "no_changes",
+      "secretsEmbedded": false,
+      "ownershipMigrationApplied": false
+    },
+    "railwayNewSchoolProvisioning": {
+      "status": "pass",
+      "distribution": "core",
+      "runtimeRoles": ["api", "worker"],
+      "independentPersistentVolumes": true,
+      "sharedArtifactStorage": "s3-required",
+      "publisherTrustSource": "database-with-filesystem-compatibility-copy",
+      "workerMarketplacePrivateKeyRequired": false,
+      "restoredApiCacheReseedsSharedArtifacts": true,
+      "matchingBackendImageRequired": true,
+      "productionCertificationTargetRejected": true
+    },
+    "backendTypecheck": { "status": "pass" },
+    "postgresCertificationTests": { "status": "pass", "passed": 26 },
+    "officialPluginCatalog": { "status": "pass", "plugins": 13 }
+  },
+  "marketplace": {
+    "productionDependencyAudits": {
+      "pluginSdk": { "vulnerabilities": 0 },
+      "pluginCli": { "vulnerabilities": 0 },
+      "marketplaceApi": { "vulnerabilities": 0 },
+      "platformAdmin": { "vulnerabilities": 0 }
+    },
+    "build": { "status": "pass" },
+    "tests": {
+      "status": "pass",
+      "contracts": 2,
+      "sdk": 14,
+      "cli": 15,
+      "marketplaceApi": 441,
+      "platformTools": 29
+    },
+    "controlPlaneConfiguration": { "status": "pass" },
+    "continuousIntegration": {
+      "crossRepositoryCatalogCompatibility": true,
+      "fullHistorySecretScan": "pass",
+      "productionAuditsCoverAllPackages": true
+    }
+  },
+  "documentedResidualRisks": [
+    "Final install, active update, induced rollback, shared-artifact, and recovery certification is still required on an explicitly authorized isolated Railway project."
+  ],
+  "productionShapedCertification": {
+    "cleanCoreContainer": "pass",
+    "splitApiWorkerRuntime": {
+      "status": "pass",
+      "currentImageRevalidatedAt": "2026-10-18T06:14:15.057Z",
+      "node": "24.22.0",
+      "digest": "sha256:7e2e72d62de8ac3e55e27505049fdd00fde6bb4a730427136185c0af90a3e8e2",
+      "apiReady": true,
+      "workerReady": true,
+      "matchingDigest": true,
+      "s3Required": true,
+      "localStorageRejected": true
+    },
+    "sharedS3ObjectStore": "pass",
+    "postgresBackupRestore": {
+      "status": "pass",
+      "tables": 30,
+      "dataLoss": 0,
+      "orphanedRows": 0,
+      "rtoSeconds": 0.929
+    },
+    "selfHostedVpsCompose": "pass"
+  },
+  "remainingExternalGate": {
+    "status": "in_progress",
+    "reason": "The explicitly approved plugin-certification-20261018 Railway environment has been provisioned separately from production. Its API, worker, web, gateway, PostgreSQL, independent volumes, and S3-compatible artifact bucket are being configured and deployed for the final lifecycle drill.",
+    "railwayInventory": {
+      "inspectedAt": "2026-10-18",
+      "readOnly": true,
+      "project": "customer-school",
+      "environments": [
+        {
+          "name": "production",
+          "services": ["web", "Postgres", "api", "gateway"],
+          "persistentVolumes": 2
+        },
+        {
+          "name": "plugin-certification-20261018",
+          "services": ["web", "Postgres", "api", "gateway", "worker"],
+          "persistentVolumes": 3,
+          "artifactBucket": "plugin-cert-artifacts-20261018"
+        }
+      ],
+      "isolatedEnvironmentAvailable": true,
+      "productionMutated": false
+    },
+    "requiredEvidence": [
+      "install and activate a signed plugin artifact on isolated Railway",
+      "upgrade it without deactivation",
+      "verify rollback after an induced failed update",
+      "verify API and worker read the same immutable artifact",
+      "run backup and restore against isolated Railway services"
+    ]
+  }
+}

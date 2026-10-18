@@ -18,18 +18,19 @@ import { PluginRealtimeService } from './plugin-realtime.service';
 import { PluginNotificationQuotaService } from './plugin-notification-quota.service';
 import { AuditService } from '../audit/audit.service';
 import { assertNoForbiddenSql, assertPluginNamespace } from './plugin-sql-guard';
-import { PluginRuntimeContext, RuntimePluginModule } from './plugin-sdk';
+import { PluginContractError, PluginRuntimeContext, RuntimePluginModule } from './plugin-sdk';
 import { PluginArtifactCacheService } from './plugin-artifact-cache.service';
 import { PluginResourceQuotaService } from './plugin-resource-quota.service';
 import { PluginContractRuntimeService } from './plugin-contract-runtime.service';
 import { PluginRolloutService } from './plugin-rollout.service';
 import { PrismaAcademicIdentityProvider } from '../auth/academic-identity.provider';
 import { PluginAccountService } from './plugin-account.service';
+import { assertPluginExecutionAllowed } from './plugin-execution-policy';
 
 @Injectable()
 export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(PluginRuntimeService.name);
-  private readonly loaded = new Map<string, { module: RuntimePluginModule; context: PluginRuntimeContext; cleanup?: () => void; disposers: Array<() => void> }>();
+  private readonly loaded = new Map<string, { module: RuntimePluginModule; context: PluginRuntimeContext; cleanup?: () => void; disposers: Array<() => void>; version: string; sha256: string }>();
   private rolloutTimer?: NodeJS.Timeout;
 
   constructor(
@@ -95,21 +96,43 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
     const pending = await this.rollout.pendingForCurrentRole().catch(() => []);
     for (const generation of pending) {
       try { await this.load(generation.pluginId); await this.rollout.report(generation, generation.sha256); }
-      catch (error) { await this.rollout.report(generation, generation.sha256, error instanceof Error ? error.message : String(error)).catch(() => undefined); }
+      catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const restored = await this.rollout.failAndRestoreAuthoritative(generation, message).catch(() => null);
+        if (restored) {
+          await this.unload(generation.pluginId).catch(() => undefined);
+          await this.load(generation.pluginId).catch((restoreError) => {
+            this.logger.error(`Failed to reload restored ${generation.pluginId}: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`);
+          });
+        }
+      }
+    }
+    // Another role may have promoted or restored a generation. Reconcile by version and digest so
+    // every process converges even though Railway services do not share memory or filesystems.
+    const active = await this.prisma.pluginInstallation.findMany({ where: { status: 'active' } }).catch(() => []);
+    for (const plugin of active) {
+      const local = this.loaded.get(plugin.id);
+      if (!local || local.version !== plugin.version || local.sha256 !== plugin.packageSha256) {
+        await this.unload(plugin.id).catch(() => undefined);
+        await this.load(plugin.id).catch((error) => this.logger.error(`Failed to reconcile ${plugin.id}: ${error instanceof Error ? error.message : String(error)}`));
+      }
     }
   }
 
   async load(id: string) {
     if (this.safeMode()) throw new Error('Plugin activation is disabled while PLUGIN_SAFE_MODE is enabled');
-    if (this.loaded.has(id)) return;
     const record = await this.prisma.pluginInstallation.findUnique({ where: { id } });
     if (!record) throw new Error(`Plugin registry entry not found: ${id}`);
+    const existing = this.loaded.get(id);
+    if (existing && existing.version === record.version && existing.sha256 === record.packageSha256) return;
+    if (existing) await this.unload(id);
     const root = this.pluginRoot();
     const cached = this.artifactCache ? await this.artifactCache.ensure(record) : null;
     const installedPath = path.resolve(cached?.directory || record.installedPath);
     if (!installedPath.startsWith(`${root}${path.sep}`)) throw new Error(`Plugin path is outside PLUGIN_DIR: ${id}`);
-    const verified = cached?.verified || await this.verifier.verifyInstalledDirectory(installedPath, await trustedPluginKeys(), readRuntimeConfig().appVersion);
+    const verified = cached?.verified || await this.verifier.verifyInstalledDirectory(installedPath, await trustedPluginKeys(this.prisma), readRuntimeConfig().appVersion);
     if (verified.manifest.id !== id || verified.manifest.version !== record.version) throw new Error('Installed plugin identity does not match registry');
+    assertPluginExecutionAllowed(verified.manifest);
     if (!verified.manifest.backendEntry) return;
     const entry = path.resolve(installedPath, verified.manifest.backendEntry);
     if (!entry.startsWith(`${installedPath}${path.sep}`)) throw new Error('Plugin backend entry escapes installation directory');
@@ -130,9 +153,10 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       if (!capabilities.has(capability)) throw new Error(`${id} did not declare ${capability}`);
     };
     const context: PluginRuntimeContext = {
-      sdkVersion: '1.2.0',
+      sdkVersion: '1.3.0',
       pluginId: id,
       logger,
+      errors: { contract: (code, diagnosticMessage) => new PluginContractError(code, diagnosticMessage) },
       dependencies: {
         required: verified.manifest.dependencies,
         optional: verified.manifest.optionalDependencies || {},
@@ -371,7 +395,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
         const health = await pluginModule.health();
         if (health === false || (health && typeof health === 'object' && (health as any).status === 'failed')) throw new Error('Plugin health check failed');
       }
-      this.loaded.set(id, { module: pluginModule, context, cleanup: typeof cleanup === 'function' ? cleanup : undefined, disposers });
+      this.loaded.set(id, { module: pluginModule, context, cleanup: typeof cleanup === 'function' ? cleanup : undefined, disposers, version: record.version, sha256: record.packageSha256 });
       this.logger.log(`Activated ${id}@${record.version}`);
     } catch (error) {
       for (const dispose of disposers.reverse()) { try { dispose(); } catch { /* best effort */ } }

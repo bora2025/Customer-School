@@ -109,7 +109,7 @@ describe('MarketplaceCommerceService install', () => {
         },
       },
     );
-    expect(recordMarketplaceTrustedKeyMock).toHaveBeenCalledWith('wattanam', publisherKeyId, publisherPublicKeyPem);
+    expect(recordMarketplaceTrustedKeyMock).toHaveBeenCalledWith('wattanam', publisherKeyId, publisherPublicKeyPem, prisma);
     expect(plugins.activate).toHaveBeenCalledWith('wattanam.announcements');
   });
 

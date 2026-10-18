@@ -1,4 +1,4 @@
-import { BadGatewayException, Injectable } from '@nestjs/common';
+import { BadGatewayException, Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash, sign } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -8,6 +8,8 @@ import { readMarketplaceIdentityConfig } from '../marketplace/marketplace-identi
 import { readRuntimeConfig } from '../config/environment';
 import { trustedPluginKeys } from './plugin-config';
 import { PluginPackageVerifier, VerifiedPluginPackage } from './plugin-package';
+import { ObjectStorageProvider } from '../storage/object-storage';
+import { PLUGIN_OBJECT_STORAGE } from '../storage/storage.module';
 
 type RegistryArtifact = { id: string; version: string; packageSha256: string; installedPath: string };
 
@@ -18,7 +20,11 @@ type RegistryArtifact = { id: string; version: string; packageSha256: string; in
  */
 @Injectable()
 export class PluginArtifactCacheService {
-  constructor(private readonly prisma: PrismaService, private readonly verifier: PluginPackageVerifier) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly verifier: PluginPackageVerifier,
+    @Optional() @Inject(PLUGIN_OBJECT_STORAGE) private readonly sharedStorage?: ObjectStorageProvider,
+  ) {}
 
   async ensure(record: RegistryArtifact): Promise<{ directory: string; verified: VerifiedPluginPackage; cacheHit: boolean }> {
     const cacheFile = this.cacheFile(record.packageSha256);
@@ -28,11 +34,16 @@ export class PluginArtifactCacheService {
     catch (error: any) {
       if (error?.code !== 'ENOENT') throw error;
       cacheHit = false;
-      bytes = await this.download(record.packageSha256);
+      const shared = await this.sharedStorage?.get(this.sharedKey(record.packageSha256));
+      if (!shared && readRuntimeConfig().processRole === 'worker') {
+        throw new BadGatewayException('Shared artifact cache miss; the API must authenticate, verify, and seed this generation before worker rollout');
+      }
+      bytes = shared || await this.download(record.packageSha256);
       await this.putCreateOnly(cacheFile, bytes, record.packageSha256);
     }
     this.assertDigest(bytes, record.packageSha256);
-    const verified = await this.verifier.verify(bytes, await trustedPluginKeys(), readRuntimeConfig().appVersion);
+    await this.ensureShared(bytes, record.packageSha256);
+    const verified = await this.verifier.verify(bytes, await trustedPluginKeys(this.prisma), readRuntimeConfig().appVersion);
     if (verified.manifest.id !== record.id || verified.manifest.version !== record.version) throw new Error('Cached artifact identity does not match plugin registry');
     await this.materialize(record, verified);
     return { directory: path.resolve(record.installedPath), verified, cacheHit };
@@ -40,6 +51,7 @@ export class PluginArtifactCacheService {
 
   async seed(bytes: Buffer, sha256: string) {
     await this.putCreateOnly(this.cacheFile(sha256), bytes, sha256);
+    await this.ensureShared(bytes, sha256);
   }
 
   async retain(record: RegistryArtifact) {
@@ -53,7 +65,7 @@ export class PluginArtifactCacheService {
   private async materialize(record: RegistryArtifact, verified: VerifiedPluginPackage) {
     const destination = path.resolve(record.installedPath);
     try {
-      const existing = await this.verifier.verifyInstalledDirectory(destination, await trustedPluginKeys(), readRuntimeConfig().appVersion);
+      const existing = await this.verifier.verifyInstalledDirectory(destination, await trustedPluginKeys(this.prisma), readRuntimeConfig().appVersion);
       if (existing.manifest.id === record.id && existing.manifest.version === record.version) return;
     } catch { /* missing or damaged cache is rebuilt from the verified archive */ }
     const root = path.resolve(readRuntimeConfig().pluginDir);
@@ -123,6 +135,19 @@ export class PluginArtifactCacheService {
     if (!/^[a-f0-9]{64}$/.test(sha256) || createHash('sha256').update(bytes).digest('hex') !== sha256) throw new Error('Artifact cache digest mismatch');
   }
 
+  private async ensureShared(bytes: Buffer, sha256: string) {
+    if (!this.sharedStorage) return;
+    const existing = await this.sharedStorage.checksum(this.sharedKey(sha256));
+    if (existing && existing !== sha256) throw new Error('Shared artifact cache digest mismatch');
+    if (existing) return;
+    if (readRuntimeConfig().processRole === 'worker') {
+      throw new BadGatewayException('Shared artifact cache miss; the API must restore and seed this generation before worker rollout');
+    }
+    const stored = await this.sharedStorage.put(this.sharedKey(sha256), bytes);
+    if (stored.sha256 !== sha256) throw new Error('Shared artifact cache digest mismatch');
+  }
+
   private cacheFile(sha256: string) { return path.join(this.cacheRoot(), 'sha256', sha256.slice(0, 2), `${sha256}.wtp`); }
+  private sharedKey(sha256: string) { return `__host/plugin-artifacts/sha256/${sha256.slice(0, 2)}/${sha256}.wtp`; }
   private cacheRoot() { return path.join(path.resolve(readRuntimeConfig().pluginDir), '.artifact-cache'); }
 }

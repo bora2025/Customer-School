@@ -12,8 +12,8 @@ const CORE_ARTIFACT_DYNAMIC_ROUTES = new Set(coreRouteContract.artifactDynamicRo
 
 function parseArguments(argv) {
   const result = {
-    backendDir: path.join(ROOT, 'backend', 'dist'),
-    frontendManifest: path.join(ROOT, 'frontend', '.next', 'server', 'app-paths-manifest.json'),
+    backendDir: path.join(ROOT, 'backend', 'dist-core'),
+    frontendManifest: path.join(ROOT, 'frontend', '.core-build', '.next', 'server', 'app-paths-manifest.json'),
     registry: path.join(ROOT, 'backend', 'src', 'distribution', 'module-registry.ts'),
     backendSource: path.join(ROOT, 'backend', 'src'),
     report: false,

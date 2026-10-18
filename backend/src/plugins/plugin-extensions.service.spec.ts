@@ -83,12 +83,17 @@ describe('PluginExtensionsService', () => {
         response: { parse: (value: any) => { if (typeof value?.id !== 'string') throw new Error('invalid'); return value; } },
         errors: { RECORD_MISSING: { status: 404, message: 'Record was not found' } },
       },
-      handler: ({ params }) => params.recordId === 'record-missing' ? Promise.reject(new PluginContractError('RECORD_MISSING')) : ({ id: params.recordId }),
+      handler: ({ params }) => params.recordId === 'record-missing'
+        ? Promise.reject(new PluginContractError('RECORD_MISSING'))
+        : params.recordId === 'record-sdk-copy'
+          ? Promise.reject(Object.assign(new Error('private diagnostic'), { code: 'RECORD_MISSING', isPluginContractError: true }))
+          : ({ id: params.recordId }),
     });
     const request = (path: string) => ({ method: 'GET' as const, path, params: {}, query: {}, body: null, principal: { userId: 'owner', role: 'SUPER_ADMIN' } });
     await expect(service.dispatch('wattanam.test', request('contract/record-1'))).resolves.toEqual({ id: 'record-1' });
     await expect(service.dispatch('wattanam.test', request('contract/bad'))).rejects.toThrow('declared contract');
     await expect(service.dispatch('wattanam.test', request('contract/record-missing'))).rejects.toMatchObject({ response: { code: 'RECORD_MISSING', message: 'Record was not found' }, status: 404 });
+    await expect(service.dispatch('wattanam.test', request('contract/record-sdk-copy'))).rejects.toMatchObject({ response: { code: 'RECORD_MISSING', message: 'Record was not found' }, status: 404 });
   });
 
   it('rejects invalid parameter values and ambiguous route shapes', async () => {
@@ -180,6 +185,22 @@ describe('PluginExtensionsService', () => {
       ],
     }, permissions);
     expect(service.list().pages).toHaveLength(2);
+    dispose();
+    expect(service.list().pages).toHaveLength(0);
+  });
+
+  it('adapts legacy multi-page JSON descriptors to the universal renderer', () => {
+    const dispose = service.registerPage('wattanam.test', {
+      schemaVersion: 1,
+      pages: [
+        { id: 'records', path: 'records', title: 'Records', permission: 'wattanam.test.read', components: [{ type: 'table', title: 'Records', source: { method: 'GET', path: 'records' }, columns: [{ key: 'name', label: 'Name' }] }] },
+        { id: 'request', path: 'request', title: 'Request', permission: 'wattanam.test.read', components: [{ type: 'form', title: 'Request', submit: { method: 'POST', path: 'requests' }, fields: [{ key: 'email', label: 'Email', input: 'email', required: true }] }] },
+      ],
+    }, permissions);
+    expect(service.list().pages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'records', schemaVersion: 2, kind: 'declarative-ui', routePath: 'records' }),
+      expect.objectContaining({ id: 'request', schemaVersion: 2, kind: 'declarative-ui', routePath: 'request' }),
+    ]));
     dispose();
     expect(service.list().pages).toHaveLength(0);
   });

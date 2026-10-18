@@ -14,7 +14,8 @@ const { adopt, dryRun } = require('./document-designer-adopt');
 const { convertAssets } = require('./document-designer-convert-assets');
 const { drill } = require('./document-designer-rollback-drill');
 
-const pluginRoot = path.resolve(__dirname, '..', '..', 'plugins', 'wattanam.document-designer');
+const { resolvePluginSource } = require('./plugin-source-root');
+const pluginRoot = resolvePluginSource('wattanam.document-designer');
 const pluginManifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
 const pluginRuntime = require(path.join(pluginRoot, 'backend', 'index.js'));
 

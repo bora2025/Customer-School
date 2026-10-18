@@ -1,4 +1,4 @@
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 
 RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
@@ -18,7 +18,7 @@ COPY . .
 RUN npm run build
 
 # --- Production stage ---
-FROM node:20-slim AS runner
+FROM node:24-slim AS runner
 
 ARG POSTGRES_CLIENT_MAJOR=18
 RUN apt-get update -qq \

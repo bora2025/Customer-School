@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { discoverPluginRecoveryContracts, verifyPluginRecoveryContracts } = require('./plugin-recovery-contract');
+const { resolvePluginSource } = require('./plugin-source-root');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wattanam-plugin-recovery-contract-'));
@@ -62,4 +63,28 @@ test('restore verification rejects a changed manifest or a missing required file
     fs.rmSync(path.join(value.data, 'wattanam.files'), { recursive: true, force: true });
     assert.throws(() => verifyPluginRecoveryContracts(refreshed, value.plugins, value.data, { file: 'school.dump', sha256: 'd' }), /file namespace/);
   } finally { value.close(); }
+});
+
+test('Organizing Management participates in recovery without requiring a customer-core source copy', () => {
+  const source = resolvePluginSource('wattanam.organizing-management');
+  const manifest = JSON.parse(fs.readFileSync(path.join(source, 'plugin.json'), 'utf8'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wattanam-organizing-recovery-'));
+  const plugins = path.join(root, 'plugins');
+  const data = path.join(root, 'data');
+  const installed = path.join(plugins, manifest.id, manifest.version);
+  try {
+    fs.mkdirSync(installed, { recursive: true });
+    fs.mkdirSync(data, { recursive: true });
+    fs.copyFileSync(path.join(source, 'plugin.json'), path.join(installed, 'plugin.json'));
+    const contracts = discoverPluginRecoveryContracts(plugins, data);
+    assert.equal(contracts.length, 1);
+    assert.deepEqual(contracts[0].dataClassification, ['employment-records', 'personal-data']);
+    assert.deepEqual(contracts[0].backup, { database: 'required', files: 'none', restore: 'required' });
+    assert.deepEqual(
+      verifyPluginRecoveryContracts(contracts, plugins, data, { file: 'school.dump', sha256: 'e'.repeat(64) }),
+      { verified: true, pluginCount: 1, legacyExceptionCount: 0 },
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

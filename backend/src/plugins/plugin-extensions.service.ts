@@ -114,10 +114,12 @@ export class PluginExtensionsService {
       return result;
     } catch (error) {
       void this.audit.log({ ...auditBase, success: false, errorMessage: error instanceof Error ? error.message : String(error) });
-      if (error instanceof PluginContractError && definition.contract) {
-        const declared = definition.contract.errors[error.code];
+      const contractError = error instanceof PluginContractError || Boolean(error && typeof error === 'object' && (error as any).isPluginContractError === true && typeof (error as any).code === 'string');
+      if (contractError && definition.contract) {
+        const code = (error as PluginContractError).code;
+        const declared = definition.contract.errors[code];
         if (!declared) throw new Error('Plugin returned an undeclared error code');
-        throw new HttpException({ code: error.code, message: declared.message }, declared.status);
+        throw new HttpException({ code, message: declared.message }, declared.status);
       }
       throw error;
     } finally { if (timer) clearTimeout(timer); }
@@ -168,6 +170,43 @@ export class PluginExtensionsService {
       }
       return () => keys.forEach((key) => this.pages.delete(key));
     }
+    if (page.schemaVersion === 1 && Array.isArray(page.pages)) {
+      const converted = {
+        schemaVersion: 2,
+        kind: 'declarative-ui',
+        pages: page.pages.map((candidate: any, pageIndex: number) => {
+          if (!candidate || typeof candidate !== 'object' || !Array.isArray(candidate.components)) throw new BadRequestException(`Legacy plugin page ${pageIndex} is invalid`);
+          const dataSources: any[] = [];
+          const components = candidate.components.map((component: any, componentIndex: number) => {
+            const sourceDefinition = component.type === 'form' ? component.submit : component.source;
+            const source = `legacy-source-${componentIndex}`;
+            if (!sourceDefinition || typeof sourceDefinition !== 'object') throw new BadRequestException(`Legacy plugin component ${componentIndex} has no data source`);
+            dataSources.push({ id: source, method: String(sourceDefinition.method || 'GET').toUpperCase(), path: sourceDefinition.path, permission: candidate.permission });
+            if (component.type === 'table') return {
+              id: `legacy-component-${componentIndex}`, type: 'table', title: component.title, source,
+              fields: (component.columns || []).map((column: any) => ({ id: column.key, label: column.label, path: column.key })),
+              options: { pageSize: 50, selectable: false },
+            };
+            if (component.type === 'form') return {
+              id: `legacy-component-${componentIndex}`, type: 'form', title: component.title, source,
+              fields: (component.fields || []).map((field: any) => ({ id: field.key, label: field.label, type: field.input || 'text', required: Boolean(field.required) })),
+              options: { submitLabel: component.submitLabel || 'Submit' },
+            };
+            throw new BadRequestException(`Legacy plugin component type ${component.type} is unsupported`);
+          });
+          return { id: candidate.id, title: candidate.title, routePath: candidate.path, permission: candidate.permission, parameters: [], dataSources, components };
+        }),
+      };
+      const bundle = parsePluginUiBundle(converted, pluginId, declaredPermissions);
+      const keys: string[] = [];
+      for (const descriptor of bundle.pages) {
+        const key = `${pluginId}:${descriptor.id}`;
+        if (this.pages.has(key)) { keys.forEach((registered) => this.pages.delete(registered)); throw new BadRequestException(`Plugin page is already registered: ${descriptor.id}`); }
+        this.pages.set(key, { ...descriptor, pluginId, schemaVersion: 2, kind: 'declarative-ui' });
+        keys.push(key);
+      }
+      return () => keys.forEach((key) => this.pages.delete(key));
+    }
     if (page.schemaVersion !== 1 || page.kind !== 'json-settings' || typeof page.id !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(page.id) || typeof page.title !== 'string' || !page.title.trim() || typeof page.routePath !== 'string' || !/^[a-z0-9][a-z0-9/_-]*$/.test(page.routePath)) {
       throw new BadRequestException('Plugin frontend page descriptor is invalid');
     }
@@ -179,7 +218,7 @@ export class PluginExtensionsService {
 
   list() {
     return {
-      sdkVersion: '1.2.0',
+      sdkVersion: '1.3.0',
       permissions: [...this.permissions.values()],
       navigation: [...this.navigation.values()],
       pages: [...this.pages.values()],

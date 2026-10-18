@@ -1,0 +1,91 @@
+name: Customer School PR validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: customer-school-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clean-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install locked dependencies
+        run: |
+          npm ci
+          npm --prefix backend ci
+          npm --prefix frontend ci
+      - name: Build and verify physical clean core
+        run: |
+          npm run build:core
+          npm run verify:core
+          npm run test:core
+          npm --prefix backend run typecheck
+      - name: Audit production dependency trees
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm --prefix backend audit --audit-level=high
+          npm --prefix backend audit --omit=dev --audit-level=high
+          npm --prefix frontend audit --audit-level=high
+
+  plugin-host-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend
+        run: npm --prefix backend ci
+      - name: Verify atomic lifecycle, isolation, rollout, SDK and universal UI contracts
+        working-directory: backend
+        run: >-
+          npm test -- --runInBand
+          src/plugins/plugin-artifact-cache.service.spec.ts
+          src/plugins/plugin-config.spec.ts
+          src/plugins/plugin-execution-policy.spec.ts
+          src/plugins/plugin-extensions.service.spec.ts
+          src/plugins/plugin-rollout.service.spec.ts
+          src/plugins/plugin-runtime.service.spec.ts
+          src/plugins/plugin-security-fixtures.spec.ts
+          src/plugins/plugin-sdk-contract.spec.ts
+          src/plugins/plugin-ui-schema.spec.ts
+          src/plugins/plugins.service.spec.ts
+          src/marketplace/marketplace-commerce.service.spec.ts
+      - name: Verify recovery and official PostgreSQL certification harnesses
+        working-directory: backend
+        run: |
+          node --test scripts/plugin-recovery-contract.test.js scripts/restore-recovery-set.test.js
+          node --test scripts/*-postgres-certification.test.js
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan repository history for committed secrets
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.29.1

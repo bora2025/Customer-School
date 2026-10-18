@@ -12,7 +12,7 @@ test('Academic PostgreSQL certification requires a database and an exact destruc
 test('Academic PostgreSQL certification accepts only identified or checksum-pinned immutable migrations', async () => {
   const statements = [];
   await applyMigrations({ $executeRawUnsafe: async (sql) => { statements.push(sql); } });
-  assert.equal(statements.length, 10);
+  assert.equal(statements.length, 60);
   assert.match(statements[0], /wattanam-plugin-migration: 001_create_department/);
-  assert.match(statements[9], /wattanam-plugin-migration: 010_create_subject/);
+  assert.match(statements[59], /wattanam-plugin-migration: 060_seed_staff_attendance_sessions/);
 });
