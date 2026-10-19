@@ -205,6 +205,23 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         }
         if (options.rowClickable !== undefined && typeof options.rowClickable !== 'boolean') throw new BadRequestException('Plugin UI table rowClickable must be boolean');
         if (options.rowActionLabel !== undefined) string(options.rowActionLabel, 'Plugin UI table rowActionLabel', 120);
+        if (options.rowActions !== undefined) {
+          if (!Array.isArray(options.rowActions) || options.rowActions.length < 1 || options.rowActions.length > 10) throw new BadRequestException('Plugin UI table rowActions requires 1 to 10 actions');
+          const rowActionIds = new Set<string>();
+          options.rowActions.forEach((candidateAction, actionIndex) => {
+            const action = object(candidateAction, `table rowActions[${actionIndex}]`);
+            const actionId = string(action.id, 'table row action id', 100), actionSource = string(action.source, 'table row action source', 100);
+            if (!ID.test(actionId) || rowActionIds.has(actionId)) throw new BadRequestException('Plugin UI table row action id is invalid or duplicated');
+            rowActionIds.add(actionId);
+            string(action.label, 'table row action label', 120);
+            if (!sourceIds.has(actionSource) || sourceMethods.get(actionSource) === 'GET') throw new BadRequestException('Plugin UI table row action must reference a mutation data source');
+            const idField = string(action.idField || 'id', 'table row action idField', 100), idParameter = string(action.idParameter || 'id', 'table row action idParameter', 100);
+            if (!DATA_PATH.test(idField) || !sourceParameters.get(actionSource)?.has(idParameter)) throw new BadRequestException('Plugin UI table row action identifier mapping is invalid');
+            if (action.confirmation !== undefined) string(action.confirmation, 'table row action confirmation', 240);
+            if (action.destructive !== undefined && typeof action.destructive !== 'boolean') throw new BadRequestException('Plugin UI table row action destructive must be boolean');
+            if (action.body !== undefined) object(action.body, 'table row action body');
+          });
+        }
       }
       if (type === 'form') {
         if (!source || sourceMethods.get(source) === 'GET' || sourceMethods.get(source) === 'DELETE') throw new BadRequestException('Plugin UI form requires a POST, PUT, or PATCH data source');

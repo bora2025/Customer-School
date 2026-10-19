@@ -263,6 +263,15 @@ describe('Plugin UI v2 schema', () => {
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('rowClickable must be boolean');
   });
 
+  it('accepts guarded mutation actions inside each table row', () => {
+    const value: any = valid();
+    value.pages[0].dataSources.push({ id: 'remove', method: 'DELETE', path: 'records/:id', parameters: ['id'], autoload: false, permission: 'wattanam.test.manage' });
+    value.pages[0].components = [{ id: 'records', type: 'table', source: 'record', fields: [{ id: 'name', label: 'Name' }], options: { rowActions: [{ id: 'removeRecord', label: 'Delete', source: 'remove', idField: 'id', idParameter: 'id', confirmation: 'Delete this record?', destructive: true }] } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ options: expect.objectContaining({ rowActions: [expect.objectContaining({ source: 'remove' })] }) });
+    value.pages[0].components[0].options.rowActions[0].source = 'record';
+    expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('mutation data source');
+  });
+
   it('accepts collapsed creation forms and Excel-only export toolbars', () => {
     const value: any = valid();
     value.pages[0].components = [
