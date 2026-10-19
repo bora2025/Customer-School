@@ -203,6 +203,8 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         } else if (options.rowParameterMap !== undefined) {
           throw new BadRequestException('Plugin UI table rowParameterMap requires rowRoute');
         }
+        if (options.rowClickable !== undefined && typeof options.rowClickable !== 'boolean') throw new BadRequestException('Plugin UI table rowClickable must be boolean');
+        if (options.rowActionLabel !== undefined) string(options.rowActionLabel, 'Plugin UI table rowActionLabel', 120);
       }
       if (type === 'form') {
         if (!source || sourceMethods.get(source) === 'GET' || sourceMethods.get(source) === 'DELETE') throw new BadRequestException('Plugin UI form requires a POST, PUT, or PATCH data source');

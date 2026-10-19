@@ -255,6 +255,14 @@ describe('Plugin UI v2 schema', () => {
     expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'profile-manager' });
   });
 
+  it('accepts accessible clickable table rows with a custom lifecycle action label', () => {
+    const value: any = valid();
+    value.pages[0].components = [{ id: 'profiles', type: 'table', source: 'record', fields: [{ id: 'fullName', label: 'Name' }], options: { rowRoute: 'profiles/:id', rowParameterMap: { id: 'id' }, rowClickable: true, rowActionLabel: 'Edit HR lifecycle' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ options: expect.objectContaining({ rowClickable: true, rowActionLabel: 'Edit HR lifecycle' }) });
+    value.pages[0].components[0].options.rowClickable = 'yes';
+    expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('rowClickable must be boolean');
+  });
+
   it('validates the take attendance workspace declaration', () => {
     const value: any = valid();
     value.pages[0].dataSources.push(

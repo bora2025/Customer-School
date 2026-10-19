@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 type Column = { id: string; label?: string; sortable?: boolean; filterable?: boolean; format?: string };
 
@@ -35,6 +36,7 @@ export default function PluginDataTable({
   pluginId?: string;
   pageParams?: Record<string, string>;
 }) {
+  const router = useRouter();
   const sourceRows = useMemo(() => rowsFrom(value), [value]);
   const columns = useMemo<Column[]>(() => {
     if (fields?.length) return fields.map((field) => ({ id: String(field.id), label: typeof field.label === 'string' ? field.label : String(field.id), sortable: field.sortable !== false, filterable: field.filterable !== false, format: typeof field.format === 'string' ? field.format : 'text' }));
@@ -43,6 +45,8 @@ export default function PluginDataTable({
   const pageSize = typeof options?.pageSize === 'number' ? Math.min(Math.max(Math.trunc(options.pageSize), 1), 100) : 10;
   const selectable = options?.selectable === true;
   const rowRoute = typeof options?.rowRoute === 'string' ? options.rowRoute : '';
+  const rowClickable = options?.rowClickable === true;
+  const rowActionLabel = typeof options?.rowActionLabel === 'string' ? options.rowActionLabel : 'Open / Edit';
   const rowParameterMap = options?.rowParameterMap && typeof options.rowParameterMap === 'object' ? options.rowParameterMap as Record<string, string> : {};
   const [filter, setFilter] = useState('');
   const [sort, setSort] = useState<{ id: string; direction: 'asc' | 'desc' } | null>(null);
@@ -96,10 +100,10 @@ export default function PluginDataTable({
           {columns.map((column) => <th key={column.id} scope="col" className="px-4 py-3 text-left font-semibold text-slate-700">{column.sortable ? <button className="inline-flex items-center gap-1" onClick={() => setSort((current) => ({ id: column.id, direction: current?.id === column.id && current.direction === 'asc' ? 'desc' : 'asc' }))}>{column.label}{sort?.id === column.id ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button> : column.label}</th>)}
           {rowRoute && <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>}
         </tr></thead>
-        <tbody className="divide-y divide-slate-100 bg-white">{visible.map((row, index) => { const key = rowKey(row, index); const href = rowHref(row); return <tr key={key} className={selected.has(key) ? 'bg-indigo-50' : ''}>
+        <tbody className="divide-y divide-slate-100 bg-white">{visible.map((row, index) => { const key = rowKey(row, index); const href = rowHref(row); const clickable = Boolean(href && rowClickable); return <tr key={key} tabIndex={clickable ? 0 : undefined} aria-label={clickable ? `Open ${display(row.fullName ?? row.name ?? row.employeeNumber ?? 'record')}` : undefined} onClick={clickable ? (event) => { if (!(event.target as HTMLElement).closest('a,button,input,select,textarea')) router.push(href); } : undefined} onKeyDown={clickable ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); router.push(href); } } : undefined} className={`${selected.has(key) ? 'bg-indigo-50' : ''} ${clickable ? 'cursor-pointer transition hover:bg-indigo-50/70 focus:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500' : ''}`}>
           {selectable && <td className="px-4 py-3"><input aria-label={`Select row ${index + 1}`} type="checkbox" checked={selected.has(key)} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} /></td>}
           {columns.map((column) => { const content = formatValue ? formatValue(valueAtPath(row, column.id), column.format) : display(valueAtPath(row, column.id)); return <td key={column.id} className="max-w-sm px-4 py-3 text-slate-700">{href ? <Link className="block rounded-sm hover:text-indigo-700 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500" href={href}>{content}</Link> : content}</td>; })}
-          {rowRoute && <td className="whitespace-nowrap px-4 py-3 text-right">{href ? <Link className="inline-flex items-center rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-600 hover:text-white" href={href} aria-label={`Open or edit ${display(row.fullName ?? row.name ?? row.employeeNumber ?? 'record')}`}>Open / Edit →</Link> : <span className="text-xs text-slate-400">Unavailable</span>}</td>}
+          {rowRoute && <td className="whitespace-nowrap px-4 py-3 text-right">{href ? <Link className="inline-flex items-center rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-600 hover:text-white" href={href} aria-label={`${rowActionLabel} ${display(row.fullName ?? row.name ?? row.employeeNumber ?? 'record')}`}>{rowActionLabel} →</Link> : <span className="text-xs text-slate-400">Unavailable</span>}</td>}
         </tr>; })}</tbody>
       </table>
     </div>}
