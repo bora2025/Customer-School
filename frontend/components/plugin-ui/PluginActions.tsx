@@ -41,8 +41,9 @@ export default function PluginActions({ pluginId, sources, params, actions, sele
     await onSuccess();
   }
 
-  return <section className="card p-5">
-    <div className="flex flex-wrap gap-3">{actions.map((action) => <button key={action.id} type="button" className={action.destructive ? 'btn bg-red-600 text-white hover:bg-red-700' : 'btn btn-primary'} disabled={Boolean(running)} onClick={() => invoke(action)}>{running === action.id ? 'Working…' : action.label}</button>)}</div>
+  const selectedCount = Math.max(0, ...actions.map((action) => action.mode === 'bulk' ? (selections[action.selectionSource || ''] || []).length : 0));
+  return <section className="card overflow-hidden border-slate-200 p-0 shadow-sm">
+    <div className="flex flex-col gap-3 bg-gradient-to-r from-slate-50 to-indigo-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-bold text-slate-900">Selected record actions</h3><p className="mt-0.5 text-xs text-slate-500">{selectedCount ? `${selectedCount} record${selectedCount === 1 ? '' : 's'} selected` : 'Select one or more rows to enable bulk actions.'}</p></div><div className="flex flex-wrap gap-3">{actions.map((action) => { const unavailable = action.mode === 'bulk' && (selections[action.selectionSource || ''] || []).length === 0; return <button key={action.id} type="button" className={action.destructive ? 'btn border border-red-200 bg-white text-red-700 hover:bg-red-600 hover:text-white' : 'btn btn-primary'} disabled={Boolean(running) || unavailable} onClick={() => invoke(action)}>{running === action.id ? 'Working…' : action.label}</button>; })}</div></div>
     {progress && <div className="mt-4" role="status" aria-live="polite"><div className="mb-1 flex justify-between text-xs text-slate-600"><span>{progress.completed} of {progress.total}</span><span>{progress.failed} failed</span></div><progress className="h-2 w-full" max={progress.total} value={progress.completed} /></div>}
     {message && <p className={`mt-3 text-sm ${message.includes('failed') || message.includes('Select') || message.includes('unavailable') ? 'text-red-700' : 'text-emerald-700'}`} role="status">{message}</p>}
   </section>;
