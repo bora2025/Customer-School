@@ -42,18 +42,18 @@ export default function CorePluginSearch() {
       <Sidebar title="Admin Panel" subtitle="Wattanam Core" navItems={adminNav} accentColor="indigo" />
       <main className="page-content">
         <div className="h-14 lg:hidden" />
-        <header className="page-header"><h1 className="text-2xl font-bold text-slate-800">Search installed features</h1><p className="mt-1 text-sm text-slate-500">Results are supplied by active plugins and filtered by your permissions.</p></header>
+        <header className="page-header"><h1 className="text-2xl font-bold text-slate-800">Search school and organization data</h1><p className="mt-1 text-sm text-slate-500">Find students, staff, employees, employers, classes, and other records supplied by active plugins. Results respect your permissions.</p></header>
         <div className="page-body space-y-5">
           <form onSubmit={search} className="card flex gap-3 p-4">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} maxLength={100} placeholder="Search plugin records…" className="input flex-1" autoFocus />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} maxLength={100} placeholder="Search name, student number, employee number, email, phone, class…" className="input flex-1" autoFocus />
             <button className="btn btn-primary" disabled={loading || query.trim().length < 2}>{loading ? 'Searching…' : 'Search'}</button>
           </form>
           {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
           {results.length > 0 && <div className="grid gap-3">{results.map((result) => (
-            <Link key={`${result.pluginId}:${result.id}`} href={result.href} className="card block p-5 hover:shadow-md">
-              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{result.pluginId}</div>
+            <Link key={`${result.pluginId}:${result.id}`} href={result.href} className="card group block p-5 transition hover:border-indigo-300 hover:shadow-md">
+              <div className="flex items-start justify-between gap-4"><div><div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{result.pluginId}</div>
               <h2 className="mt-1 font-semibold text-slate-800">{result.title}</h2>
-              {result.description && <p className="mt-2 text-sm text-slate-500">{result.description}</p>}
+              {result.description && <p className="mt-2 text-sm text-slate-500">{result.description}</p>}</div><span className="shrink-0 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 group-hover:bg-indigo-600 group-hover:text-white">Open &amp; edit →</span></div>
             </Link>
           ))}</div>}
           {searched && !loading && !error && results.length === 0 && <div className="card p-8 text-center"><p className="font-semibold text-slate-800">No plugin results found.</p><p className="mt-2 text-sm text-slate-500">Only active plugins with a granted search provider are queried.</p></div>}
