@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-19",
+  "scope": "Marketplace control plane, official plugin catalog, and Customer School universal host",
+  "status": "incomplete",
+  "freshEvidence": {
+    "marketplace": {
+      "unitAndContractTests": { "status": "pass", "tests": 504 },
+      "officialPackageChecks": { "status": "pass", "plugins": 14 },
+      "officialPluginBehaviorTests": { "status": "pass", "jestSuites": 13, "jestTests": 107, "nodeTests": 60, "totalTests": 167 },
+      "universalUiCatalogGate": { "status": "pass", "plugins": 14, "sdkVersion": "1.3.0" },
+      "controlPlaneConfiguration": "pass",
+      "productionBuild": "pass",
+      "isolatedRailwayControlPlane": {
+        "status": "pass",
+        "environment": "plugin-certification-20261019",
+        "productionTargeted": false,
+        "apiDeployment": "023dfbe1-eea8-423e-b1d5-2cb9bbb71ae0",
+        "apiImageDigest": "sha256:a38a3ff315f1d3030c4bc91ea61e71bab576c093793bc7234b91078a90c6c74b",
+        "apiReadinessStatus": 200,
+        "adminDeployment": "84b9f848-84c2-485f-88a8-30fd781c7c65",
+        "adminHttpStatus": 200,
+        "freshDatabaseRbacBootstrap": "pass",
+        "approvalOriginIsolation": "pass"
+      },
+      "productionDependencyAudit": {
+        "status": "pass",
+        "highSeverityVulnerabilities": 0,
+        "trees": ["marketplace-api", "platform-admin", "plugin-cli", "plugin-sdk"]
+      }
+    },
+    "customerSchool": {
+      "cleanCoreGate": { "status": "pass", "violations": 0 },
+      "coreAndDeploymentContracts": { "status": "pass", "tests": 38 },
+      "sourceIndependentRecoveryContracts": { "status": "pass", "tests": 7 },
+      "externalCatalogPostgresHarnessContracts": { "status": "pass", "tests": 31 },
+      "observabilityAndOperationalHealthContracts": { "status": "pass", "tests": 39 },
+      "productionDependencyAudit": {
+        "status": "pass",
+        "highSeverityVulnerabilities": 0,
+        "trees": ["customer-root", "customer-backend", "customer-frontend"]
+      },
+      "pluginHostContracts": { "status": "pass", "passed": 146, "skipped": 5 },
+      "catalogSignedPackageLifecycle": {
+        "status": "pass",
+        "plugins": 14,
+        "operations": ["pack", "sign", "verify", "install", "activate", "update", "rollback", "deactivate", "remove", "reinstall"]
+      },
+      "externalCatalogBrowserAcceptance": {
+        "status": "pass",
+        "tests": 21,
+        "viewports": ["phone", "tablet", "desktop"]
+      },
+      "railwayCertificationPreflight": {
+        "status": "pass",
+        "environment": "plugin-certification-20261018",
+        "productionTargeted": false,
+        "distribution": "core",
+        "apiWorkerImageParity": true,
+        "gatewayHealth": 200,
+        "readinessStatus": 200,
+        "unauthenticatedMetricsStatus": 401,
+        "installationState": "installed",
+        "marketplaceConnected": true,
+        "limitation": "Superseded by freshHostedLifecycle below."
+      },
+      "freshHostedLifecycle": {
+        "status": "pass_with_infrastructure_finding",
+        "environment": "plugin-certification-20261018",
+        "productionTargeted": false,
+        "sourceSnapshotSha256": "65dbcbf76011a25e8004407a743df26929ef3b5388129ee4f0dc27fcbce33662",
+        "apiDeployment": "b7541eb9-37f2-44a7-a5df-9e6c50df297f",
+        "workerDeployment": "c707baa2-09ce-4df3-bd74-8d81face0383",
+        "apiImageDigest": "sha256:229882cbf7eeffe8a1472eed07257b0b590dd719bea13a28a24033b2b08e8f7f",
+        "workerImageDigest": "sha256:a9ca7fcd9d0e26b30a368f6be81b09fc4062b22cdb4bad57129f905e824d443e",
+        "gatewayReadinessStatus": 200,
+        "unauthenticatedMetricsStatus": 401,
+        "marketplaceRelink": "pass",
+        "approvalOrigin": "marketplace-api-plugin-certification-20261019.up.railway.app",
+        "pluginId": "wattanam.organizing-management",
+        "baseVersion": "0.23.0",
+        "basePackageSha256": "cd79618afca28cf6b6dbd9228fa6a6933c74cf9381a00e583e4d743647fa6904",
+        "signedInstallAndActivation": "pass",
+        "verifiedMigrations": 64,
+        "verifiedUniversalUiPages": 34,
+        "activeUpdateVersion": "0.23.1",
+        "activeUpdateSha256": "1df7240c04faea8ec1e9232ef72f4f21c8971f94604281b17bc5ad86d7d132ad",
+        "manualRollbackRestoredVersion": "0.23.0",
+        "inducedMigrationFailureRestoredVersion": "0.23.0",
+        "finalDiagnostics": "healthy",
+        "uiRouteSmoke": {
+          "status": "pass",
+          "routes": ["/admin/plugins", "/plugins/wattanam.organizing-management/dashboard", "/plugins/wattanam.organizing-management/attendance-settings"]
+        },
+        "recoverySet": {
+          "status": "pass",
+          "journal": "wattanam-recovery-20261019T093443Z.recovery-set.json",
+          "databaseSha256": "8c221cd5e7d9458fc9b53626e81bc32104a2d5c8fbd25dbb9cf79532e338c992",
+          "pluginFilesSha256": "46f155181e94a2e7f8c9b89c7556d0891000ad468c3237bf1f25f147d2c078ed",
+          "pluginDataSha256": "0a9959fe577ab31b88114d5057b39a2018b2482ff56ae49ce97498412bab2a77",
+          "restoredDatabase": "wattanam_restore_cert_20261019",
+          "restoredPluginFiles": 319,
+          "restoredPluginDataFiles": 2,
+          "sourceAndRestorePluginInstallations": 1,
+          "sourceAndRestoreMigrations": 64,
+          "sourceAndRestoreVersion": "0.23.0"
+        }
+      },
+      "backendTypecheck": "pass",
+      "frontendTypecheck": "pass",
+      "coreProductionBuild": "pass"
+    }
+  },
+  "requirements": {
+    "signedPackagePublishingAndVerification": "verified",
+    "catalogEntitlementAndCommerce": "verified",
+    "atomicInstallActivateUpdateDeactivateRollback": "verified_by_fresh_catalog_lifecycle_and_2026_10_18_hosted_drill",
+    "namespacedImmutableMigrations": "verified",
+    "crossPluginContractsAndSearch": "verified",
+    "securityIsolationAndRecovery": "verified_by_local_contracts_and_2026_10_18_hosted_drill",
+    "railwayAndVpsDeployment": "verified_by_contracts_and_2026_10_18_hosted_drill",
+    "universalDependencyDrivenUiForEveryOfficialPlugin": "verified",
+    "pluginSourceIndependentHostTestOwnership": "verified",
+    "freshHostedEndToEndLifecycleAfterLatestChanges": "verified"
+  },
+  "gaps": [
+    {
+      "priority": "P1",
+      "id": "ARCH-DEPLOY-004",
+      "finding": "Railway independently builds the API and worker from the same source snapshot, producing different immutable image digests even though both services run the same backend Dockerfile and source snapshot.",
+      "requiredExit": "Build the backend image once in CI, publish it to a registry by digest, and configure both Railway API and worker services to deploy that exact digest. Keep the existing same-image preflight fail-closed."
+    },
+    {
+      "priority": "P1",
+      "id": "ARCH-CONFIG-005",
+      "finding": "The isolated worker inherited MARKETPLACE_URL without the API role's pinned update-repository and entitlement public keys, so it crash-looped and could not process activation jobs until the trust anchors were copied manually.",
+      "requiredExit": "Make Marketplace connection and signing-key rotation an atomic multi-role configuration operation, include the worker and its persistent volume in Railway IaC, and add a hosted preflight that rejects API/worker trust-anchor drift before rollout."
+    }
+  ],
+  "changesInThisAudit": [
+    "Removed the obsolete Academic plugin source test from Customer School.",
+    "Made legacy migration compatibility tests self-contained and checksum-registry based.",
+    "Added a reproducible plugin-host contract command and made it the CI gate.",
+    "Added migration and cross-plugin contract runtime coverage to the required host CI gate.",
+    "Upgraded Announcements 0.2.0 to universal SDK 1.3 UI with portable creation, listing, scheduling, and settings workflows.",
+    "Added a Marketplace-owned Announcements behavior contract and a released-host schema contract.",
+    "Upgraded all fourteen official plugins to SDK 1.3 universal declarative UI and added a catalog-wide fail-closed CI gate.",
+    "Converted the final schema-v1 Parent Portal pages to universal child, link-request, and administrator request workflows."
+    ,"Moved 107 official-plugin behavior tests across thirteen suites from Customer School into their owning Marketplace plugin packages and added a dedicated Marketplace CI gate."
+    ,"Moved Document Designer behavior and cross-plugin row-scope coverage into Marketplace; the official plugin gate now runs 167 behavior tests."
+    ,"Removed every implicit Customer School filesystem reference to an official plugin source tree; catalog lifecycle, schema, and browser acceptance now require PLUGIN_SOURCE_CATALOG explicitly."
+    ,"Replaced the Announcements-dependent package compatibility test with a source-independent plugin scaffold fixture."
+    ,"Verified 21 universal host browser flows across phone, tablet, and desktop against the externally mounted Marketplace catalog."
+    ,"Added a fail-closed Customer School CI boundary gate that rejects implicit relative or absolute official-plugin source dependencies."
+    ,"Verified the isolated Railway customer-school certification environment is healthy, core-only, Marketplace-connected, and running identical API/worker image digests without targeting production."
+    ,"Removed implicit sibling-repository fallback from PostgreSQL certification source resolution; operators must explicitly mount WATTANAM_PLUGIN_SOURCE_ROOT."
+    ,"Fixed the Organizing Management migration certification to derive its expected immutable migration sequence from the signed manifest instead of a stale hard-coded count."
+    ,"Separated seven source-independent recovery contracts from the thirty-one explicit external-catalog PostgreSQL harness contracts in Customer School CI."
+    ,"Verified thirty-nine observability, health, rollout, contract-runtime, entitlement-audit, and metrics-authentication contracts."
+    ,"Verified isolated Railway readiness returns HTTP 200 and unauthenticated metrics access fails closed with HTTP 401."
+    ,"Audited all production dependency trees in both repositories at high severity; no vulnerabilities were reported."
+    ,"Fixed fresh Marketplace database startup so the complete additive RBAC catalog is seeded after migrations and before narrow permission repairs; the isolated API now starts healthy without weakening authorization."
+    ,"Corrected isolated Marketplace public-origin configuration and verified Customer School rejects a production-origin approval URL before accepting the isolated-origin link flow."
+    ,"Published and installed signed Organizing Management 0.23.0, activated 64 immutable migrations, updated active to 0.23.1, manually rolled back, and retained 0.23.0 after an induced execution-time migration failure."
+    ,"Created and restored a fresh hosted recovery set into a separate disposable PostgreSQL database and staging directories; plugin installation version and all 64 migration records match the source."
+  ],
+  "releaseDecision": "not_certified"
+}

@@ -9,6 +9,7 @@ const path = require('path');
 // Jest's CJS-only module loader cannot parse without this.
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
+  moduleDirectories: [path.resolve(__dirname, 'node_modules'), 'node_modules'],
   rootDir: 'src',
   testRegex: '.*\\.spec\\.ts$',
   transform: {

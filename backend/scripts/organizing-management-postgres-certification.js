@@ -13,6 +13,7 @@ const pluginRoot = resolvePluginSource('wattanam.organizing-management');
 const manifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
 const plugin = require(path.join(pluginRoot, manifest.backendEntry));
 const prefix = 'plugin_wattanam_organizing_management_';
+const declaredMigrationIds = Object.freeze(manifest.migrations.map((migration) => migration.id));
 
 function requireGuard(env = process.env) {
   if (!env.DATABASE_URL) throw new Error('DATABASE_URL is required');
@@ -159,4 +160,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch((error) => { process.stderr.write(`${error.stack || error.message}\n`); process.exitCode = 1; });
-module.exports = { applyMigrations, certify, pluginTables, requireGuard, resetNamespace, runtime };
+module.exports = { applyMigrations, certify, declaredMigrationIds, pluginTables, requireGuard, resetNamespace, runtime };

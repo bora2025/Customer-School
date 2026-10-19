@@ -9,6 +9,7 @@ import { PluginPackageVerifier } from './plugin-package';
 // permanent proof that the CLI's pack output stays byte-compatible with the
 // real backend verifier, not just internally self-consistent.
 const { packPlugin } = require('../../../packages/plugin-cli/src/commands/pack');
+const { run: scaffoldPlugin } = require('../../../packages/plugin-cli/src/commands/init');
 
 describe('plugin packaging tool', () => {
   let directory: string;
@@ -21,26 +22,28 @@ describe('plugin packaging tool', () => {
     await fs.rm(directory, { recursive: true, force: true });
   });
 
-  it('packages and verifies the announcements reference source', async () => {
+  it('packages and verifies a source-independent scaffolded plugin', async () => {
     const keys = generateKeyPairSync('ed25519');
+    const source = path.join(directory, 'acme.packaging-proof');
     const privateKey = path.join(directory, 'private.pem');
-    const output = path.join(directory, 'announcements.wtp');
-    const secondOutput = path.join(directory, 'announcements-second.wtp');
+    const output = path.join(directory, 'packaging-proof.wtp');
+    const secondOutput = path.join(directory, 'packaging-proof-second.wtp');
+    await scaffoldPlugin(['acme.packaging-proof', '--dir', source]);
     await fs.writeFile(privateKey, keys.privateKey.export({ type: 'pkcs8', format: 'pem' }));
 
     const packed = await packPlugin({
-      source: path.resolve(__dirname, '../../../plugins/announcements'),
+      source,
       privateKeyFile: privateKey,
       keyId: 'test-key',
       output,
     });
     const result = await new PluginPackageVerifier().verify(
       await fs.readFile(output),
-      { wattanam: { 'test-key': keys.publicKey.export({ type: 'spki', format: 'pem' }).toString() } },
+      { acme: { 'test-key': keys.publicKey.export({ type: 'spki', format: 'pem' }).toString() } },
       '0.1.0',
     );
     const second = await packPlugin({
-      source: path.resolve(__dirname, '../../../plugins/announcements'),
+      source,
       privateKeyFile: privateKey,
       keyId: 'test-key',
       output: secondOutput,
@@ -48,7 +51,7 @@ describe('plugin packaging tool', () => {
 
     expect(packed.sha256).toBe(result.packageSha256);
     expect(second.sha256).toBe(packed.sha256);
-    expect(result.manifest.id).toBe('wattanam.announcements');
+    expect(result.manifest.id).toBe('acme.packaging-proof');
     expect(result.files.has('backend/index.js')).toBe(true);
   });
 });

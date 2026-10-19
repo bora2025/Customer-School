@@ -2,10 +2,16 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const descriptorPath = path.resolve(process.cwd(), '../plugins/wattanam.document-designer/frontend/page.json');
-const descriptor = JSON.parse(fs.readFileSync(descriptorPath, 'utf8'));
+const pluginId = 'wattanam.document-designer';
+const externalCatalog = process.env.PLUGIN_SOURCE_CATALOG;
+const descriptorPath = externalCatalog ? path.resolve(externalCatalog, pluginId, 'frontend/page.json') : '';
+const hasExternalCatalog = Boolean(descriptorPath && fs.existsSync(descriptorPath));
+const descriptor = hasExternalCatalog
+  ? JSON.parse(fs.readFileSync(descriptorPath, 'utf8'))
+  : { pages: [] };
+const catalogTest = hasExternalCatalog ? test : test.skip;
 const pages = descriptor.pages.map((page: Record<string, unknown>) => ({
-  pluginId: 'wattanam.document-designer',
+  pluginId,
   schemaVersion: 2,
   kind: 'declarative-ui',
   ...page,
@@ -47,7 +53,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('renders document-designer list page from plugin descriptor and supports create flow', async ({ page }) => {
+catalogTest('renders document-designer list page from plugin descriptor and supports create flow', async ({ page }) => {
   await page.goto('/plugins/wattanam.document-designer/templates');
 
   await expect(page.getByRole('heading', { name: 'Document Designer' })).toBeVisible();
@@ -60,7 +66,7 @@ test('renders document-designer list page from plugin descriptor and supports cr
   await expect(page.getByRole('status')).toContainText('Template created');
 });
 
-test('renders document-designer detail page route via plugin host', async ({ page }) => {
+catalogTest('renders document-designer detail page route via plugin host', async ({ page }) => {
   await page.goto('/plugins/wattanam.document-designer/templates/template-1');
 
   await expect(page.getByRole('heading', { name: 'Document template' })).toBeVisible();
@@ -69,7 +75,7 @@ test('renders document-designer detail page route via plugin host', async ({ pag
   await expect(page.getByRole('button', { name: 'Save design' })).toHaveCount(0);
 });
 
-test('moves and resizes a bounded design element through the host visual editor', async ({ page }) => {
+catalogTest('moves and resizes a bounded design element through the host visual editor', async ({ page }) => {
   await page.goto('/plugins/wattanam.document-designer/templates/edit/template-1');
   await expect(page.getByRole('heading', { name: 'Edit document template' })).toBeVisible();
   const element = page.getByRole('button', { name: 'text name' });
@@ -99,7 +105,7 @@ test('moves and resizes a bounded design element through the host visual editor'
   await expect(page.getByRole('status')).toContainText('Design saved');
 });
 
-test('adds and saves a host-rendered shape without plugin HTML or script', async ({ page }) => {
+catalogTest('adds and saves a host-rendered shape without plugin HTML or script', async ({ page }) => {
   await page.goto('/plugins/wattanam.document-designer/templates/edit/template-1');
   await page.getByRole('button', { name: 'Add shape' }).click();
   const shape = page.getByRole('button', { name: /^shape shape-/ });

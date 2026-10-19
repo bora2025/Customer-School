@@ -59,24 +59,12 @@ jobs:
         run: npm --prefix backend ci
       - name: Verify atomic lifecycle, isolation, rollout, SDK and universal UI contracts
         working-directory: backend
-        run: >-
-          npm test -- --runInBand
-          src/plugins/plugin-artifact-cache.service.spec.ts
-          src/plugins/plugin-config.spec.ts
-          src/plugins/plugin-execution-policy.spec.ts
-          src/plugins/plugin-extensions.service.spec.ts
-          src/plugins/plugin-rollout.service.spec.ts
-          src/plugins/plugin-runtime.service.spec.ts
-          src/plugins/plugin-security-fixtures.spec.ts
-          src/plugins/plugin-sdk-contract.spec.ts
-          src/plugins/plugin-ui-schema.spec.ts
-          src/plugins/plugins.service.spec.ts
-          src/marketplace/marketplace-commerce.service.spec.ts
-      - name: Verify recovery and official PostgreSQL certification harnesses
+        run: npm run test:plugin-host
+      - name: Verify Customer School has no implicit official-plugin source dependency
+        run: npm run verify:plugin-boundary
+      - name: Verify source-independent recovery contracts
         working-directory: backend
-        run: |
-          node --test scripts/plugin-recovery-contract.test.js scripts/restore-recovery-set.test.js
-          node --test scripts/*-postgres-certification.test.js
+        run: node --test scripts/plugin-source-root.test.js scripts/plugin-recovery-contract.test.js scripts/restore-recovery-set.test.js
 
   secret-scan:
     runs-on: ubuntu-latest

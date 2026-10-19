@@ -1,13 +1,19 @@
 import { parsePluginUiBundle } from './plugin-ui-schema';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 const permissions = new Set(['wattanam.test.read', 'wattanam.test.manage']);
 const pluginCatalogRoot = process.env.PLUGIN_SOURCE_CATALOG
   ? path.resolve(process.env.PLUGIN_SOURCE_CATALOG)
-  : path.resolve(process.cwd(), '../plugins');
+  : '';
 const pluginRoot = (id: string) => path.join(pluginCatalogRoot, id);
-const catalogIt = (id: string) => existsSync(path.join(pluginRoot(id), 'plugin.json')) ? it : it.skip;
+const catalogIt = (id: string) => pluginCatalogRoot && existsSync(path.join(pluginRoot(id), 'plugin.json')) ? it : it.skip;
+const officialCatalogDirectories = existsSync(pluginCatalogRoot)
+  ? readdirSync(pluginCatalogRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && existsSync(path.join(pluginCatalogRoot, entry.name, 'plugin.json')))
+      .map((entry) => entry.name)
+      .sort()
+  : [];
 
 function valid() {
   return {
@@ -29,6 +35,17 @@ function valid() {
 }
 
 describe('Plugin UI v2 schema', () => {
+  (officialCatalogDirectories.length > 0 ? it : it.skip)('validates every official catalog page as universal declarative UI', () => {
+    for (const directory of officialCatalogDirectories) {
+      const root = path.join(pluginCatalogRoot, directory);
+      const manifest = JSON.parse(readFileSync(path.join(root, 'plugin.json'), 'utf8'));
+      const descriptor = JSON.parse(readFileSync(path.join(root, manifest.frontendEntry), 'utf8'));
+      expect(descriptor).toMatchObject({ schemaVersion: 2, kind: 'declarative-ui', portability: 'universal' });
+      expect(manifest.sdkVersion).toBe('1.3.0');
+      expect(() => parsePluginUiBundle(descriptor, manifest.id, new Set(manifest.permissions))).not.toThrow();
+    }
+  });
+
   it('parses a versioned declarative page and its allow-listed components', () => {
     expect(parsePluginUiBundle(valid(), 'wattanam.test', permissions)).toMatchObject({
       schemaVersion: 2,
@@ -352,7 +369,7 @@ describe('Plugin UI v2 schema', () => {
     expect(bundle.pages.find((page) => page.id === 'reports')?.components).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'filter' }), expect.objectContaining({ type: 'print' })]));
   });
 
-  catalogIt('wattanam.academic-management')('validates the complete Academic Management UI bundle including roster actions', () => {
+  catalogIt('wattanam.academic-management')('validates the complete Academic Management UI bundle including row actions', () => {
     const root = pluginRoot('wattanam.academic-management');
     const manifest = JSON.parse(readFileSync(path.join(root, 'plugin.json'), 'utf8'));
     const bundle = JSON.parse(readFileSync(path.join(root, 'frontend', 'page.json'), 'utf8'));
@@ -364,12 +381,36 @@ describe('Plugin UI v2 schema', () => {
       expect.objectContaining({ id: 'cleanupOrphanedStudents', method: 'POST' }),
     ]));
     expect(roster?.components).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'class-students-table', type: 'table', options: expect.objectContaining({ selectable: true }) }),
-      expect.objectContaining({ id: 'student-actions', type: 'actions' }),
+      expect.objectContaining({
+        id: 'class-students-table',
+        type: 'table',
+        options: expect.objectContaining({
+          selectable: false,
+          rowActions: expect.arrayContaining([
+            expect.objectContaining({ id: 'remove-student', source: 'removeStudent', destructive: true }),
+          ]),
+        }),
+      }),
     ]));
     const settings = parsed.pages.find((page) => page.id === 'registration-settings');
     const createField = settings?.components.find((component) => component.id === 'custom-field-create-form');
     expect(createField?.fields).toContainEqual(expect.objectContaining({ id: 'options', jsonShape: 'array' }));
+  });
+
+  catalogIt('announcements')('validates the universal Announcements creation, listing, and settings pages', () => {
+    const root = pluginRoot('announcements');
+    const manifest = JSON.parse(readFileSync(path.join(root, 'plugin.json'), 'utf8'));
+    const descriptor = JSON.parse(readFileSync(path.join(root, 'frontend', 'page.json'), 'utf8'));
+    const parsed = parsePluginUiBundle(descriptor, manifest.id, new Set(manifest.permissions));
+    expect(parsed).toMatchObject({ schemaVersion: 2, kind: 'declarative-ui', portability: 'universal' });
+    expect(parsed.pages.map((page) => page.id)).toEqual(['announcements', 'settings']);
+    expect(parsed.pages.find((page) => page.id === 'announcements')?.components).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'announcement-create', type: 'form', source: 'createAnnouncement' }),
+      expect.objectContaining({ id: 'announcement-table', type: 'table', source: 'announcements' }),
+    ]));
+    expect(parsed.pages.find((page) => page.id === 'settings')?.components).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'settings-form', type: 'form', source: 'saveSettings' }),
+    ]));
   });
 
   it('validates bounded launch-language translations', () => {

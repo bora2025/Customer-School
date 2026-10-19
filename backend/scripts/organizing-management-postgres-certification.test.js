@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { applyMigrations, requireGuard } = require('./organizing-management-postgres-certification');
+const { applyMigrations, declaredMigrationIds, requireGuard } = require('./organizing-management-postgres-certification');
 
 test('Organizing Management certification requires an exact disposable namespace guard', () => {
   assert.throws(() => requireGuard({}), /DATABASE_URL/);
@@ -12,7 +12,7 @@ test('Organizing Management certification requires an exact disposable namespace
 test('Organizing Management certification verifies and applies all immutable migrations', async () => {
   const statements = [];
   await applyMigrations({ $executeRawUnsafe: async (sql) => { statements.push(sql); } });
-  assert.equal(statements.length, 56);
-  assert.match(statements[0], /wattanam-plugin-migration:\s*001_create_organization_foundation/);
-  assert.match(statements[55], /wattanam-plugin-migration:\s*056_harden_calendar_and_settings/);
+  assert.equal(statements.length, declaredMigrationIds.length);
+  assert.match(statements[0], new RegExp(`wattanam-plugin-migration:\\s*${declaredMigrationIds[0]}`));
+  assert.match(statements.at(-1), new RegExp(`wattanam-plugin-migration:\\s*${declaredMigrationIds.at(-1)}`));
 });

@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile);
 // Academic Management 0.1.0 shipped these migrations before identity headers
 // became mandatory. Their exact published bytes remain immutable; only these
 // plugin/migration/checksum triples may use the legacy format.
-const LEGACY_HEADERLESS_MIGRATIONS = new Map<string, ReadonlySet<string>>([
+export const LEGACY_HEADERLESS_MIGRATIONS = new Map<string, ReadonlySet<string>>([
   ['wattanam.academic-management:003_create_enrollment_interval', new Set(['6a7304a8ea29c064a394144ba0fa4aa9288e62fabe03a9f0a81224401d969861'])],
   ['wattanam.academic-management:004_create_study_year', new Set([
     '54a0a91809e5ad924484776f47c8b7638b6d1894bff379f1485c229f25fb0ac1',
@@ -33,7 +33,7 @@ const LEGACY_HEADERLESS_MIGRATIONS = new Map<string, ReadonlySet<string>>([
 // Attendance Manager 0.1.x also shipped these additive migrations as multiple simple DDL
 // statements. Keep their published bytes immutable and permit statement splitting only for the
 // exact plugin/migration/checksum triples below. New migrations must remain one statement.
-const LEGACY_MULTI_STATEMENT_MIGRATIONS = new Map<string, string>([
+export const LEGACY_MULTI_STATEMENT_MIGRATIONS = new Map<string, string>([
   ['wattanam.attendance-manager:001_create_attendance_manager', 'd02277c13ddbf7b0237f7059fb389f3fef36184edbfb907ff536515ef0b69233'],
   ['wattanam.attendance-manager:003_enforce_student_boundary', 'ed92bab5dd405713b6dbbff4a40d40e0d608bb68a97d2733fd8bd084c20eb91c'],
   ['wattanam.attendance-manager:004_add_corrections_scans_alerts_snapshots', '3d1b4733339a53a66c67a511a1ea769abcf8656882d671978261542f2891b682'],

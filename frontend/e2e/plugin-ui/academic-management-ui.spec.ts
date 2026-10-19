@@ -4,8 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const pluginId = 'wattanam.academic-management';
-const pluginRoot = path.resolve(process.cwd(), '../plugins/wattanam.academic-management');
-const descriptor = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'frontend/page.json'), 'utf8'));
+const externalCatalog = process.env.PLUGIN_SOURCE_CATALOG;
+const pluginRoot = externalCatalog ? path.resolve(externalCatalog, pluginId) : '';
+const descriptorPath = pluginRoot ? path.join(pluginRoot, 'frontend/page.json') : '';
+const hasExternalCatalog = Boolean(descriptorPath && fs.existsSync(descriptorPath));
+const descriptor = hasExternalCatalog
+  ? JSON.parse(fs.readFileSync(descriptorPath, 'utf8'))
+  : { pages: [] };
+const catalogTest = hasExternalCatalog ? test : test.skip;
 const pages = descriptor.pages.map((page: Record<string, unknown>) => ({
   pluginId,
   schemaVersion: 2,
@@ -64,7 +70,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('administrator manages registration settings and custom fields accessibly', async ({ page }, testInfo) => {
+catalogTest('administrator manages registration settings and custom fields accessibly', async ({ page }, testInfo) => {
   await page.goto(`/plugins/${pluginId}/registration-settings`);
   await expect(page.getByRole('heading', { name: 'Registration Settings', exact: true }).first()).toBeVisible();
   await expect(page.getByRole('table')).toContainText('Medical note');
@@ -80,10 +86,9 @@ test('administrator manages registration settings and custom fields accessibly',
   await expect(page.getByText('Custom registration field created', { exact: true })).toBeVisible();
   await expect(page.getByRole('table')).toContainText('Learning support');
 
-  await page.getByLabel('Select row 1').check();
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Delete selected fields' }).click();
-  await expect(page.getByText('1 action completed.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
+  await expect(page.getByText('Delete completed.', { exact: true })).toBeVisible();
   await expect(page.getByRole('table')).not.toContainText('Medical note');
 
   const dimensions = await page.evaluate(() => ({

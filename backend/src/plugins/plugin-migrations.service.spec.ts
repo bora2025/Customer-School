@@ -1,7 +1,9 @@
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
-import path from 'path';
-import { PluginMigrationsService } from './plugin-migrations.service';
+import {
+  LEGACY_HEADERLESS_MIGRATIONS,
+  LEGACY_MULTI_STATEMENT_MIGRATIONS,
+  PluginMigrationsService,
+} from './plugin-migrations.service';
 
 const sql = Buffer.from('-- wattanam-plugin-migration: 001\nCREATE TABLE "plugin_wattanam_test_records" ("id" TEXT PRIMARY KEY);');
 const checksum = createHash('sha256').update(sql).digest('hex');
@@ -51,91 +53,22 @@ describe('PluginMigrationsService', () => {
     expect(() => service.validateSql({ ...manifest, migrations: [{ id: '003_create_enrollment_interval', checksum: 'a'.repeat(64) }] }, '003_create_enrollment_interval', legacySql)).toThrow('identity header');
   });
 
-  it('accepts both exact certified Academic compatibility migrations without broadening the exception', () => {
-    const service = new PluginMigrationsService();
-    const pluginRoot = path.resolve(__dirname, '../../../plugins/wattanam.academic-management');
-    const manifest: any = JSON.parse(readFileSync(path.join(pluginRoot, 'plugin.json'), 'utf8'));
-    for (const migrationId of ['004_create_study_year', '005_create_class']) {
-      const migration = manifest.migrations.find((item: { id: string }) => item.id === migrationId);
-      const migrationSql = readFileSync(path.join(pluginRoot, migration.path), 'utf8');
-      expect(() => service.validateSql(manifest, migrationId, migrationSql)).not.toThrow();
-      expect(() => service.validateSql(manifest, migrationId, `${migrationSql} `)).toThrow('identity header');
-    }
-  });
-
-  it('preserves the exact published Attendance Manager multi-statement migration only', () => {
-    const service = new PluginMigrationsService();
-    const migrationId = '001_create_attendance_manager';
-    const migrationPath = path.resolve(__dirname, '../../../plugins/wattanam.attendance-manager/migrations/001_create_attendance_manager.sql');
-    const legacySql = readFileSync(migrationPath, 'utf8');
-    const checksum = createHash('sha256').update(legacySql).digest('hex');
-    expect(checksum).toBe('d02277c13ddbf7b0237f7059fb389f3fef36184edbfb907ff536515ef0b69233');
-    const manifest: any = { id: 'wattanam.attendance-manager', migrations: [{ id: migrationId, checksum }] };
-
-    expect(() => service.validateSql(manifest, migrationId, legacySql)).not.toThrow();
-    expect(() => service.validateSql(manifest, migrationId, legacySql.replace('CREATE TABLE', 'CREATE  TABLE'))).toThrow('identity header');
-    expect(() => service.validateSql({ ...manifest, id: 'wattanam.other' }, migrationId, legacySql)).toThrow('identity header');
-  });
-
-  it('installs the checksum-pinned Attendance migration atomically as individual statements', async () => {
-    const migrationId = '001_create_attendance_manager';
-    const migrationPath = path.resolve(__dirname, '../../../plugins/wattanam.attendance-manager/migrations/001_create_attendance_manager.sql');
-    const content = readFileSync(migrationPath);
-    const checksum = createHash('sha256').update(content).digest('hex');
-    const attendancePackage: any = {
-      manifest: {
-        id: 'wattanam.attendance-manager', version: '0.1.2',
-        migrations: [{ id: migrationId, path: 'migrations/001_create_attendance_manager.sql', checksum, destructive: false }],
-      },
-      files: new Map([['migrations/001_create_attendance_manager.sql', content]]),
-    };
-    const tx = { pluginMigration: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) }, $executeRawUnsafe: jest.fn().mockResolvedValue(0) } as any;
-
-    await new PluginMigrationsService().apply(tx, attendancePackage);
-
-    expect(tx.$executeRawUnsafe.mock.calls.length).toBeGreaterThan(1);
-    expect(tx.$executeRawUnsafe.mock.calls.every(([statement]: [string]) => statement.trim().endsWith(';'))).toBe(true);
-    expect(tx.pluginMigration.create).toHaveBeenCalledTimes(1);
-    expect(tx.pluginMigration.create).toHaveBeenCalledWith({ data: expect.objectContaining({ pluginId: 'wattanam.attendance-manager', migrationId, checksum }) });
-  });
-
-  it('installs every exact published Attendance multi-statement migration and rejects modified bytes', async () => {
-    const ids = [
-      '003_enforce_student_boundary',
-      '004_add_corrections_scans_alerts_snapshots',
-      '005_add_alert_delivery_ledger',
-      '006_add_legacy_adoption_fields',
-    ];
-    const migrations = ids.map((id) => {
-      const migrationPath = path.resolve(__dirname, `../../../plugins/wattanam.attendance-manager/migrations/${id}.sql`);
-      const content = readFileSync(migrationPath);
-      return { id, path: `migrations/${id}.sql`, checksum: createHash('sha256').update(content).digest('hex'), destructive: false, content };
-    });
-    const service = new PluginMigrationsService();
-    for (const migration of migrations) {
-      const manifest: any = { id: 'wattanam.attendance-manager', version: '0.1.6', migrations: [{ ...migration, content: undefined }] };
-      expect(() => service.validateSql(manifest, migration.id, migration.content.toString(), false)).not.toThrow();
-      expect(() => service.validateSql(manifest, migration.id, `${migration.content.toString()} `, false)).toThrow('exactly one SQL statement');
-      expect(() => service.validateSql({ ...manifest, id: 'wattanam.other' }, migration.id, migration.content.toString(), false)).toThrow('exactly one SQL statement');
-    }
-
-    const attendancePackage: any = {
-      manifest: { id: 'wattanam.attendance-manager', version: '0.1.6', migrations: migrations.map(({ content, ...migration }) => migration) },
-      files: new Map(migrations.map((migration) => [migration.path, migration.content])),
-    };
-    const tx = { pluginMigration: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) }, $executeRawUnsafe: jest.fn().mockResolvedValue(0) } as any;
-    await service.apply(tx, attendancePackage);
-    expect(tx.$executeRawUnsafe.mock.calls.length).toBeGreaterThan(migrations.length);
-    expect(tx.pluginMigration.create).toHaveBeenCalledTimes(migrations.length);
-  });
-
-  it('accepts the new single-statement Attendance branding migration through normal validation', () => {
-    const migrationId = '002_add_study_year_branding';
-    const migrationPath = path.resolve(__dirname, '../../../plugins/wattanam.attendance-manager/migrations/002_add_study_year_branding.sql');
-    const sql = readFileSync(migrationPath, 'utf8');
-    const checksum = createHash('sha256').update(sql).digest('hex');
-    const manifest: any = { id: 'wattanam.attendance-manager', migrations: [{ id: migrationId, checksum }] };
-
-    expect(() => new PluginMigrationsService().validateSql(manifest, migrationId, sql)).not.toThrow();
+  it('keeps legacy compatibility immutable without requiring plugin source in the host repository', () => {
+    expect([...LEGACY_HEADERLESS_MIGRATIONS.entries()].map(([key, values]) => [key, [...values]])).toEqual([
+      ['wattanam.academic-management:003_create_enrollment_interval', ['6a7304a8ea29c064a394144ba0fa4aa9288e62fabe03a9f0a81224401d969861']],
+      ['wattanam.academic-management:004_create_study_year', ['54a0a91809e5ad924484776f47c8b7638b6d1894bff379f1485c229f25fb0ac1', '19a750f6164c3f10c13dc9e2f871c54e58db450f983082f028e38d03175554ca']],
+      ['wattanam.academic-management:005_create_class', ['9d10a96010801a827f947e0f04a1fedb8a4eb59e3be3b742e51a7e1d53ea9b9c', '79a804f2e8d9d5005c58c30cede604ced6b473baa2cfff5fa3e8879602d1a11b']],
+      ['wattanam.academic-management:006_create_class_registration', ['a6eaa58785201a91f2236dbbe777eb7900600e71eb193c9052b99a860f53ce67']],
+      ['wattanam.academic-management:007_create_class_registration_settings', ['f7fac966cf3f0d9156898a3a297e7a17747d50a77090af8c85634449a2ba734f']],
+      ['wattanam.academic-management:008_create_class_registration_field', ['b550055dd6951c330f7f8fb0719fb2bfef722c0066486c8a3a2f64946caffa18']],
+      ['wattanam.attendance-manager:001_create_attendance_manager', ['d02277c13ddbf7b0237f7059fb389f3fef36184edbfb907ff536515ef0b69233']],
+    ]);
+    expect([...LEGACY_MULTI_STATEMENT_MIGRATIONS.entries()]).toEqual([
+      ['wattanam.attendance-manager:001_create_attendance_manager', 'd02277c13ddbf7b0237f7059fb389f3fef36184edbfb907ff536515ef0b69233'],
+      ['wattanam.attendance-manager:003_enforce_student_boundary', 'ed92bab5dd405713b6dbbff4a40d40e0d608bb68a97d2733fd8bd084c20eb91c'],
+      ['wattanam.attendance-manager:004_add_corrections_scans_alerts_snapshots', '3d1b4733339a53a66c67a511a1ea769abcf8656882d671978261542f2891b682'],
+      ['wattanam.attendance-manager:005_add_alert_delivery_ledger', 'd7772013527176050539349faff053af05fe36f08845d12036fd2d977ac14c8d'],
+      ['wattanam.attendance-manager:006_add_legacy_adoption_fields', 'fc36b516cf8f3079a5a075527e2219108456a4c7133e9561eb70f41844c821c9'],
+    ]);
   });
 });
