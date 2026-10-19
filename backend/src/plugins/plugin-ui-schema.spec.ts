@@ -244,6 +244,17 @@ describe('Plugin UI v2 schema', () => {
     expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'session-manager' });
   });
 
+  it('validates the universal profile workspace declaration', () => {
+    const value: any = valid();
+    value.portability = 'universal';
+    value.pages[0].dataSources.push(
+      { id: 'relations', method: 'GET', path: 'profiles/:id/relations', parameters: ['id'], autoload: false, permission: 'wattanam.test.read' },
+      { id: 'update', method: 'PUT', path: 'profiles/:id', parameters: ['id'], autoload: false, permission: 'wattanam.test.manage' },
+    );
+    value.pages[0].components = [{ id: 'profile', type: 'profile-manager', source: 'record', fields: [{ id: 'fullName', type: 'text', label: 'Full name', required: true }], options: { relationsSource: 'relations', saveSource: 'update' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'profile-manager' });
+  });
+
   it('validates the take attendance workspace declaration', () => {
     const value: any = valid();
     value.pages[0].dataSources.push(

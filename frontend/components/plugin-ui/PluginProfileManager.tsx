@@ -1,0 +1,49 @@
+'use client';
+
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { apiFetch } from '../../lib/api';
+import { resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
+
+type Source = { id:string; method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'; path:string };
+type Field = { id:string; type:string; label:string; required?:boolean; options?:Array<{label:string;value:string}> };
+type Values = Record<string, unknown>;
+
+const lifecycle = [
+  ['Rewards & bonuses','rewards','emerald'],['Salary deductions','deductions','rose'],['Permissions & leave','permissions','sky'],
+  ['Disciplinary actions','disciplinaryActions','amber'],['Job promotions','promotions','violet'],['Payroll history','payroll','indigo'],
+] as const;
+
+export default function PluginProfileManager({ pluginId, value, relations, sources, params, fields, options, loading, error, onRefresh }:{
+  pluginId:string; value:unknown; relations:unknown; sources:Source[]; params:Record<string,string>; fields:Field[];
+  options:Record<string,unknown>; loading:boolean; error?:string; onRefresh():void|Promise<void>;
+}) {
+  const profile = value && typeof value === 'object' && !Array.isArray(value) ? value as Values : {};
+  const history = relations && typeof relations === 'object' && !Array.isArray(relations) ? relations as Values : {};
+  const [draft,setDraft]=useState<Values>({}),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[active,setActive]=useState('rewards');
+  useEffect(()=>setDraft(Object.fromEntries(fields.map(field=>[field.id,profile[field.id]??'']))),[fields,value]);
+  const saveSource=sources.find(source=>source.id===options.saveSource);
+  const photo=String(draft.photoUrl||'');
+  const initials=String(draft.fullName||'Employee').split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase();
+  const selected=useMemo(()=>lifecycle.find(([,key])=>key===active)||lifecycle[0],[active]);
+  const items=Array.isArray(history[selected[1]])?history[selected[1]] as Values[]:[];
+  const set=(id:string,value:unknown)=>setDraft(current=>({...current,[id]:value}));
+  async function submit(event:FormEvent){event.preventDefault();if(!saveSource)return;setBusy(true);setMessage('');try{const endpoint=`/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(saveSource.path,params)}`;const response=await apiFetch(endpoint,{method:saveSource.method,headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.message||`Request failed (${response.status})`);setMessage('Profile updated successfully.');await onRefresh()}catch(cause){setMessage(cause instanceof Error?cause.message:'Profile could not be saved.')}finally{setBusy(false)}}
+  if(loading)return <div className="h-[680px] animate-pulse rounded-3xl bg-slate-100"/>;
+  if(error)return <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700">{error}</div>;
+  return <form onSubmit={submit} className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
+    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-7 py-5"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-600">People operations</p><h1 className="mt-1 text-2xl font-black text-slate-950">{String(draft.fullName||'Employee / Employer Profile')}</h1><p className="mt-1 text-sm text-slate-500">Complete identity, employment, compensation, and career record</p></div><div className="flex items-center gap-3"><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{String(draft.employmentStatus||'ACTIVE')}</span><button type="submit" disabled={busy} className="btn btn-primary min-w-32">{busy?'Saving…':'Save changes'}</button></div></header>
+    {message&&<div className={`mx-7 mt-5 rounded-xl border p-3 text-sm ${message.includes('success')?'border-emerald-200 bg-emerald-50 text-emerald-700':'border-red-200 bg-red-50 text-red-700'}`}>{message}</div>}
+    <div className="grid gap-0 xl:grid-cols-[300px_minmax(420px,1fr)_390px]">
+      <aside className="border-r border-slate-200 bg-slate-50/70 p-7"><div className="mx-auto h-56 w-full overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-100 to-violet-200 shadow-inner">{photo?<img src={photo} alt="Profile" className="h-full w-full object-cover"/>:<div className="grid h-full place-items-center text-6xl font-black text-indigo-700">{initials}</div>}</div><label className="mt-4 block text-xs font-bold uppercase tracking-wide text-slate-500">Profile image URL<input className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" value={photo} onChange={event=>set('photoUrl',event.target.value)}/></label><div className="mt-6 space-y-3 rounded-2xl border bg-white p-4"><Small label="Workforce number" value={draft.employeeNumber}/><Small label="Profile type" value={draft.employmentType}/><Small label="Department" value={draft.department}/><Small label="Start date" value={dateValue(draft.startDate)}/></div><div className="mt-4 rounded-2xl bg-slate-950 p-4 text-white"><p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Your ID card</p><p className="mt-2 font-bold">{String((history.idCard as Values)?.name||draft.fullName||'—')}</p><p className="text-xs text-slate-300">{String((history.idCard as Values)?.employeeNumber||draft.employeeNumber||'—')} · {String((history.idCard as Values)?.position||draft.position||'No position')}</p></div></aside>
+      <main className="p-7"><div className="mb-5"><h2 className="text-lg font-black text-slate-950">Employee details</h2><p className="text-sm text-slate-500">Edit identity, role, contact, and emergency information.</p></div><div className="grid gap-4 md:grid-cols-2">{fields.filter(field=>field.id!=='photoUrl').map(field=><Editor key={field.id} field={field} value={draft[field.id]} busy={busy} onChange={value=>set(field.id,value)}/>)}</div></main>
+      <aside className="border-l border-slate-200 bg-slate-50/40 p-7"><div className="rounded-2xl bg-gradient-to-br from-indigo-950 to-violet-700 p-5 text-white"><p className="text-xs font-bold uppercase tracking-wider text-indigo-200">Salary & employment</p><p className="mt-3 text-3xl font-black">{money((history.employee as Values)?.baseSalaryMinor,(history.employee as Values)?.salaryCurrency)}</p><p className="mt-1 text-xs text-indigo-100">{String((history.employee as Values)?.salaryBasis||'Salary not configured')}</p></div><h2 className="mb-3 mt-6 text-lg font-black text-slate-950">HR lifecycle</h2><div className="grid grid-cols-2 gap-2">{lifecycle.map(([label,key])=>{const count=Array.isArray(history[key])?(history[key] as unknown[]).length:0;return <button type="button" key={key} onClick={()=>setActive(key)} className={`rounded-xl border p-3 text-left transition ${active===key?'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500':'border-slate-200 bg-white hover:border-indigo-300'}`}><strong className="block text-xs text-slate-800">{label}</strong><span className="mt-1 block text-xl font-black text-indigo-700">{count}</span></button>})}</div><section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4"><h3 className="font-bold text-slate-950">{selected[0]}</h3>{items.length?<div className="mt-3 space-y-2">{items.slice(0,5).map((item,index)=><div key={String(item.id||index)} className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><strong className="block text-slate-900">{rowTitle(item)}</strong>{rowDetail(item)}</div>)}</div>:<p className="mt-3 rounded-xl border border-dashed p-5 text-center text-xs text-slate-400">No records yet</p>}</section></aside>
+    </div>
+  </form>
+}
+
+function Editor({field,value,busy,onChange}:{field:Field;value:unknown;busy:boolean;onChange(value:unknown):void}){const wide=field.type==='textarea';return <label className={`text-sm font-semibold text-slate-700 ${wide?'md:col-span-2':''}`}>{field.label}{field.required&&<span className="text-red-500"> *</span>}{field.type==='select'?<select className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5" value={String(value||'')} disabled={busy} onChange={e=>onChange(e.target.value)}><option value="">Select…</option>{field.options?.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>:field.type==='textarea'?<textarea className="mt-1 min-h-24 w-full rounded-xl border border-slate-300 px-3 py-2.5" value={String(value||'')} disabled={busy} onChange={e=>onChange(e.target.value)}/>:<input className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2.5" type={field.type==='date'?'date':field.type==='email'?'email':'text'} value={field.type==='date'?dateValue(value):String(value||'')} disabled={busy} onChange={e=>onChange(e.target.value)}/>}</label>}
+function Small({label,value}:{label:string;value:unknown}){return <div><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p><p className="mt-0.5 truncate text-sm font-semibold text-slate-800">{String(value||'—')}</p></div>}
+function dateValue(value:unknown){return String(value||'').slice(0,10)}
+function money(value:unknown,currency:unknown){const amount=Number(value);return Number.isFinite(amount)?new Intl.NumberFormat(undefined,{style:'currency',currency:String(currency||'USD')}).format(amount/100):'Not configured'}
+function rowTitle(item:Values){return String(item.adjustmentType||item.permissionType||item.actionType||item.toPosition||item.status||'Record')}
+function rowDetail(item:Values){return String(item.reason||item.title||item.effectiveDate||item.permissionDate||item.periodEnd||'')}

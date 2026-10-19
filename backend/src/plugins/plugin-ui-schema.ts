@@ -5,7 +5,7 @@ export const PLUGIN_UI_SCHEMA_VERSION = 2 as const;
 export type PluginUiComponentType =
   | 'heading' | 'text' | 'workflow' | 'status' | 'card' | 'metric' | 'table' | 'form'
   | 'detail' | 'chart' | 'file' | 'print' | 'document' | 'designer' | 'scanner' | 'self-attendance-scanner' | 'filter' | 'actions' | 'study-year-manager' | 'class-manager' | 'officer-manager' | 'session-manager' | 'take-attendance' | 'id-card-manager' | 'attendance-report-manager' | 'attendance-dashboard' | 'attendance-window-manager'
-  | 'organizing-dashboard' | 'organizing-reports' | 'organizing-profiles';
+  | 'profile-manager' | 'organizing-dashboard' | 'organizing-reports' | 'organizing-profiles';
 
 export interface PluginUiDataSource {
   id: string;
@@ -52,14 +52,14 @@ const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form', 'detail',
   'chart', 'file', 'print', 'document', 'designer', 'scanner', 'self-attendance-scanner', 'filter', 'actions', 'study-year-manager', 'class-manager', 'officer-manager', 'session-manager', 'take-attendance', 'id-card-manager', 'attendance-report-manager', 'attendance-dashboard', 'attendance-window-manager',
-  'organizing-dashboard', 'organizing-reports', 'organizing-profiles',
+  'profile-manager', 'organizing-dashboard', 'organizing-reports', 'organizing-profiles',
 ]);
 // Universal descriptors are guaranteed to render on an unmodified core host.
 // Specialized legacy workspaces remain accepted only for older packages.
 const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form',
   'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner',
-  'filter', 'actions', 'id-card-manager', 'session-manager',
+  'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager',
 ]);
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
@@ -437,6 +437,17 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException(`Plugin UI session-manager ${key} must reference a mutation data source`);
         }
         if (options.mode !== undefined && !['school', 'workforce'].includes(String(options.mode))) throw new BadRequestException('Plugin UI session-manager mode is invalid');
+      }
+      if (type === 'profile-manager') {
+        if (!source || sourceMethods.get(source) !== 'GET') throw new BadRequestException('Plugin UI profile-manager requires a GET profile source');
+        if (!Array.isArray(component.fields) || component.fields.length < 1 || component.fields.length > 30) throw new BadRequestException('Plugin UI profile-manager requires 1 to 30 fields');
+        const fieldIds = new Set<string>();
+        component.fields.forEach((candidateField, fieldIndex) => { const field = object(candidateField, `profile-manager fields[${fieldIndex}]`); const fieldId = string(field.id, 'profile-manager field id', 100); if (!ID.test(fieldId) || fieldIds.has(fieldId)) throw new BadRequestException('Plugin UI profile-manager field id is invalid or duplicated'); fieldIds.add(fieldId); string(field.label, 'profile-manager field label', 120); if (!['text','email','date','select','textarea'].includes(String(field.type))) throw new BadRequestException('Plugin UI profile-manager field type is invalid'); });
+        const options = object(component.options, 'Plugin UI profile-manager options');
+        const relationsSource = string(options.relationsSource, 'profile-manager relationsSource', 100);
+        const saveSource = string(options.saveSource, 'profile-manager saveSource', 100);
+        if (!sourceIds.has(relationsSource) || sourceMethods.get(relationsSource) !== 'GET') throw new BadRequestException('Plugin UI profile-manager relationsSource must reference a GET data source');
+        if (!sourceIds.has(saveSource) || !['PUT','PATCH'].includes(String(sourceMethods.get(saveSource)))) throw new BadRequestException('Plugin UI profile-manager saveSource must reference a PUT or PATCH data source');
       }
       return {
         id: componentId, type,
