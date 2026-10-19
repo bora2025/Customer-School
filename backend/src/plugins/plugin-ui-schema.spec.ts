@@ -345,6 +345,7 @@ describe('Plugin UI v2 schema', () => {
 
   it('accepts workforce-only session management and rejects unknown modes', () => {
     const value: any = valid();
+    value.portability = 'universal';
     value.pages[0].dataSources = [
       { id: 'sessions', method: 'GET', path: 'attendance/sessions', permission: 'wattanam.test.read' },
       { id: 'settings', method: 'GET', path: 'attendance/session-settings', permission: 'wattanam.test.read' },
