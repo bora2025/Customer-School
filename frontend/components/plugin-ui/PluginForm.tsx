@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../lib/api';
 import { resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
 
@@ -17,10 +18,11 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
   source: { method: 'POST' | 'PUT' | 'PATCH'; path: string };
   params: Record<string, string>;
   fields: Field[];
-  options?: { submitLabel?: string; confirmation?: string; successMessage?: string };
+  options?: { submitLabel?: string; confirmation?: string; successMessage?: string; successRoute?: string };
   initialData?: unknown;
   onSuccess(result: unknown): void | Promise<void>;
 }) {
+  const router = useRouter();
   const initial = useMemo(() => initialData && typeof initialData === 'object' && !Array.isArray(initialData) ? initialData as Record<string, unknown> : {}, [initialData]);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -77,6 +79,10 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
       }
       setSuccess(options?.successMessage || 'Saved successfully.');
       await onSuccess(result);
+      if (options?.successRoute && result && typeof result === 'object' && !Array.isArray(result)) {
+        const destination = resolvePluginSourcePath(options.successRoute, Object.fromEntries(Object.entries(result as Record<string, unknown>).map(([key, value]) => [key, String(value ?? '')])));
+        router.push(`/plugins/${encodeURIComponent(pluginId)}/${destination}`);
+      }
     } catch (cause) { setServerError(cause instanceof Error ? cause.message : 'The form could not be saved.'); }
     finally { setBusy(false); }
   }

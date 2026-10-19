@@ -80,6 +80,7 @@ export function pluginNavigation(entries: readonly PluginNavigationExtension[]):
 
 const CORE_ADMIN_NAVIGATION_HREFS = new Set([
   '/admin',
+  '/admin/search',
   '/admin/users',
   '/admin/plugins',
   '/admin/settings',

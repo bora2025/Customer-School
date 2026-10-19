@@ -94,10 +94,12 @@ export default function PluginDataTable({
         <thead className="bg-slate-50"><tr>
           {selectable && <th className="w-12 px-4 py-3"><input aria-label="Select all visible rows" type="checkbox" checked={allVisibleSelected} onChange={toggleAll} /></th>}
           {columns.map((column) => <th key={column.id} scope="col" className="px-4 py-3 text-left font-semibold text-slate-700">{column.sortable ? <button className="inline-flex items-center gap-1" onClick={() => setSort((current) => ({ id: column.id, direction: current?.id === column.id && current.direction === 'asc' ? 'desc' : 'asc' }))}>{column.label}{sort?.id === column.id ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}</button> : column.label}</th>)}
+          {rowRoute && <th scope="col" className="px-4 py-3 text-right font-semibold text-slate-700">Actions</th>}
         </tr></thead>
         <tbody className="divide-y divide-slate-100 bg-white">{visible.map((row, index) => { const key = rowKey(row, index); const href = rowHref(row); return <tr key={key} className={selected.has(key) ? 'bg-indigo-50' : ''}>
           {selectable && <td className="px-4 py-3"><input aria-label={`Select row ${index + 1}`} type="checkbox" checked={selected.has(key)} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} /></td>}
-          {columns.map((column, columnIndex) => { const content = formatValue ? formatValue(valueAtPath(row, column.id), column.format) : display(valueAtPath(row, column.id)); return <td key={column.id} className="max-w-sm px-4 py-3 text-slate-700">{href && columnIndex === 0 ? <Link className="font-medium text-indigo-700 hover:underline" href={href}>{content}</Link> : content}</td>; })}
+          {columns.map((column) => { const content = formatValue ? formatValue(valueAtPath(row, column.id), column.format) : display(valueAtPath(row, column.id)); return <td key={column.id} className="max-w-sm px-4 py-3 text-slate-700">{href ? <Link className="block rounded-sm hover:text-indigo-700 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500" href={href}>{content}</Link> : content}</td>; })}
+          {rowRoute && <td className="whitespace-nowrap px-4 py-3 text-right">{href ? <Link className="inline-flex items-center rounded-lg bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 transition hover:bg-indigo-600 hover:text-white" href={href} aria-label={`Open or edit ${display(row.fullName ?? row.name ?? row.employeeNumber ?? 'record')}`}>Open / Edit →</Link> : <span className="text-xs text-slate-400">Unavailable</span>}</td>}
         </tr>; })}</tbody>
       </table>
     </div>}

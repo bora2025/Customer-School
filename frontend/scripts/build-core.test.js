@@ -14,6 +14,7 @@ test('maps app directories to public routes', () => {
 
 test('allows only core and dynamic plugin route entries', () => {
   assert.equal(routeAllowed('/admin/plugins'), true);
+  assert.equal(routeAllowed('/admin/search'), true);
   assert.equal(routeAllowed('/marketplace'), false);
   assert.equal(routeAllowed('/marketplace/link/[requestId]'), false);
   assert.equal(routeAllowed('/marketplace/publisher'), false);
@@ -24,6 +25,11 @@ test('allows only core and dynamic plugin route entries', () => {
   assert.equal(routeAllowed('/plugins/wattanam.timetable/classes'), false);
   assert.equal(routeAllowed('/admin/attendance'), false);
   assert.equal(routeAllowed('/student/courses'), false);
+});
+
+test('core navigation exposes the global plugin search page', () => {
+  const navigationRegistry = fs.readFileSync(path.join(frontendRoot, 'lib', 'navigation-registry.ts'), 'utf8');
+  assert.match(navigationRegistry, /CORE_ADMIN_NAVIGATION_HREFS[\s\S]*['"]\/admin\/search['"]/);
 });
 
 test('core Docker builds materialize dependencies for a portable standalone trace', () => {
