@@ -263,6 +263,15 @@ describe('Plugin UI v2 schema', () => {
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('rowClickable must be boolean');
   });
 
+  it('accepts collapsed creation forms and Excel-only export toolbars', () => {
+    const value: any = valid();
+    value.pages[0].components = [
+      { id: 'create', type: 'form', source: 'save', fields: [{ id: 'name', type: 'text', label: 'Name' }], options: { collapsible: true, defaultCollapsed: true, triggerLabel: 'Add person' } },
+      { id: 'export', type: 'print', source: 'record', fields: [{ label: 'Name', path: 'name' }], options: { formats: ['print', 'xlsx'], showPreview: false } },
+    ];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components).toHaveLength(2);
+  });
+
   it('validates the take attendance workspace declaration', () => {
     const value: any = valid();
     value.pages[0].dataSources.push(

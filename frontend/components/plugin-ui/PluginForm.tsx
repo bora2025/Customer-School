@@ -18,7 +18,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
   source: { method: 'POST' | 'PUT' | 'PATCH'; path: string };
   params: Record<string, string>;
   fields: Field[];
-  options?: { submitLabel?: string; confirmation?: string; successMessage?: string; successRoute?: string };
+  options?: { submitLabel?: string; confirmation?: string; successMessage?: string; successRoute?: string; collapsible?: boolean; defaultCollapsed?: boolean; triggerLabel?: string };
   initialData?: unknown;
   onSuccess(result: unknown): void | Promise<void>;
 }) {
@@ -29,6 +29,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
   const [serverError, setServerError] = useState('');
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(!(options?.collapsible && options?.defaultCollapsed !== false));
   useEffect(() => { const next: Record<string, unknown> = {}; fields.forEach((field) => {
     const value = initial[field.id] ?? field.defaultValue;
     next[field.id] = field.type === 'json' && value && typeof value === 'object'
@@ -87,8 +88,9 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
     finally { setBusy(false); }
   }
 
+  if (options?.collapsible && !expanded) return <section className="card flex flex-wrap items-center justify-between gap-4 p-5"><div><h2 className="text-lg font-bold text-slate-950">{title || 'Details'}</h2><p className="mt-1 text-sm text-slate-500">Open the form when you need to create a new record.</p></div><button type="button" className="btn btn-primary" onClick={() => setExpanded(true)}>＋ {options.triggerLabel || title || 'Add record'}</button></section>;
   return <form className="card max-w-5xl space-y-5 overflow-hidden p-0" onSubmit={submit} noValidate>
-    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-indigo-50/60 px-6 py-5"><h2 className="text-lg font-bold text-slate-950">{title || 'Details'}</h2><p className="mt-1 text-xs text-slate-500">Fields marked with an asterisk are required. Changes are validated before saving.</p></div>
+    <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-indigo-50/60 px-6 py-5"><div><h2 className="text-lg font-bold text-slate-950">{title || 'Details'}</h2><p className="mt-1 text-xs text-slate-500">Fields marked with an asterisk are required. Changes are validated before saving.</p></div>{options?.collapsible && <button type="button" className="btn btn-secondary" onClick={() => setExpanded(false)}>Close</button>}</div>
     <div className="space-y-4 px-6" aria-live="polite">
     {serverError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{serverError}</div>}
     {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{success}</div>}

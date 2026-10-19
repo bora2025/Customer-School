@@ -237,7 +237,8 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         });
         component.fields.forEach((candidateField) => { const condition = (candidateField as Record<string, any>).visibleWhen; if (condition && !fieldIds.has(condition.field)) throw new BadRequestException('Plugin UI form visibleWhen references an unknown field'); });
         const options = (component.options || {}) as Record<string, unknown>;
-        for (const key of ['submitLabel', 'confirmation', 'successMessage'] as const) if (options[key] !== undefined) string(options[key], `form ${key}`, 240);
+        for (const key of ['submitLabel', 'confirmation', 'successMessage', 'triggerLabel'] as const) if (options[key] !== undefined) string(options[key], `form ${key}`, 240);
+        for (const key of ['collapsible', 'defaultCollapsed'] as const) if (options[key] !== undefined && typeof options[key] !== 'boolean') throw new BadRequestException(`Plugin UI form ${key} must be boolean`);
         if (options.initialSource !== undefined && (typeof options.initialSource !== 'string' || !sourceIds.has(options.initialSource) || sourceMethods.get(options.initialSource) !== 'GET')) throw new BadRequestException('Plugin UI form initialSource must reference a GET data source');
       }
       if (type === 'actions') {
@@ -310,10 +311,11 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         component.fields.forEach((candidateField, fieldIndex) => { const field = object(candidateField, `print fields[${fieldIndex}]`); string(field.label, 'print field label', 120); if (typeof field.path !== 'string' || !DATA_PATH.test(field.path)) throw new BadRequestException('Plugin UI print field path is invalid'); });
         const options = object(component.options, 'Plugin UI print options');
         if (options.itemsPath !== undefined && (typeof options.itemsPath !== 'string' || !DATA_PATH.test(options.itemsPath))) throw new BadRequestException('Plugin UI print itemsPath is invalid');
-        if (!Array.isArray(options.formats) || options.formats.length < 1 || options.formats.some((format) => !['print', 'csv', 'pdf'].includes(String(format)))) throw new BadRequestException('Plugin UI print formats are invalid');
+        if (!Array.isArray(options.formats) || options.formats.length < 1 || options.formats.some((format) => !['print', 'csv', 'xlsx', 'pdf'].includes(String(format)))) throw new BadRequestException('Plugin UI print formats are invalid');
         if (new Set(options.formats as unknown[]).size !== options.formats.length) throw new BadRequestException('Plugin UI print formats are duplicated');
         if (options.filename !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(String(options.filename))) throw new BadRequestException('Plugin UI print filename is invalid');
         if (options.maximumRows !== undefined && (!Number.isInteger(options.maximumRows) || Number(options.maximumRows) < 1 || Number(options.maximumRows) > 10000)) throw new BadRequestException('Plugin UI print maximumRows is invalid');
+        if (options.showPreview !== undefined && typeof options.showPreview !== 'boolean') throw new BadRequestException('Plugin UI print showPreview must be boolean');
       }
       if (type === 'document') {
         if (!source || sourceMethods.get(source) === 'GET' || sourceMethods.get(source) === 'DELETE' || sourceParameters.get(source)?.size) throw new BadRequestException('Plugin UI document requires a non-parameterized mutation-result data source');
