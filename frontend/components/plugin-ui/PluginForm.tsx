@@ -6,7 +6,7 @@ import { apiFetch } from '../../lib/api';
 import { resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
 
 type Field = {
-  id: string; type: 'text' | 'email' | 'number' | 'date' | 'datetime' | 'select' | 'textarea' | 'json' | 'checkbox'; label: string;
+  id: string; type: 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime' | 'select' | 'textarea' | 'json' | 'checkbox'; label: string;
   required?: boolean; disabled?: boolean; min?: number; max?: number; minLength?: number; maxLength?: number;
   jsonShape?: 'object' | 'array' | 'any'; defaultValue?: unknown;
   options?: Array<{ label: string; value: string }>; visibleWhen?: { field: string; equals: string | number | boolean };

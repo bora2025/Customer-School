@@ -106,6 +106,15 @@ describe('Plugin UI v2 schema', () => {
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('POST, PUT, or PATCH');
   });
 
+  it('accepts password inputs in universal plugin forms', () => {
+    const value: any = valid();
+    value.pages[0].components[1] = {
+      id: 'credentials', type: 'form', source: 'save',
+      fields: [{ id: 'password', type: 'password', label: 'Temporary password', required: true, minLength: 8 }],
+    };
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[1]).toMatchObject({ type: 'form', source: 'save' });
+  });
+
   it('allows an explicit empty value for clearing an optional select field', () => {
     const value: any = valid();
     value.pages[0].components[1].fields = [{ id: 'sex', type: 'select', label: 'Sex', options: [{ label: 'Not specified', value: '' }, { label: 'Other', value: 'OTHER' }] }];

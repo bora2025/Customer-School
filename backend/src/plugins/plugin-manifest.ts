@@ -24,6 +24,10 @@ export const PLUGIN_CAPABILITIES_V1_2 = ['accounts.staff.create'] as const;
 export const PLUGIN_SUPPORTED_CAPABILITIES = [...PLUGIN_CAPABILITIES, ...PLUGIN_CAPABILITIES_V1_1, ...PLUGIN_CAPABILITIES_V1_2] as const;
 export const PLUGIN_SDK_VERSION = '1.3.0';
 export const PLUGIN_RUNTIME_VERSION = '1.0.0';
+export const PLUGIN_HOST_CONTRACTS = [
+  'wattanam.academic.directory.v1',
+  'wattanam.academic.identity.v1',
+] as const;
 
 export const PLUGIN_DATA_CLASSIFICATIONS = [
   'education-records',
@@ -58,6 +62,7 @@ export interface PluginManifest {
   permissions: string[];
   dependencies: Record<string, string>;
   optionalDependencies: Record<string, string>;
+  hostContracts: string[];
   sdkVersion?: string;
   runtimeVersion?: string;
   migrations: Array<{ id: string; path: string; checksum: string; destructive: boolean }>;
@@ -121,6 +126,10 @@ export function parsePluginManifest(value: unknown): PluginManifest {
   if (!optionalDependencies || typeof optionalDependencies !== 'object' || Array.isArray(optionalDependencies)) throw new BadRequestException('optionalDependencies must be an object');
   for (const [dependency, range] of Object.entries(optionalDependencies as Record<string, unknown>)) {
     if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(dependency) || typeof range !== 'string' || !semver.validRange(range) || dependency in (dependencies as Record<string, unknown>)) throw new BadRequestException(`Invalid optional plugin dependency: ${dependency}`);
+  }
+  const hostContracts = input.hostContracts ?? [];
+  if (!Array.isArray(hostContracts) || hostContracts.some((contract) => typeof contract !== 'string' || !PLUGIN_HOST_CONTRACTS.includes(contract as any))) {
+    throw new BadRequestException('hostContracts must contain supported host contract identifiers');
   }
 
   const migrations = input.migrations ?? [];
@@ -219,6 +228,7 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     permissions: [...new Set(permissions as string[])],
     dependencies: dependencies as Record<string, string>,
     optionalDependencies: optionalDependencies as Record<string, string>,
+    hostContracts: [...new Set(hostContracts as string[])],
     sdkVersion,
     runtimeVersion,
     migrations: parsedMigrations,

@@ -17,7 +17,7 @@ const valid = {
 
 describe('plugin manifest', () => {
   it('normalizes a valid namespaced manifest', () => {
-    expect(parsePluginManifest(valid)).toMatchObject({ ...valid, migrations: [], navigation: [], supportedLanguages: [] });
+    expect(parsePluginManifest(valid)).toMatchObject({ ...valid, hostContracts: [], migrations: [], navigation: [], supportedLanguages: [] });
   });
 
   it('rejects an unnamespaced plugin id', () => {
@@ -36,6 +36,12 @@ describe('plugin manifest', () => {
 
   it('rejects traversal in entry points', () => {
     expect(() => parsePluginManifest({ ...valid, backendEntry: '../index.js' })).toThrow('safe relative');
+  });
+
+  it('normalizes declared host contracts and rejects unknown host coupling', () => {
+    expect(parsePluginManifest({ ...valid, hostContracts: ['wattanam.academic.directory.v1', 'wattanam.academic.directory.v1'] }).hostContracts)
+      .toEqual(['wattanam.academic.directory.v1']);
+    expect(() => parsePluginManifest({ ...valid, hostContracts: ['wattanam.private.root.v1'] })).toThrow('hostContracts');
   });
 
   it('normalizes the operational backup, retention, classification and pricing contract', () => {

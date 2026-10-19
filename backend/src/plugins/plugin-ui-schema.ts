@@ -231,7 +231,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           const field = object(candidateField, `form fields[${fieldIndex}]`);
           const fieldId = string(field.id, 'form field id', 100);
           const fieldType = string(field.type, 'form field type', 30);
-          if (!ID.test(fieldId) || fieldIds.has(fieldId) || !['text', 'email', 'number', 'date', 'datetime', 'select', 'textarea', 'json', 'checkbox'].includes(fieldType)) throw new BadRequestException('Plugin UI form field id or type is invalid');
+          if (!ID.test(fieldId) || fieldIds.has(fieldId) || !['text', 'email', 'password', 'number', 'date', 'datetime', 'select', 'textarea', 'json', 'checkbox'].includes(fieldType)) throw new BadRequestException('Plugin UI form field id or type is invalid');
           fieldIds.add(fieldId);
           string(field.label, 'form field label', 120);
           if (field.jsonShape !== undefined && (fieldType !== 'json' || !['object', 'array', 'any'].includes(String(field.jsonShape)))) throw new BadRequestException('Plugin UI form jsonShape is invalid');

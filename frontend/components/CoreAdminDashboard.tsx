@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { adminNav } from '../lib/admin-nav';
 import { apiFetch } from '../lib/api';
@@ -23,7 +22,6 @@ const coreCards = [
 ];
 
 export default function CoreAdminDashboard() {
-  const router = useRouter();
   const [pluginCards, setPluginCards] = useState<DashboardExtensionCard[]>([]);
   const [billing, setBilling] = useState<BillingControl | null>(null);
   const [linkStatus, setLinkStatus] = useState<MarketplaceLinkStatus | null>(null);
@@ -36,20 +34,12 @@ export default function CoreAdminDashboard() {
     ]).then(async ([extensionsResponse, billingResponse, linkResponse]) => {
       if (extensionsResponse.ok) {
         const extensions = await extensionsResponse.json();
-        const academicAttendance = Array.isArray(extensions?.navigation)
-          ? extensions.navigation.find((entry: any) => entry?.pluginId === 'wattanam.academic-management'
-            && (entry?.id === 'attendance-records' || entry?.href === '/plugins/wattanam.academic-management/attendance'))
-          : undefined;
-        if (academicAttendance) {
-          router.replace('/plugins/wattanam.academic-management/dashboard');
-          return;
-        }
         setPluginCards(pluginDashboardCards(extensions?.navigation));
       }
       if (billingResponse.ok) setBilling(await billingResponse.json());
       if (linkResponse.ok) setLinkStatus(await linkResponse.json());
     }).catch(() => undefined);
-  }, [router]);
+  }, []);
 
   const outstanding = billing?.billing?.outstandingMinor || 0;
   const currency = billing?.billing?.currency || 'USD';

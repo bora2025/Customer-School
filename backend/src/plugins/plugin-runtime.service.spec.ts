@@ -150,15 +150,16 @@ describe('PluginRuntimeService', () => {
     delete (global as any).__wattanamCleanupCount;
   });
 
-  it('binds Academic contract dispatch only for the active plugin lifecycle', async () => {
-    const installedPath = path.join(directory, 'wattanam.academic-management', '1.0.0');
+  it('binds declared host contracts without coupling to a plugin id', async () => {
+    const installedPath = path.join(directory, 'wattanam.school-records', '1.0.0');
     await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });
     await fs.writeFile(path.join(installedPath, 'backend', 'index.js'), `
-      module.exports = { id: 'wattanam.academic-management', activate() {} };
+      module.exports = { id: 'wattanam.school-records', activate() {} };
     `);
     const manifest = {
-      id: 'wattanam.academic-management', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
+      id: 'wattanam.school-records', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: [], permissions: [], dependencies: {},
+      hostContracts: ['wattanam.academic.directory.v1', 'wattanam.academic.identity.v1'],
     };
     const prisma = {
       pluginInstallation: {

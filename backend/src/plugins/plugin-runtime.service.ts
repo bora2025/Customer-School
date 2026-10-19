@@ -347,8 +347,9 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
         const dispose = this.extensions.registerPage(id, descriptor, declaredPermissions); disposers.push(dispose);
       }
       const cleanup = await pluginModule.activate(context);
-      if (id === 'wattanam.academic-management') {
-        const principal = { userId: 'core:academic-contract', role: 'SUPER_ADMIN' };
+      const hostContracts = new Set(verified.manifest.hostContracts || []);
+      const principal = { userId: `core:plugin-contract:${id}`, role: 'SUPER_ADMIN' };
+      if (hostContracts.has('wattanam.academic.directory.v1')) {
         const dispose = this.directory.bindAcademicPluginContracts({
           getClassRoster: (classId, asOfIsoDate) => this.extensions.dispatch(id, {
             method: 'GET', path: `contracts/classes/${encodeURIComponent(classId)}/roster`, params: {},
@@ -380,27 +381,27 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
           }),
         });
         disposers.push(dispose);
-        if (this.academicIdentity) {
-          const disposeIdentity = this.academicIdentity.bindAcademicPluginCommands({
-            assignUserDepartment: (input) => this.extensions.dispatch(id, {
-              method: 'PUT', path: `commands/users/${encodeURIComponent(input.userId)}/department`, params: {},
-              query: {}, body: { departmentId: input.departmentId, idempotencyKey: input.idempotencyKey }, principal,
-            }),
-            assignStudentParent: (input) => this.extensions.dispatch(id, {
-              method: 'PUT', path: `commands/students/by-user/${encodeURIComponent(input.studentUserId)}/guardian`, params: {},
-              query: {}, body: { parentId: input.parentId, idempotencyKey: input.idempotencyKey }, principal,
-            }),
-            detachUserAcademicIdentity: (input) => this.extensions.dispatch(id, {
-              method: 'DELETE', path: `commands/users/${encodeURIComponent(input.userId)}/academic-identity`, params: {},
-              query: {}, body: { idempotencyKey: input.idempotencyKey }, principal,
-            }),
-            attachAcademicProfiles: (userIds) => this.extensions.dispatch(id, {
-              method: 'POST', path: 'contracts/users/academic-profiles', params: {}, query: {},
-              body: { userIds }, principal,
-            }),
-          });
-          disposers.push(disposeIdentity);
-        }
+      }
+      if (hostContracts.has('wattanam.academic.identity.v1') && this.academicIdentity) {
+        const disposeIdentity = this.academicIdentity.bindAcademicPluginCommands({
+          assignUserDepartment: (input) => this.extensions.dispatch(id, {
+            method: 'PUT', path: `commands/users/${encodeURIComponent(input.userId)}/department`, params: {},
+            query: {}, body: { departmentId: input.departmentId, idempotencyKey: input.idempotencyKey }, principal,
+          }),
+          assignStudentParent: (input) => this.extensions.dispatch(id, {
+            method: 'PUT', path: `commands/students/by-user/${encodeURIComponent(input.studentUserId)}/guardian`, params: {},
+            query: {}, body: { parentId: input.parentId, idempotencyKey: input.idempotencyKey }, principal,
+          }),
+          detachUserAcademicIdentity: (input) => this.extensions.dispatch(id, {
+            method: 'DELETE', path: `commands/users/${encodeURIComponent(input.userId)}/academic-identity`, params: {},
+            query: {}, body: { idempotencyKey: input.idempotencyKey }, principal,
+          }),
+          attachAcademicProfiles: (userIds) => this.extensions.dispatch(id, {
+            method: 'POST', path: 'contracts/users/academic-profiles', params: {}, query: {},
+            body: { userIds }, principal,
+          }),
+        });
+        disposers.push(disposeIdentity);
       }
       if (pluginModule.health) {
         const health = await pluginModule.health();
