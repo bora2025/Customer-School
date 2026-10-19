@@ -343,6 +343,20 @@ describe('Plugin UI v2 schema', () => {
     }
   });
 
+  it('accepts workforce-only session management and rejects unknown modes', () => {
+    const value: any = valid();
+    value.pages[0].dataSources = [
+      { id: 'sessions', method: 'GET', path: 'attendance/sessions', permission: 'wattanam.test.read' },
+      { id: 'settings', method: 'GET', path: 'attendance/session-settings', permission: 'wattanam.test.read' },
+      { id: 'save-session', method: 'POST', path: 'attendance/sessions', permission: 'wattanam.test.manage' },
+      { id: 'save-settings', method: 'PUT', path: 'attendance/session-settings', permission: 'wattanam.test.manage' },
+    ];
+    value.pages[0].components = [{ id: 'sessions', type: 'session-manager', source: 'sessions', options: { mode: 'workforce', settingsSource: 'settings', saveSessionSource: 'save-session', saveSettingsSource: 'save-settings' } }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'session-manager', options: { mode: 'workforce' } });
+    value.pages[0].components[0].options.mode = 'unknown';
+    expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('mode is invalid');
+  });
+
   it('enforces the universal UI portability contract without breaking legacy packages', () => {
     const portable: any = valid();
     portable.portability = 'universal';

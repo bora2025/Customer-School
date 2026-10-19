@@ -436,6 +436,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           const sourceId = string(options[key], `session-manager ${key}`, 100);
           if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException(`Plugin UI session-manager ${key} must reference a mutation data source`);
         }
+        if (options.mode !== undefined && !['school', 'workforce'].includes(String(options.mode))) throw new BadRequestException('Plugin UI session-manager mode is invalid');
       }
       return {
         id: componentId, type,
