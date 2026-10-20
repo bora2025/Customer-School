@@ -1,9 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { Cron } from '@nestjs/schedule';
+import { createHash } from 'crypto';
+import { ObjectStorageProvider, safeObjectKey } from '../storage/object-storage';
+import { PLUGIN_OBJECT_STORAGE } from '../storage/storage.module';
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +34,7 @@ interface RecoverySetJournal {
 @Injectable()
 export class BackupService {
   private readonly logger = new Logger(BackupService.name);
+  constructor(@Optional() @Inject(PLUGIN_OBJECT_STORAGE) private readonly pluginStorage?: ObjectStorageProvider) {}
   private backupDirectory() {
     return path.resolve(process.env.BACKUP_DIR || (process.env.NODE_ENV === 'production' ? '/data/backups' : './backups'));
   }
@@ -129,16 +133,44 @@ export class BackupService {
   /** Database + PLUGIN_DIR + PLUGIN_DATA_DIR as one recovery-set journal (B-012's format). */
   async createRecoverySet(): Promise<RecoverySetJournal> {
     const script = path.resolve(process.cwd(), 'scripts/backup-recovery-set.js');
-    const { stdout } = await execFileAsync(process.execPath, [script], {
-      env: process.env,
-      timeout: 10 * 60_000,
-      maxBuffer: 4 * 1024 * 1024,
-      windowsHide: true,
-    });
-    const lines = stdout.trim().split(/\r?\n/);
-    const journal = JSON.parse(lines[lines.length - 1]) as RecoverySetJournal;
-    if (!['wattanam-recovery-set-v1', 'wattanam-recovery-set-v2'].includes(journal.format) || !journal.journalFile) throw new Error('Recovery-set backup command returned an invalid journal');
-    return journal;
+    let snapshotDirectory: string | undefined;
+    try {
+      let environment = process.env;
+      if (this.pluginStorage?.kind === 's3') {
+        await fs.mkdir(this.backupDirectory(), { recursive: true, mode: 0o700 });
+        snapshotDirectory = await fs.mkdtemp(path.join(this.backupDirectory(), '.plugin-storage-snapshot-'));
+        await this.snapshotPluginStorage(snapshotDirectory);
+        environment = { ...process.env, PLUGIN_STORAGE_PROVIDER: 'dual-s3-primary', PLUGIN_DATA_DIR: snapshotDirectory };
+      }
+      const { stdout } = await execFileAsync(process.execPath, [script], {
+        env: environment,
+        timeout: 10 * 60_000,
+        maxBuffer: 4 * 1024 * 1024,
+        windowsHide: true,
+      });
+      const lines = stdout.trim().split(/\r?\n/);
+      const journal = JSON.parse(lines[lines.length - 1]) as RecoverySetJournal;
+      if (!['wattanam-recovery-set-v1', 'wattanam-recovery-set-v2'].includes(journal.format) || !journal.journalFile) throw new Error('Recovery-set backup command returned an invalid journal');
+      return journal;
+    } finally {
+      if (snapshotDirectory) await fs.rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }
+
+  private async snapshotPluginStorage(directory: string) {
+    if (!this.pluginStorage) throw new Error('Plugin object storage is unavailable');
+    const objects = await this.pluginStorage.list();
+    for (const object of objects) {
+      safeObjectKey(object.key);
+      const value = await this.pluginStorage.get(object.key);
+      if (!value) throw new Error(`Plugin storage object disappeared during recovery snapshot: ${object.key}`);
+      const digest = createHash('sha256').update(value).digest('hex');
+      if (object.sha256 && digest !== object.sha256) throw new Error(`Plugin storage object changed during recovery snapshot: ${object.key}`);
+      const target = path.resolve(directory, object.key);
+      if (!target.startsWith(`${path.resolve(directory)}${path.sep}`)) throw new Error(`Plugin storage object escapes recovery snapshot: ${object.key}`);
+      await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o750 });
+      await fs.writeFile(target, value, { flag: 'wx', mode: 0o640 });
+    }
   }
 
   /**

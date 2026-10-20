@@ -131,6 +131,48 @@ export class MetricsService implements OnModuleInit {
         try { this.set((await backupService.status()).backupCount); } catch { /* see above */ }
       },
     });
+
+    new client.Gauge({
+      name: 'recovery_set_age_seconds', help: 'Seconds since the latest complete recovery set; +Inf if none exists', registers: [this.registry],
+      async collect() {
+        try {
+          const status = await backupService.status();
+          this.set(status.latestRecoverySet ? (Date.now() - Date.parse(status.latestRecoverySet.createdAt)) / 1000 : Infinity);
+        } catch { this.set(Infinity); }
+      },
+    });
+    new client.Gauge({
+      name: 'recovery_set_contract_verified', help: '1 when the latest recovery set has complete verified plugin contracts', registers: [this.registry],
+      async collect() {
+        try { this.set((await backupService.status()).latestRecoverySet?.contractVerified ? 1 : 0); }
+        catch { this.set(0); }
+      },
+    });
+    new client.Gauge({
+      name: 'plugin_installations_failed', help: 'Number of plugin installations in failed state', registers: [this.registry],
+      async collect() {
+        try { this.set(await prisma.pluginInstallation.count({ where: { status: 'failed' } })); }
+        catch { this.set(0); }
+      },
+    });
+    new client.Gauge({
+      name: 'plugin_dead_letters_unreplayed', help: 'Number of plugin event dead letters awaiting replay', registers: [this.registry],
+      async collect() {
+        try {
+          const rows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>('SELECT COUNT(*)::bigint AS count FROM "PluginDeadLetter" WHERE "replayedAt" IS NULL');
+          this.set(Number(rows[0]?.count || 0));
+        } catch { this.set(0); }
+      },
+    });
+    new client.Gauge({
+      name: 'plugin_rollouts_staging_age_seconds', help: 'Age of the oldest staging plugin rollout; 0 when none is staging', registers: [this.registry],
+      async collect() {
+        try {
+          const rows = await prisma.$queryRawUnsafe<Array<{ createdAt: Date }>>('SELECT "createdAt" FROM "PluginArtifactGeneration" WHERE status=\'staging\' ORDER BY "createdAt" ASC LIMIT 1');
+          this.set(rows[0] ? Math.max(0, (Date.now() - rows[0].createdAt.getTime()) / 1000) : 0);
+        } catch { this.set(0); }
+      },
+    });
   }
 
   observeHttpRequest(method: string, route: string, statusCode: number, durationSeconds: number) {

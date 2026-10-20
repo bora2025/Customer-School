@@ -15,7 +15,12 @@ describe('wattanam-plugin init', () => {
     expect(manifest.id).toBe('acme.widget');
     expect(manifest.publisher).toBe('acme');
     expect(manifest.navigation[0].href).toBe('/plugins/acme.widget/records');
-    expect(manifest.sdkVersion).toBe('1.1.0');
+    expect(manifest.sdkVersion).toBe('1.3.0');
+    expect(manifest.contracts).toEqual({
+      schemaVersion: 1, deprecationNoticeDays: 90,
+      events: { publishes: {}, subscribes: {} },
+      readModels: { publishes: {}, reads: {} },
+    });
     expect(manifest.supportedLanguages).toEqual(['en', 'km']);
     expect(manifest.operational).toEqual({
       healthCheck: 'runtime', dataClassification: ['personal-data'],
@@ -34,7 +39,9 @@ describe('wattanam-plugin init', () => {
     expect(frontend.schemaVersion).toBe(2);
     expect(frontend.kind).toBe('declarative-ui');
     expect(frontend.pages.map((page) => page.routePath)).toEqual(['records', 'records/:id']);
-    expect(frontend.pages[0].components.map((component) => component.type)).toEqual(['heading', 'table', 'form', 'print']);
+    expect(frontend.portability).toBe('universal');
+    expect(frontend.fragments['records-heading']).toEqual([{ id: 'heading', type: 'heading', title: 'Widget records' }]);
+    expect(frontend.pages[0].components.map((component) => component.type || `fragment:${component.use}`)).toEqual(['fragment:records-heading', 'table', 'form', 'print']);
 
     const dashedDest = path.join(parent, 'acme.sample-plugin');
     await run(['acme.sample-plugin', '--dir', dashedDest]);

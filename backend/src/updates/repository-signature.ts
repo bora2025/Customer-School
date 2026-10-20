@@ -30,7 +30,8 @@ export function verifyRepositoryEnvelope(value: unknown, publicKeys: Record<stri
     try { return verify(null, bytes, key, Buffer.from(signature.value, 'base64')); } catch { return false; }
   });
   if (!valid) throw new Error('Repository metadata signature is invalid');
-  if (envelope.payload.schemaVersion !== 1 || !Array.isArray(envelope.payload.pluginReleases) || !Array.isArray(envelope.payload.coreReleases) || !Array.isArray(envelope.payload.advisories)) {
+  if (envelope.payload.schemaVersion !== 1 || !Array.isArray(envelope.payload.pluginReleases) || !Array.isArray(envelope.payload.coreReleases) || !Array.isArray(envelope.payload.advisories)
+    || (envelope.payload.revokedPublisherKeys !== undefined && (!Array.isArray(envelope.payload.revokedPublisherKeys) || envelope.payload.revokedPublisherKeys.some((entry: unknown) => typeof entry !== 'string' || !/^[a-zA-Z0-9._-]{1,100}:[a-zA-Z0-9._-]{1,100}$/.test(entry))))) {
     throw new Error('Repository metadata schema is unsupported');
   }
   return envelope.payload;

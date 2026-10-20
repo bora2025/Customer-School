@@ -60,4 +60,13 @@ describe('wattanam-plugin check', () => {
     await expect(check([dir])).rejects.toThrow('check(s) failed');
     expect(logs.join('')).toContain('backend entry exports the declared health check');
   });
+
+  it('fails locally when the frontend is not portable universal UI', async () => {
+    const frontendPath = path.join(dir, 'frontend', 'page.json');
+    const frontend = JSON.parse(fs.readFileSync(frontendPath, 'utf8'));
+    frontend.pages[0].components[0] = { id: 'legacy', type: 'organizing-dashboard' };
+    fs.writeFileSync(frontendPath, JSON.stringify(frontend, null, 2));
+    await expect(check([dir])).rejects.toThrow('check(s) failed');
+    expect(logs.join('')).toContain('component is not universal');
+  });
 });

@@ -1,0 +1,51 @@
+groups:
+  - name: wattanam-plugin-platform
+    rules:
+      - alert: WattanamDatabaseUnavailable
+        expr: db_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: Customer School database is unavailable
+      - alert: WattanamMigrationIncomplete
+        expr: db_migrations_pending > 0
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: A database migration remains incomplete
+      - alert: WattanamRecoverySetStale
+        expr: recovery_set_age_seconds > 90000
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: No complete recovery set has succeeded within 25 hours
+      - alert: WattanamRecoverySetContractInvalid
+        expr: recovery_set_contract_verified != 1
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: Latest recovery set does not verify every plugin recovery contract
+      - alert: WattanamPluginDeadLetters
+        expr: plugin_dead_letters_unreplayed > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: Plugin events require dead-letter investigation
+      - alert: WattanamPluginRolloutStalled
+        expr: plugin_rollouts_staging_age_seconds > 600
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: A split-runtime plugin rollout has remained staging for over ten minutes
+      - alert: WattanamPluginInstallationFailed
+        expr: plugin_installations_failed > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: One or more plugin installations are failed
+      - alert: WattanamPluginJobFailed
+        expr: plugin_job_last_run_success == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: A plugin background job's latest run failed

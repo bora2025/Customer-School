@@ -5,7 +5,7 @@ import { readRuntimeConfig } from '../config/environment';
 import { PrismaService } from '../database/prisma.service';
 import { PluginsService } from '../plugins/plugins.service';
 import { TrustedPluginKeys } from '../plugins/plugin-package';
-import { recordMarketplaceTrustedKey, trustedPluginKeys } from '../plugins/plugin-config';
+import { applyPluginKeyRevocations, recordMarketplaceTrustedKey, trustedPluginKeys } from '../plugins/plugin-config';
 import { readUpdateRepositoryConfig } from '../updates/update-config';
 import { UpdatesService } from '../updates/updates.service';
 import { MarketplaceLinkService } from './marketplace-link.service';
@@ -188,10 +188,10 @@ export class MarketplaceCommerceService {
   private async mergeTrustedKeys(release: { publisher: string; publisherKeyId?: string; publisherPublicKeyPem?: string }): Promise<TrustedPluginKeys> {
     const base = await trustedPluginKeys(this.prisma);
     if (!release.publisherKeyId || !release.publisherPublicKeyPem) return base;
-    return {
+    return applyPluginKeyRevocations({
       ...base,
       [release.publisher]: { ...(base[release.publisher] || {}), [release.publisherKeyId]: release.publisherPublicKeyPem },
-    };
+    });
   }
 
   private async downloadArtifact(url: URL, token: string, config: NonNullable<ReturnType<typeof readUpdateRepositoryConfig>>): Promise<Buffer> {

@@ -118,4 +118,19 @@ describe('BackupService', () => {
     await service.scheduledBackup();
     expect(spy).toHaveBeenCalledTimes(1);
   });
+
+  it('materializes a checksum-verified S3 snapshot without trusting object paths', async () => {
+    const value = Buffer.from('employee-document');
+    const storage = {
+      kind: 's3',
+      list: jest.fn(async () => [{ key: 'wattanam.organizing-management/documents/file.txt', size: value.length, sha256: require('crypto').createHash('sha256').update(value).digest('hex') }]),
+      get: jest.fn(async () => value), put: jest.fn(), delete: jest.fn(), checksum: jest.fn(),
+    } as any;
+    const target = path.join(directory, 'snapshot');
+    await fs.mkdir(target);
+    await (new BackupService(storage) as any).snapshotPluginStorage(target);
+    await expect(fs.readFile(path.join(target, 'wattanam.organizing-management/documents/file.txt'), 'utf8')).resolves.toBe('employee-document');
+    storage.list.mockResolvedValueOnce([{ key: '../escape', size: 1, sha256: '' }]);
+    await expect((new BackupService(storage) as any).snapshotPluginStorage(target)).rejects.toThrow('Storage object key is invalid');
+  });
 });

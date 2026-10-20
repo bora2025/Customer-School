@@ -1,9 +1,10 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { existsSync, readFileSync, promises as fs } from 'fs';
 import path from 'path';
-import { TrustedPluginKeys } from './plugin-package';
+import { REVOKED_PLUGIN_KEY, type TrustedPluginKeys } from './plugin-package';
 
 const HOST_TRUST_PLUGIN_ID = '__wattanam_host_marketplace_trust__';
+const HOST_REVOKED_KEYS_PLUGIN_ID = '__wattanam_host_revoked_publisher_keys__';
 type TrustStore = {
   pluginSetting: {
     findMany(args: unknown): Promise<Array<{ valueJson: string }>>;
@@ -33,6 +34,67 @@ function staticTrustedPluginKeys(): TrustedPluginKeys {
   } catch (error) {
     throw new InternalServerErrorException(`Trusted plugin key configuration is invalid: ${(error as Error).message}`);
   }
+}
+
+/** Emergency deny-list applied after every trust merge, including the one-release marketplace
+ * trust extension. Format: ["publisher:key-id"] or {"publisher":["key-id"]}. */
+export function revokedPluginKeys(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  const source = env.PLUGIN_REVOKED_PUBLISHER_KEYS_JSON?.trim() || '[]';
+  try {
+    const parsed = JSON.parse(source);
+    const entries: string[] = Array.isArray(parsed)
+      ? parsed
+      : Object.entries(parsed || {}).flatMap(([publisher, keyIds]) => {
+          if (!Array.isArray(keyIds)) throw new Error(`expected an array for ${publisher}`);
+          return keyIds.map((keyId) => `${publisher}:${keyId}`);
+        });
+    const revoked = new Set<string>();
+    for (const entry of entries) {
+      if (typeof entry !== 'string' || !/^[a-zA-Z0-9._-]{1,100}:[a-zA-Z0-9._-]{1,100}$/.test(entry)) {
+        throw new Error(`invalid publisher:keyId entry ${String(entry)}`);
+      }
+      revoked.add(entry);
+    }
+    return revoked;
+  } catch (error) {
+    throw new InternalServerErrorException(`Revoked plugin key configuration is invalid: ${(error as Error).message}`);
+  }
+}
+
+export function applyPluginKeyRevocations(keys: TrustedPluginKeys, env: NodeJS.ProcessEnv = process.env): TrustedPluginKeys {
+  const result: TrustedPluginKeys = {};
+  for (const [publisher, publisherKeys] of Object.entries(keys)) result[publisher] = { ...publisherKeys };
+  for (const entry of revokedPluginKeys(env)) {
+    const separator = entry.indexOf(':');
+    const publisher = entry.slice(0, separator);
+    const keyId = entry.slice(separator + 1);
+    result[publisher] = { ...(result[publisher] || {}), [keyId]: REVOKED_PLUGIN_KEY };
+  }
+  return result;
+}
+
+async function readDatabaseRevokedKeys(store?: TrustStore): Promise<Set<string>> {
+  if (!store?.pluginSetting) return new Set();
+  const rows = await store.pluginSetting.findMany({ where: { pluginId: HOST_REVOKED_KEYS_PLUGIN_ID }, select: { valueJson: true } });
+  const revoked = new Set<string>();
+  for (const row of rows) {
+    let value: unknown; try { value = JSON.parse(row.valueJson); } catch { throw new InternalServerErrorException('Marketplace publisher revocation record is invalid'); }
+    if (typeof value !== 'string' || !/^[a-zA-Z0-9._-]{1,100}:[a-zA-Z0-9._-]{1,100}$/.test(value)) throw new InternalServerErrorException('Marketplace publisher revocation record is invalid');
+    revoked.add(value);
+  }
+  return revoked;
+}
+
+export async function recordMarketplaceRevokedKeys(entries: unknown, store?: TrustStore): Promise<number> {
+  if (!Array.isArray(entries)) throw new InternalServerErrorException('Marketplace publisher revocation list is invalid');
+  const parsed = revokedPluginKeys({ PLUGIN_REVOKED_PUBLISHER_KEYS_JSON: JSON.stringify(entries) } as NodeJS.ProcessEnv);
+  if (!store?.pluginSetting) return parsed.size;
+  for (const entry of parsed) await store.pluginSetting.upsert({
+    where: { pluginId_key: { pluginId: HOST_REVOKED_KEYS_PLUGIN_ID, key: entry } },
+    create: { pluginId: HOST_REVOKED_KEYS_PLUGIN_ID, key: entry, valueJson: JSON.stringify(entry) },
+    update: { valueJson: JSON.stringify(entry) },
+  });
+  return parsed.size;
 }
 
 async function readMarketplaceTrustedKeys(): Promise<TrustedPluginKeys> {
@@ -101,13 +163,22 @@ export async function trustedPluginKeys(store?: TrustStore): Promise<TrustedPlug
   for (const dynamic of [fileKeys, databaseKeys]) {
     for (const [publisher, keys] of Object.entries(dynamic)) merged[publisher] = { ...(merged[publisher] || {}), ...keys };
   }
-  return merged;
+  const databaseRevocations = await readDatabaseRevokedKeys(store);
+  const configured = applyPluginKeyRevocations(merged);
+  for (const entry of databaseRevocations) {
+    const [publisher, keyId] = entry.split(':');
+    configured[publisher] = { ...(configured[publisher] || {}), [keyId]: REVOKED_PLUGIN_KEY };
+  }
+  return configured;
 }
 
 /** Called once after marketplace installation. The database copy is authoritative across runtime
  * roles; the filesystem copy keeps existing combined deployments and recovery sets compatible. */
 export async function recordMarketplaceTrustedKey(publisher: string, keyId: string, publicKeyPem: string, store?: TrustStore): Promise<void> {
   assertTrustKey(publisher, keyId, publicKeyPem);
+  if (revokedPluginKeys().has(`${publisher}:${keyId}`)) {
+    throw new InternalServerErrorException(`Marketplace publisher key is revoked: ${publisher}/${keyId}`);
+  }
   await writeDatabaseTrustedKey(store, publisher, keyId, publicKeyPem);
   const file = marketplaceTrustFile();
   const current = await readMarketplaceTrustedKeys();

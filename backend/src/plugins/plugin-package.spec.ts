@@ -76,6 +76,11 @@ describe('signed plugin packages', () => {
     await expect(verifier.verify(await packageBuffer({ wrongSignature: true }), trusted, '1.2.0')).rejects.toThrow('signature is invalid');
   });
 
+  it('rejects an explicitly revoked publisher key before signature verification', async () => {
+    await expect(verifier.verify(await packageBuffer(), { wattanam: { 'official-test': '__WATTANAM_REVOKED_PLUGIN_KEY__' } }, '1.2.0'))
+      .rejects.toThrow('Publisher key is revoked: wattanam/official-test');
+  });
+
   it('rejects a package outside the supported core range', async () => {
     await expect(verifier.verify(await packageBuffer({ incompatible: true }), trusted, '1.2.0')).rejects.toThrow('incompatible');
   });

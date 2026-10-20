@@ -37,4 +37,11 @@ describe('update repository signatures', () => {
     expect(verifyRepositoryEnvelope(rotated, { 'official-old': publicKey })).toEqual(payload);
     expect(verifyRepositoryEnvelope(rotated, { 'official-new': nextPublic })).toEqual(payload);
   });
+
+  it('accepts only well-formed signed publisher-key revocations', () => {
+    const withRevocation = { ...payload, revokedPublisherKeys: ['wattanam:compromised-2026'] };
+    expect(verifyRepositoryEnvelope(envelope(withRevocation), publicKey, 'official-2026')).toMatchObject({ revokedPublisherKeys: ['wattanam:compromised-2026'] });
+    const malformed = { ...payload, revokedPublisherKeys: ['../unsafe'] };
+    expect(() => verifyRepositoryEnvelope(envelope(malformed), publicKey, 'official-2026')).toThrow('schema is unsupported');
+  });
 });

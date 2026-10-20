@@ -14,15 +14,16 @@ const verified: any = {
 
 describe('PluginMigrationsService', () => {
   it('executes and records a new immutable namespaced migration', async () => {
-    const tx = { pluginMigration: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) }, $executeRawUnsafe: jest.fn().mockResolvedValue(0) } as any;
+    const tx = { pluginMigration: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) }, $queryRawUnsafe: jest.fn().mockResolvedValue([]), $executeRawUnsafe: jest.fn().mockResolvedValue(0) } as any;
     await new PluginMigrationsService().apply(tx, verified);
+    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("set_config('statement_timeout'"), '30000ms', '5000ms');
     expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(sql.toString());
     expect(tx.pluginMigration.create).toHaveBeenCalledWith({ data: expect.objectContaining({ pluginId: 'wattanam.test', migrationId: '001', checksum }) });
   });
 
   it('skips an already applied identical migration and rejects changed history', async () => {
     const service = new PluginMigrationsService();
-    const tx = { pluginMigration: { findUnique: jest.fn().mockResolvedValue({ checksum }), create: jest.fn() }, $executeRawUnsafe: jest.fn() } as any;
+    const tx = { pluginMigration: { findUnique: jest.fn().mockResolvedValue({ checksum }), create: jest.fn() }, $queryRawUnsafe: jest.fn().mockResolvedValue([]), $executeRawUnsafe: jest.fn() } as any;
     await service.apply(tx, verified);
     expect(tx.$executeRawUnsafe).not.toHaveBeenCalled();
     tx.pluginMigration.findUnique.mockResolvedValue({ checksum: 'a'.repeat(64) });

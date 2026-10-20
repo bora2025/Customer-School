@@ -6,6 +6,8 @@ import { PluginManifest, parsePluginManifest } from './plugin-manifest';
 import { promises as fs } from 'fs';
 import path from 'path';
 
+export const REVOKED_PLUGIN_KEY = '__WATTANAM_REVOKED_PLUGIN_KEY__';
+
 export interface TrustedPluginKeys {
   [publisher: string]: { [keyId: string]: string };
 }
@@ -113,6 +115,7 @@ export class PluginPackageVerifier {
       throw new ForbiddenException('Plugin signature metadata does not match its publisher');
     }
     const publicKey = trustedKeys[signature.publisher]?.[signature.keyId];
+    if (publicKey === REVOKED_PLUGIN_KEY) throw new ForbiddenException(`Publisher key is revoked: ${signature.publisher}/${signature.keyId}`);
     if (!publicKey) throw new ForbiddenException(`Publisher key is not trusted: ${signature.publisher}/${signature.keyId}`);
     let valid = false;
     try {

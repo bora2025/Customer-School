@@ -70,4 +70,4 @@ ENV WATTANAM_DISTRIBUTION=core
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "mkdir -p /data/backups /data/plugins /data/plugin-data /data/update-state /data/marketplace-identity && chown -R node:node /data && gosu node node scripts/deploy-migrations.js && if [ \"$PROCESS_ROLE\" = \"worker\" ]; then exec gosu node node dist-core/worker.js; else exec gosu node node dist-core/main.js; fi"]
+CMD ["sh", "-c", "mkdir -p /data/backups /data/plugins /data/plugin-data /data/update-state /data/marketplace-identity && chown -R node:node /data && if [ \"$PROCESS_ROLE\" = \"worker\" ]; then exec gosu node node dist-core/worker.js; else gosu node node scripts/deploy-migrations.js && exec gosu node node dist-core/main.js; fi"]

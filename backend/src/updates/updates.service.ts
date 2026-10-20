@@ -12,6 +12,7 @@ import { readUpdateRepositoryConfig } from './update-config';
 import { verifyRepositoryEnvelope } from './repository-signature';
 import { pluginInstallConsentDigest, pluginInstallDisclosure } from '../marketplace/plugin-install-consent';
 import { PluginEntitlementPolicyService } from '../plugins/plugin-entitlement-policy.service';
+import { recordMarketplaceRevokedKeys } from '../plugins/plugin-config';
 
 @Injectable()
 export class UpdatesService {
@@ -159,6 +160,7 @@ export class UpdatesService {
     try {
       const payload = verifyRepositoryEnvelope(body, config.publicKeys);
       await this.enforceRepositoryWatermark(payload.generatedAt);
+      if (payload.revokedPublisherKeys !== undefined) await recordMarketplaceRevokedKeys(payload.revokedPublisherKeys, this.prisma);
       return payload;
     }
     catch (error) { throw new BadGatewayException(error instanceof Error ? error.message : 'Repository signature validation failed'); }

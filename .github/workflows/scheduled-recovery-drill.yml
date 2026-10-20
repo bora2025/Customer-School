@@ -1,0 +1,36 @@
+name: Scheduled recovery drill
+
+on:
+  schedule:
+    - cron: "23 19 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: customer-school-recovery-drill
+  cancel-in-progress: false
+
+jobs:
+  restore-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_ENVIRONMENT: ${{ vars.RAILWAY_RECOVERY_DRILL_ENVIRONMENT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - run: npm install --no-save railway@3.16.0
+      - name: Restore latest strict recovery set into the dedicated rehearsal database
+        run: npx railway ssh --service worker --environment "$RAILWAY_ENVIRONMENT" npm run recovery-set:drill
+      - name: Verify the isolated deployment after the drill
+        run: node tools/railway-core-hosted-preflight.js --environment "$RAILWAY_ENVIRONMENT" --confirm-isolated "$RAILWAY_ENVIRONMENT" --require-marketplace --out recovery-drill-preflight.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovery-drill-preflight
+          path: recovery-drill-preflight.json
+          if-no-files-found: warn

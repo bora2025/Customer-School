@@ -6,6 +6,7 @@ import { pluginInstallConsentDigest } from './plugin-install-consent';
 jest.mock('../plugins/plugin-config', () => ({
   trustedPluginKeys: jest.fn(),
   recordMarketplaceTrustedKey: jest.fn(),
+  applyPluginKeyRevocations: (keys: unknown) => keys,
 }));
 
 describe('MarketplaceCommerceService install', () => {

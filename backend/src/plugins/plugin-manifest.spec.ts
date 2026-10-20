@@ -67,4 +67,19 @@ describe('plugin manifest', () => {
     expect(() => parsePluginManifest({ ...valid, operational })).toThrow('dataClassification');
     expect(() => parsePluginManifest({ ...valid, operational: { ...operational, dataClassification: ['personal-data'] } })).toThrow('dataRetention');
   });
+
+  it('requires explicit versioned declarations for durable events and read models', () => {
+    const parsed = parsePluginManifest({
+      ...valid,
+      capabilities: ['events.durable', 'readmodels.publish', 'readmodels.read'],
+      contracts: {
+        schemaVersion: 1, deprecationNoticeDays: 90,
+        events: { publishes: { 'wattanam.announcements.employee.changed': [1, 2] }, subscribes: {} },
+        readModels: { publishes: { workforce: [1] }, reads: { 'wattanam.other.directory': [1] } },
+      },
+    });
+    expect(parsed.contracts?.events.publishes['wattanam.announcements.employee.changed']).toEqual([1, 2]);
+    expect(() => parsePluginManifest({ ...valid, capabilities: ['events.durable'] })).toThrow('requires at least one durable event');
+    expect(() => parsePluginManifest({ ...valid, contracts: { schemaVersion: 1, deprecationNoticeDays: 7, events: { publishes: {}, subscribes: {} }, readModels: { publishes: {}, reads: {} } } })).toThrow('deprecationNoticeDays');
+  });
 });

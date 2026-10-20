@@ -63,6 +63,7 @@ describe('official plugin template UI v2 contract', () => {
         APP_VERSION: '0.1.0',
         PLUGIN_DIR: path.join(parent, 'installed'),
         PLUGIN_TRUSTED_KEYS: '{}',
+        PLUGIN_IN_PROCESS_PUBLISHERS: 'wattanam,acme',
       };
       const grants = { isGranted: jest.fn().mockResolvedValue(true) } as any;
       const audit = { log: jest.fn().mockResolvedValue(undefined) } as any;
@@ -72,6 +73,7 @@ describe('official plugin template UI v2 contract', () => {
         $queryRawUnsafe: jest.fn().mockResolvedValue([]),
         $executeRawUnsafe: jest.fn().mockResolvedValue(1),
       } as any;
+      prisma.$transaction = jest.fn(async (work: any) => work(prisma));
       const runtime = new PluginRuntimeService(
         prisma,
         { verifyInstalledDirectory: jest.fn().mockResolvedValue(verified) } as any,

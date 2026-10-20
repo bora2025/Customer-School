@@ -125,19 +125,29 @@ try {
     PLUGIN_STORAGE_S3_REGION: sharedStorage.region, PLUGIN_STORAGE_S3_PREFIX: sharedStorage.prefix,
     ...(sharedStorage.endpoint ? { PLUGIN_STORAGE_S3_ENDPOINT: sharedStorage.endpoint, PLUGIN_STORAGE_S3_FORCE_PATH_STYLE: 'true' } : {}),
   };
+  const pluginRuntimeControls = {
+    PLUGIN_SQL_STATEMENT_TIMEOUT_MS: '5000', PLUGIN_SQL_LOCK_TIMEOUT_MS: '1000',
+    PLUGIN_MIGRATION_STATEMENT_TIMEOUT_MS: '30000', PLUGIN_MIGRATION_LOCK_TIMEOUT_MS: '5000',
+    PLUGIN_REQUEST_QUOTA_PER_MINUTE: '600', PLUGIN_SQL_QUOTA_PER_MINUTE: '300',
+    PLUGIN_REALTIME_QUOTA_PER_MINUTE: '600', PLUGIN_JOB_QUOTA_PER_PLUGIN: '2',
+    PLUGIN_JOB_DRAIN_TIMEOUT_MS: '30000', PLUGIN_NOTIFICATION_DAILY_LIMIT: '200',
+    PLUGIN_EVENT_MAX_BYTES: '65536', PLUGIN_READ_MODEL_MAX_BYTES: '262144',
+    PLUGIN_STORAGE_MAX_FILE_BYTES: '1048576', PLUGIN_STORAGE_MAX_TOTAL_BYTES: '104857600',
+    PLUGIN_REVOKED_PUBLISHER_KEYS_JSON: '[]',
+  };
   setVariables('api', {
     NODE_ENV: 'production', PORT: '3001', APP_VERSION: blueprint.release.version, GIT_COMMIT: blueprint.release.commit,
     // New schools are core-first. legacy-full is an explicit migration/rollback compatibility mode.
     WATTANAM_DISTRIBUTION: distribution, PROCESS_ROLE: 'api', PLUGIN_REQUIRED_RUNTIME_ROLES: 'api,worker',
     DATABASE_URL: '${{Postgres.DATABASE_URL}}', CORS_ORIGINS: `https://${domain}`, PUBLIC_APP_URL: `https://${domain}`, COOKIE_SECURE: 'true',
-    BACKUP_DIR: '/data/backups', PLUGIN_DIR: '/data/plugins', PLUGIN_DATA_DIR: '/data/plugin-data', ...storageVariables,
+    BACKUP_DIR: '/data/backups', PLUGIN_DIR: '/data/plugins', PLUGIN_DATA_DIR: '/data/plugin-data', ...storageVariables, ...pluginRuntimeControls,
   });
   setVariables('worker', {
     NODE_ENV: 'production', WORKER_PORT: '3002', APP_VERSION: blueprint.release.version, GIT_COMMIT: blueprint.release.commit,
     WATTANAM_DISTRIBUTION: distribution, PROCESS_ROLE: 'worker', PLUGIN_REQUIRED_RUNTIME_ROLES: 'api,worker',
     DATABASE_URL: '${{Postgres.DATABASE_URL}}', CORS_ORIGINS: `https://${domain}`, COOKIE_SECURE: 'true',
     BACKUP_DIR: '/data/backups', PLUGIN_DIR: '/data/plugins',
-    PLUGIN_DATA_DIR: '/data/plugin-data', ...storageVariables,
+    PLUGIN_DATA_DIR: '/data/plugin-data', ...storageVariables, ...pluginRuntimeControls,
   });
   setVariables('web', { NODE_ENV: 'production', WATTANAM_DISTRIBUTION: distribution, NEXT_PUBLIC_WATTANAM_DISTRIBUTION: distribution, PORT: '3000', API_URL: 'http://${{api.RAILWAY_PRIVATE_DOMAIN}}:3001', NEXT_PUBLIC_API_URL: '' });
   setVariables('gateway', { API_UPSTREAM: '${{api.RAILWAY_PRIVATE_DOMAIN}}:3001', WEB_UPSTREAM: '${{web.RAILWAY_PRIVATE_DOMAIN}}:3000' });

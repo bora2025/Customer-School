@@ -54,6 +54,25 @@ describe('Plugin UI v2 schema', () => {
     });
   });
 
+  it('expands reusable component fragments and prefixes repeated instances', () => {
+    const value: any = valid();
+    value.fragments = {
+      summary: [{ id: 'title', type: 'heading', title: 'Summary' }],
+      nested: [{ use: 'summary', idPrefix: 'nested-' }],
+    };
+    value.pages[0].components = [{ use: 'summary' }, { use: 'nested' }, value.pages[0].components[1]];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components.map((component) => component.id)).toEqual(['title', 'nested-title', 'editor']);
+  });
+
+  it('rejects unknown, cyclic, and duplicate fragment expansions', () => {
+    const unknown: any = valid(); unknown.pages[0].components = [{ use: 'missing' }];
+    expect(() => parsePluginUiBundle(unknown, 'wattanam.test', permissions)).toThrow('fragment is unknown');
+    const cyclic: any = valid(); cyclic.fragments = { first: [{ use: 'second' }], second: [{ use: 'first' }] }; cyclic.pages[0].components = [{ use: 'first' }];
+    expect(() => parsePluginUiBundle(cyclic, 'wattanam.test', permissions)).toThrow('cycle detected');
+    const duplicate: any = valid(); duplicate.fragments = { heading: [{ id: 'title', type: 'heading', title: 'Title' }] }; duplicate.pages[0].components = [{ use: 'heading' }, { use: 'heading' }];
+    expect(() => parsePluginUiBundle(duplicate, 'wattanam.test', permissions)).toThrow('id or type is invalid');
+  });
+
   it.each([
     ['script element', () => { const value: any = valid(); value.pages[0].components[0].title = '<script>alert(1)</script>'; return value; }],
     ['event handler', () => { const value: any = valid(); value.pages[0].components[0].options = { onClick: 'steal()' }; return value; }],

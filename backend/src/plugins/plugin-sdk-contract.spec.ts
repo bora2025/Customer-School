@@ -1,4 +1,4 @@
-import { PLUGIN_CAPABILITIES, PLUGIN_CAPABILITIES_V1_1, PLUGIN_CAPABILITIES_V1_2, PLUGIN_DATA_CLASSIFICATIONS, PLUGIN_SDK_VERSION, PLUGIN_RUNTIME_VERSION } from './plugin-manifest';
+import { PLUGIN_CAPABILITIES, PLUGIN_CAPABILITIES_V1_1, PLUGIN_CAPABILITIES_V1_2, PLUGIN_CAPABILITIES_V1_3, PLUGIN_DATA_CLASSIFICATIONS, PLUGIN_SDK_VERSION, PLUGIN_RUNTIME_VERSION } from './plugin-manifest';
 
 /**
  * Pins the frozen SDK 1.0 contract surface (C-006). This test exists so an
@@ -44,6 +44,7 @@ describe('SDK 1.0 frozen contract surface', () => {
   it('keeps new SDK 1.1 capabilities separate from the frozen 1.0 list', () => {
     expect([...PLUGIN_CAPABILITIES_V1_1].sort()).toEqual(['accounts.guardian.assign', 'accounts.parent.resolve', 'accounts.student.create', 'accounts.student.update', 'crypto.hash', 'events.durable', 'readmodels.publish', 'readmodels.read']);
     expect([...PLUGIN_CAPABILITIES_V1_2]).toEqual(['accounts.staff.create']);
+    expect([...PLUGIN_CAPABILITIES_V1_3]).toEqual(['database.transaction']);
   });
 
   it('pins the operational data-classification vocabulary shared with the public SDK', () => {

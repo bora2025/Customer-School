@@ -8,12 +8,17 @@ function migrationSchemaForDistribution(value) {
   throw new Error(`WATTANAM_DISTRIBUTION must be core or legacy-full (got "${distribution}")`);
 }
 
+function migrationEnvironment(env = process.env) {
+  const migrationUrl = env.MIGRATION_DATABASE_URL?.trim();
+  return migrationUrl ? { ...env, DATABASE_URL: migrationUrl } : env;
+}
+
 function deployMigrations(env = process.env) {
   const schema = migrationSchemaForDistribution(env.WATTANAM_DISTRIBUTION);
   const prismaCli = require.resolve('prisma/build/index.js');
   const result = spawnSync(process.execPath, [prismaCli, 'migrate', 'deploy', `--schema=${schema}`], {
     cwd: path.resolve(__dirname, '..'),
-    env,
+    env: migrationEnvironment(env),
     stdio: 'inherit',
   });
   if (result.error) throw result.error;
@@ -30,4 +35,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { deployMigrations, migrationSchemaForDistribution };
+module.exports = { deployMigrations, migrationEnvironment, migrationSchemaForDistribution };

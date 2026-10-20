@@ -45,6 +45,8 @@ export interface PluginUiBundle {
   pages: PluginUiPage[];
 }
 
+type PluginUiFragmentReference = { use: string; idPrefix?: string };
+
 const ID = /^[a-z0-9][a-zA-Z0-9._-]*$/;
 const ROUTE_SEGMENT = '(?:[a-z0-9][a-z0-9_-]*|:[a-z][a-zA-Z0-9]*)';
 const ROUTE = new RegExp(`^${ROUTE_SEGMENT}(?:/${ROUTE_SEGMENT})*$`);
@@ -100,12 +102,54 @@ function inspectSafeJson(value: unknown, label: string, depth = 0): void {
   }
 }
 
+function expandUiComponents(
+  candidates: unknown,
+  fragments: Record<string, unknown[]>,
+  label: string,
+  stack: string[] = [],
+  prefix = '',
+): unknown[] {
+  if (!Array.isArray(candidates)) throw new BadRequestException(`${label} must be an array`);
+  const expanded: unknown[] = [];
+  for (let index = 0; index < candidates.length; index += 1) {
+    const candidate = object(candidates[index], `${label}[${index}]`);
+    if (candidate.use === undefined) {
+      if (prefix) {
+        const id = string(candidate.id, `${label}[${index}].id`, 100);
+        expanded.push({ ...candidate, id: `${prefix}${id}` });
+      } else expanded.push(candidate);
+      continue;
+    }
+    const reference = candidate as PluginUiFragmentReference & Record<string, unknown>;
+    const allowedKeys = new Set(['use', 'idPrefix']);
+    if (Object.keys(reference).some((key) => !allowedKeys.has(key))) throw new BadRequestException('Plugin UI fragment reference contains unsupported properties');
+    const name = string(reference.use, 'Plugin UI fragment name', 100);
+    if (!ID.test(name) || !fragments[name]) throw new BadRequestException(`Plugin UI fragment is unknown: ${name}`);
+    if (stack.includes(name)) throw new BadRequestException(`Plugin UI fragment cycle detected: ${[...stack, name].join(' -> ')}`);
+    if (stack.length >= 5) throw new BadRequestException('Plugin UI fragment nesting exceeds 5 levels');
+    const localPrefix = reference.idPrefix === undefined ? '' : string(reference.idPrefix, 'Plugin UI fragment idPrefix', 40);
+    if (localPrefix && !ID.test(localPrefix)) throw new BadRequestException('Plugin UI fragment idPrefix is invalid');
+    expanded.push(...expandUiComponents(fragments[name], fragments, `fragments.${name}`, [...stack, name], `${prefix}${localPrefix}`));
+    if (expanded.length > 100) throw new BadRequestException(`${label} expands beyond 100 components`);
+  }
+  return expanded;
+}
+
 export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPermissions: Set<string>): PluginUiBundle {
   const root = object(value, 'Plugin UI descriptor');
   if (root.schemaVersion !== PLUGIN_UI_SCHEMA_VERSION || root.kind !== 'declarative-ui') throw new BadRequestException('Unsupported plugin UI schema version or kind');
   if (root.portability !== undefined && root.portability !== 'universal') throw new BadRequestException('Plugin UI portability contract is invalid');
   if (!Array.isArray(root.pages) || root.pages.length < 1 || root.pages.length > 50) throw new BadRequestException('Plugin UI pages must contain 1 to 50 pages');
   inspectSafeJson(root, 'Plugin UI descriptor');
+  const fragments: Record<string, unknown[]> = {};
+  if (root.fragments !== undefined) {
+    const candidateFragments = object(root.fragments, 'Plugin UI fragments');
+    if (Object.keys(candidateFragments).length > 50) throw new BadRequestException('Plugin UI fragments cannot contain more than 50 entries');
+    for (const [name, candidate] of Object.entries(candidateFragments)) {
+      if (!ID.test(name) || !Array.isArray(candidate) || candidate.length < 1 || candidate.length > 50) throw new BadRequestException(`Plugin UI fragment ${name} is invalid`);
+      fragments[name] = candidate;
+    }
+  }
 
   const pageIds = new Set<string>();
   const routePaths = new Set<string>();
@@ -161,9 +205,10 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       return { id: sourceId, method: method as PluginUiDataSource['method'], path: sourcePath, permission: sourcePermission, ...(ownParameters.size ? { parameters: [...ownParameters] } : {}), ...(source.autoload === false ? { autoload: false } : {}) };
     });
 
-    if (!Array.isArray(page.components) || page.components.length < 1 || page.components.length > 100) throw new BadRequestException(`pages[${pageIndex}].components must contain 1 to 100 components`);
+    const expandedPageComponents = expandUiComponents(page.components, fragments, `pages[${pageIndex}].components`);
+    if (expandedPageComponents.length < 1 || expandedPageComponents.length > 100) throw new BadRequestException(`pages[${pageIndex}].components must contain 1 to 100 components after fragment expansion`);
     const componentIds = new Set<string>();
-    const components = page.components.map((candidateComponent, componentIndex): PluginUiComponent => {
+    const components = expandedPageComponents.map((candidateComponent, componentIndex): PluginUiComponent => {
       const component = object(candidateComponent, `pages[${pageIndex}].components[${componentIndex}]`);
       const componentId = string(component.id, 'component id', 100);
       const type = string(component.type, 'component type', 40) as PluginUiComponentType;

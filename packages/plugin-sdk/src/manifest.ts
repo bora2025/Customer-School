@@ -26,8 +26,10 @@ export const PLUGIN_CAPABILITIES = [
   'ui.pages',
 ] as const;
 export const PLUGIN_CAPABILITIES_V1_1 = ['accounts.guardian.assign', 'accounts.parent.resolve', 'accounts.student.create', 'accounts.student.update', 'crypto.hash', 'events.durable', 'readmodels.publish', 'readmodels.read'] as const;
-export const PLUGIN_SUPPORTED_CAPABILITIES = [...PLUGIN_CAPABILITIES, ...PLUGIN_CAPABILITIES_V1_1] as const;
-export const PLUGIN_SDK_VERSION = '1.1.0';
+export const PLUGIN_CAPABILITIES_V1_2 = ['accounts.staff.create'] as const;
+export const PLUGIN_CAPABILITIES_V1_3 = ['database.transaction'] as const;
+export const PLUGIN_SUPPORTED_CAPABILITIES = [...PLUGIN_CAPABILITIES, ...PLUGIN_CAPABILITIES_V1_1, ...PLUGIN_CAPABILITIES_V1_2, ...PLUGIN_CAPABILITIES_V1_3] as const;
+export const PLUGIN_SDK_VERSION = '1.3.0';
 export const PLUGIN_RUNTIME_VERSION = '1.0.0';
 export const PLUGIN_DATA_CLASSIFICATIONS = [
   'education-records', 'personal-data', 'communications', 'financial-records',
@@ -40,6 +42,11 @@ export interface PluginOperationalContract {
   backup: { database: 'required' | 'none'; files: 'required' | 'none'; restore: 'required' };
   uninstall: { dataRetention: 'preserve' };
   pricing: 'marketplace';
+}
+export interface PluginDataContracts {
+  schemaVersion: 1; deprecationNoticeDays: number;
+  events: { publishes: Record<string, number[]>; subscribes: Record<string, number[]> };
+  readModels: { publishes: Record<string, number[]>; reads: Record<string, number[]> };
 }
 
 export interface PluginManifest {
@@ -65,6 +72,7 @@ export interface PluginManifest {
   supportUrl?: string;
   privacyUrl?: string;
   operational?: PluginOperationalContract;
+  contracts?: PluginDataContracts;
 }
 
 function text(value: unknown, field: string, maximum = 200): string {
@@ -207,6 +215,39 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     };
   }
 
+  let contracts: PluginDataContracts | undefined;
+  if (input.contracts !== undefined) {
+    if (!input.contracts || typeof input.contracts !== 'object' || Array.isArray(input.contracts)) throw new Error('contracts must be an object');
+    const value = input.contracts as Record<string, unknown>;
+    if (value.schemaVersion !== 1) throw new Error('contracts.schemaVersion must be 1');
+    const deprecationNoticeDays = Number(value.deprecationNoticeDays);
+    if (!Number.isInteger(deprecationNoticeDays) || deprecationNoticeDays < 30 || deprecationNoticeDays > 3650) throw new Error('contracts.deprecationNoticeDays must be between 30 and 3650');
+    const parseGroup = (container: unknown, field: string, ownNamespace: boolean, qualified = true) => {
+      if (!container || typeof container !== 'object' || Array.isArray(container)) throw new Error(`${field} must be an object`);
+      const parsed: Record<string, number[]> = {};
+      for (const [name, versions] of Object.entries(container as Record<string, unknown>)) {
+        const validName = qualified ? /^[a-z0-9]+(?:[.-][a-z0-9]+)+$/.test(name) : /^[a-z0-9][a-z0-9._-]{0,99}$/.test(name);
+        if (!validName || (ownNamespace && !name.startsWith(`${id}.`))) throw new Error(`${field} contains an invalid or unowned contract name: ${name}`);
+        if (!Array.isArray(versions) || !versions.length || versions.some((version) => !Number.isInteger(version) || Number(version) < 1)) throw new Error(`${field}.${name} must contain positive integer versions`);
+        parsed[name] = [...new Set(versions as number[])].sort((a, b) => a - b);
+      }
+      return parsed;
+    };
+    const events = value.events as Record<string, unknown> | undefined;
+    const readModels = value.readModels as Record<string, unknown> | undefined;
+    if (!events || !readModels) throw new Error('contracts must declare events and readModels');
+    contracts = { schemaVersion: 1, deprecationNoticeDays,
+      events: { publishes: parseGroup(events.publishes || {}, 'contracts.events.publishes', true), subscribes: parseGroup(events.subscribes || {}, 'contracts.events.subscribes', false) },
+      readModels: { publishes: parseGroup(readModels.publishes || {}, 'contracts.readModels.publishes', false, false), reads: parseGroup(readModels.reads || {}, 'contracts.readModels.reads', false) } };
+  }
+  const requiresContract = (capability: string, count: number, label: string) => {
+    if (capabilities.includes(capability) && count === 0) throw new Error(`${capability} requires at least one ${label} contract declaration`);
+    if (!capabilities.includes(capability) && count > 0) throw new Error(`${label} contract declarations require ${capability}`);
+  };
+  requiresContract('events.durable', Object.keys(contracts?.events.publishes || {}).length + Object.keys(contracts?.events.subscribes || {}).length, 'durable event');
+  requiresContract('readmodels.publish', Object.keys(contracts?.readModels.publishes || {}).length, 'published read-model');
+  requiresContract('readmodels.read', Object.keys(contracts?.readModels.reads || {}).length, 'consumed read-model');
+
   return {
     schemaVersion: 1,
     id,
@@ -230,5 +271,6 @@ export function parsePluginManifest(value: unknown): PluginManifest {
     supportUrl: optionalUrl(input.supportUrl, 'supportUrl'),
     privacyUrl: optionalUrl(input.privacyUrl, 'privacyUrl'),
     operational,
+    contracts,
   };
 }

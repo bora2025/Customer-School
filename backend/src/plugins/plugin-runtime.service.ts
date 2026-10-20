@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import path from 'path';
 import semver from 'semver';
 import bcrypt from 'bcryptjs';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { readRuntimeConfig } from '../config/environment';
 import { trustedPluginKeys } from './plugin-config';
@@ -26,6 +27,7 @@ import { PluginRolloutService } from './plugin-rollout.service';
 import { PrismaAcademicIdentityProvider } from '../auth/academic-identity.provider';
 import { PluginAccountService } from './plugin-account.service';
 import { assertPluginExecutionAllowed } from './plugin-execution-policy';
+import { applyPluginDatabasePolicy, pluginDatabasePolicy } from './plugin-database-policy';
 
 @Injectable()
 export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -158,6 +160,11 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
 
     const capabilities = new Set(verified.manifest.capabilities);
     const declaredPermissions = new Set(verified.manifest.permissions);
+    const dataContracts = verified.manifest.contracts;
+    const assertContractVersion = (kind: string, declarations: Record<string, number[]> | undefined, name: string, versions: number[]) => {
+      const declared = declarations?.[name];
+      if (!declared || versions.some((version) => !declared.includes(version))) throw new Error(`${id} used undeclared ${kind} contract ${name} versions ${versions.join(',')}`);
+    };
     const logger = new Logger(`Plugin:${id}`);
     const disposers: Array<() => void> = [];
     const requireCapability = (capability: string) => {
@@ -191,6 +198,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       durableEvents: {
         subscribe: (definition) => {
           requireCapability('events.durable');
+          assertContractVersion('durable event subscription', dataContracts?.events.subscribes, definition.event, definition.versions);
           if (!this.contracts) throw new Error('Durable event runtime is unavailable');
           const dispose = this.contracts.subscribe(id, definition); disposers.push(dispose); return dispose;
         },
@@ -226,7 +234,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
           if ((sql.match(/;/g) || []).length > 1) throw new Error(`${label} must contain exactly one SQL statement`);
           assertNoForbiddenSql(sql, label);
           assertPluginNamespace(id, sql, label);
-          return this.prisma.$queryRawUnsafe(sql, ...params);
+          return this.withPluginDatabasePolicy((tx) => tx.$queryRawUnsafe(sql, ...params));
         },
         execute: async (sql, params = []) => {
           requireCapability('database.write');
@@ -236,13 +244,16 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
           if ((sql.match(/;/g) || []).length > 1) throw new Error(`${label} must contain exactly one SQL statement`);
           assertNoForbiddenSql(sql, label);
           assertPluginNamespace(id, sql, label);
-          const count = await this.prisma.$executeRawUnsafe(sql, ...params);
+          const count = await this.withPluginDatabasePolicy<number>((tx) => tx.$executeRawUnsafe(sql, ...params));
           return { count };
         },
         transaction: async (work) => {
-          requireCapability('database.write'); requireCapability('events.durable');
-          if (!this.contracts) throw new Error('Durable event runtime is unavailable');
-          return this.prisma.$transaction(async (tx) => work({
+          requireCapability('database.write');
+          if (!capabilities.has('database.transaction') && !capabilities.has('events.durable')) throw new Error(`${id} did not declare database.transaction`);
+          const policy = pluginDatabasePolicy('runtime');
+          return this.prisma.$transaction(async (tx) => {
+            await applyPluginDatabasePolicy(tx, 'runtime');
+            return work({
             query: (sql, params = []) => {
               this.resourceQuota?.consume(id, 'sql'); const label = `Plugin ${id} transactional query`;
               if (!/^\s*SELECT\b/i.test(sql)) throw new Error(`${label} must be a SELECT statement`);
@@ -253,13 +264,18 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
               if (!/^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql)) throw new Error(`${label} must be an INSERT, UPDATE, or DELETE statement`);
               assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return { count: await tx.$executeRawUnsafe(sql, ...params) };
             },
-            publish: (input) => this.contracts!.publish(tx, id, input),
-          }));
+            publish: (input) => {
+              assertContractVersion('durable event publication', dataContracts?.events.publishes, input.event, [input.version]);
+              if (!this.contracts) throw new Error('Durable event runtime is unavailable');
+              return this.contracts.publish(tx, id, input);
+            },
+            });
+          }, { timeout: policy.statementTimeoutMs + 1_000, maxWait: 5_000 });
         },
       },
       readModels: {
-        publish: (model, version, key, data) => { requireCapability('readmodels.publish'); if (!this.contracts) throw new Error('Read-model runtime is unavailable'); return this.contracts.putReadModel(id, model, version, key, data); },
-        read: (owner, model, versions, recordKey) => { requireCapability('readmodels.read'); if (!this.contracts) throw new Error('Read-model runtime is unavailable'); return this.contracts.readModel(owner, model, versions, recordKey); },
+        publish: (model, version, key, data) => { requireCapability('readmodels.publish'); assertContractVersion('read-model publication', dataContracts?.readModels.publishes, model, [version]); if (!this.contracts) throw new Error('Read-model runtime is unavailable'); return this.contracts.putReadModel(id, model, version, key, data); },
+        read: (owner, model, versions, recordKey) => { requireCapability('readmodels.read'); assertContractVersion('read-model consumption', dataContracts?.readModels.reads, `${owner}.${model}`, versions); if (!this.contracts) throw new Error('Read-model runtime is unavailable'); return this.contracts.readModel(owner, model, versions, recordKey); },
       },
       directory: {
         resolveAudience: (query) => { requireCapability('directory.read'); return this.directory.resolveAudience(query); },
@@ -414,6 +430,14 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       this.extensions.clear(id); await this.jobs.clear(id);
       throw error;
     }
+  }
+
+  private async withPluginDatabasePolicy<T>(work: (tx: Prisma.TransactionClient) => Promise<T>) {
+    const policy = pluginDatabasePolicy('runtime');
+    return this.prisma.$transaction(async (tx) => {
+      await applyPluginDatabasePolicy(tx, 'runtime');
+      return work(tx);
+    }, { timeout: policy.statementTimeoutMs + 1_000, maxWait: 5_000 });
   }
 
   /**

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { migrationSchemaForDistribution } = require('./deploy-migrations');
+const { migrationEnvironment, migrationSchemaForDistribution } = require('./deploy-migrations');
 
 test('core selects the isolated core migration lineage', () => {
   assert.equal(migrationSchemaForDistribution('core'), 'prisma/core/schema.prisma');
@@ -13,4 +13,11 @@ test('legacy-full and an unset distribution preserve the legacy lineage', () => 
 
 test('unknown distributions fail closed before Prisma is started', () => {
   assert.throws(() => migrationSchemaForDistribution('lean'), /must be core or legacy-full/);
+});
+
+test('uses a dedicated migration connection without changing runtime DATABASE_URL', () => {
+  const runtime = 'postgresql://runtime@localhost/school';
+  const migration = 'postgresql://migrator@localhost/school';
+  assert.equal(migrationEnvironment({ DATABASE_URL: runtime }).DATABASE_URL, runtime);
+  assert.equal(migrationEnvironment({ DATABASE_URL: runtime, MIGRATION_DATABASE_URL: migration }).DATABASE_URL, migration);
 });

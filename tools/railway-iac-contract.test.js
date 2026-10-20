@@ -28,6 +28,7 @@ test('Railway IaC owns the complete production topology without embedding secret
   assert.match(source, /RAILWAY_DOCKERFILE_PATH:\s*preserve\(\)/);
   assert.match(source, /ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON:\s*preserve\(\)/);
   assert.match(source, /UPDATE_REPOSITORY_PUBLIC_KEYS_JSON:\s*preserve\(\)/);
+  assert.match(source, /PLUGIN_REVOKED_PUBLISHER_KEYS_JSON:\s*preserve\(\)/);
 
   assert.match(source, /DATABASE_URL:\s*ref\(Postgres, "DATABASE_URL"\)/);
   assert.match(source, /PLUGIN_STORAGE_S3_ACCESS_KEY_ID:\s*ref\(pluginArtifacts, "ACCESS_KEY_ID"\)/);

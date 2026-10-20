@@ -1,6 +1,12 @@
 {
   "schemaVersion": 2,
   "kind": "declarative-ui",
+  "portability": "universal",
+  "fragments": {
+    "records-heading": [
+      { "id": "heading", "type": "heading", "title": "{{displayName}} records" }
+    ]
+  },
   "pages": [
     {
       "id": "records", "title": "{{displayName}}", "routePath": "records",
@@ -10,7 +16,7 @@
         { "id": "create", "method": "POST", "path": "records", "permission": "{{publisher}}.{{name}}.manage" }
       ],
       "components": [
-        { "id": "heading", "type": "heading", "title": "{{displayName}} records" },
+        { "use": "records-heading" },
         { "id": "records-table", "type": "table", "title": "Records", "source": "records", "fields": [
           { "id": "name", "label": "Name", "sortable": true, "filterable": true },
           { "id": "status", "label": "Status", "sortable": true, "filterable": true },

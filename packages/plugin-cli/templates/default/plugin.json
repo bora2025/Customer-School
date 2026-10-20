@@ -9,9 +9,9 @@
   "license": "MIT",
   "backendEntry": "backend/index.js",
   "frontendEntry": "frontend/page.json",
-  "sdkVersion": "1.1.0",
+  "sdkVersion": "1.3.0",
   "runtimeVersion": "1.0.0",
-  "capabilities": ["api.routes", "database.read", "database.write", "navigation.register", "permissions.register", "settings.read", "settings.write", "ui.pages"],
+  "capabilities": ["api.routes", "database.read", "database.write", "database.transaction", "navigation.register", "permissions.register", "settings.read", "settings.write", "ui.pages"],
   "permissions": ["{{publisher}}.{{name}}.view", "{{publisher}}.{{name}}.manage"],
   "dependencies": {},
   "optionalDependencies": {},
@@ -35,5 +35,11 @@
     "backup": { "database": "required", "files": "none", "restore": "required" },
     "uninstall": { "dataRetention": "preserve" },
     "pricing": "marketplace"
+  },
+  "contracts": {
+    "schemaVersion": 1,
+    "deprecationNoticeDays": 90,
+    "events": { "publishes": {}, "subscribes": {} },
+    "readModels": { "publishes": {}, "reads": {} }
   }
 }

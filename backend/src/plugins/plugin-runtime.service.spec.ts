@@ -301,19 +301,22 @@ describe('PluginRuntimeService', () => {
       id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js',
       capabilities: ['database.read', 'database.write', 'directory.read', 'realtime.notify'], permissions: [], dependencies: {},
     };
+    const databaseTx = {
+      $queryRawUnsafe: jest.fn(async (sql: string) => sql.includes('set_config') ? [] : [{ id: 'n1' }]),
+      $executeRawUnsafe: jest.fn().mockResolvedValue(1),
+    };
     const prisma = {
       pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) },
-      $queryRawUnsafe: jest.fn().mockResolvedValue([{ id: 'n1' }]),
-      $executeRawUnsafe: jest.fn().mockResolvedValue(1),
+      $transaction: jest.fn(async (work: any) => work(databaseTx)),
     } as any;
     const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
     const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
     const runtime = new PluginRuntimeService(prisma, verifier, new PluginEventBus(), extensions as any, jobs as any, settings as any, storage as any, notifications as any, directoryService as any, realtime as any, notificationQuota as any, audit as any);
 
     await runtime.load('wattanam.test');
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith('SELECT * FROM plugin_wattanam_test_notes WHERE id = $1', 'n1');
+    expect(databaseTx.$queryRawUnsafe).toHaveBeenCalledWith('SELECT * FROM plugin_wattanam_test_notes WHERE id = $1', 'n1');
     expect((global as any).__wattanamPluginRows).toEqual([{ id: 'n1' }]);
-    expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith('INSERT INTO plugin_wattanam_test_notes (id) VALUES ($1)', 'n1');
+    expect(databaseTx.$executeRawUnsafe).toHaveBeenCalledWith('INSERT INTO plugin_wattanam_test_notes (id) VALUES ($1)', 'n1');
     expect((global as any).__wattanamPluginWrite).toEqual({ count: 1 });
     expect(directoryService.resolveAudience).toHaveBeenCalledWith({ audience: 'SCHOOL' });
     expect(realtime.notifyUser).toHaveBeenCalledWith('wattanam.test', 'user-1', 'note:new', { id: 'n1' });
@@ -340,6 +343,38 @@ describe('PluginRuntimeService', () => {
     const runtime = new PluginRuntimeService(prisma, verifier, new PluginEventBus(), extensions as any, jobs as any, settings as any, storage as any, notifications as any, directoryService as any, realtime as any, notificationQuota as any, audit as any);
     await expect(runtime.load('wattanam.test')).rejects.toThrow('did not declare database.write');
     expect(prisma.$executeRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('allows atomic database work with database.transaction without requiring durable-event declarations', async () => {
+    const installedPath = path.join(directory, 'wattanam.test', '1.0.0');
+    await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });
+    await fs.writeFile(path.join(installedPath, 'backend', 'index.js'), `module.exports={id:'wattanam.test',async activate(context){global.__wattanamTransactionResult=await context.database.transaction(async(tx)=>{await tx.execute('INSERT INTO plugin_wattanam_test_notes (id) VALUES ($1)',['n1']);return tx.query('SELECT * FROM plugin_wattanam_test_notes WHERE id=$1',['n1']);});}}`);
+    const manifest = { id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: ['database.read', 'database.write', 'database.transaction'], permissions: [], dependencies: {} };
+    const databaseTx = { $queryRawUnsafe: jest.fn(async (sql: string) => sql.includes('set_config') ? [] : [{ id: 'n1' }]), $executeRawUnsafe: jest.fn().mockResolvedValue(1) };
+    const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) }, $transaction: jest.fn(async (work: any) => work(databaseTx)) } as any;
+    const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
+    const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
+    const runtime = new PluginRuntimeService(prisma, verifier, new PluginEventBus(), extensions as any, jobs as any, settings as any, storage as any, notifications as any, directoryService as any, realtime as any, notificationQuota as any, audit as any);
+    await runtime.load('wattanam.test');
+    expect((global as any).__wattanamTransactionResult).toEqual([{ id: 'n1' }]);
+    delete (global as any).__wattanamTransactionResult;
+  });
+
+  it('rejects durable event use outside the signed manifest contract declaration', async () => {
+    const installedPath = path.join(directory, 'wattanam.test', '1.0.0');
+    await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });
+    await fs.writeFile(path.join(installedPath, 'backend', 'index.js'), `module.exports={id:'wattanam.test',activate(context){context.durableEvents.subscribe({id:'consumer',event:'wattanam.other.changed',versions:[2],handler(){}})}}`);
+    const manifest = {
+      id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: ['events.durable'], permissions: [], dependencies: {},
+      contracts: { schemaVersion: 1, deprecationNoticeDays: 90, events: { publishes: {}, subscribes: { 'wattanam.other.changed': [1] } }, readModels: { publishes: {}, reads: {} } },
+    };
+    const prisma = { pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) } } as any;
+    const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
+    const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
+    const contracts = { subscribe: jest.fn() };
+    const runtime = new PluginRuntimeService(prisma, verifier, new PluginEventBus(), extensions as any, jobs as any, settings as any, storage as any, notifications as any, directoryService as any, realtime as any, notificationQuota as any, audit as any, undefined, undefined, contracts as any);
+    await expect(runtime.load('wattanam.test')).rejects.toThrow('undeclared durable event subscription contract');
+    expect(contracts.subscribe).not.toHaveBeenCalled();
   });
 
   it('delegates notifications and versioned Academic directory contracts through capability-gated adapters', async () => {

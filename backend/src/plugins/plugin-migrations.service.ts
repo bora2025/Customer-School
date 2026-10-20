@@ -8,6 +8,7 @@ import { VerifiedPluginPackage } from './plugin-package';
 import { PluginManifest } from './plugin-manifest';
 import { assertNoForbiddenSql, assertPluginNamespace } from './plugin-sql-guard';
 import { countTopLevelSqlStatements } from './plugin-sql-statements';
+import { applyPluginDatabasePolicy } from './plugin-database-policy';
 
 const execFileAsync = promisify(execFile);
 
@@ -64,6 +65,7 @@ export class PluginMigrationsService {
   }
 
   async apply(tx: Prisma.TransactionClient, verified: VerifiedPluginPackage) {
+    if (verified.manifest.migrations.length) await applyPluginDatabasePolicy(tx, 'migration');
     for (const migration of verified.manifest.migrations) {
       const content = verified.files.get(migration.path);
       if (!content) throw new BadRequestException(`Plugin migration file is missing: ${migration.path}`);
