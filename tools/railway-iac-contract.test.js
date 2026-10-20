@@ -30,7 +30,10 @@ test('Railway IaC owns the complete production topology without embedding secret
   assert.match(source, /UPDATE_REPOSITORY_PUBLIC_KEYS_JSON:\s*preserve\(\)/);
   assert.match(source, /PLUGIN_REVOKED_PUBLISHER_KEYS_JSON:\s*preserve\(\)/);
 
-  assert.match(source, /DATABASE_URL:\s*ref\(Postgres, "DATABASE_URL"\)/);
+  assert.doesNotMatch(source, /DATABASE_URL:\s*ref\(Postgres, "DATABASE_URL"\)/, 'IaC must not restore the shared owner database identity after runtime-role cutover');
+  assert.match(source, /env:\s*\{[^\n]*DATABASE_URL:\s*preserve\(\)[^\n]*PROCESS_ROLE:\s*"api"/);
+  assert.match(source, /env:\s*\{[^\n]*DATABASE_URL:\s*preserve\(\)[^\n]*PROCESS_ROLE:\s*"worker"/);
+  assert.match(source, /MIGRATION_DATABASE_URL:\s*preserve\(\)/);
   assert.match(source, /PLUGIN_STORAGE_S3_ACCESS_KEY_ID:\s*ref\(pluginArtifacts, "ACCESS_KEY_ID"\)/);
   assert.match(source, /PLUGIN_STORAGE_S3_SECRET_ACCESS_KEY:\s*ref\(pluginArtifacts, "SECRET_ACCESS_KEY"\)/);
   assert.match(source, /PLUGIN_STORAGE_S3_BUCKET:\s*ref\(pluginArtifacts, "BUCKET"\)/);

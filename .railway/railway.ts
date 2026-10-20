@@ -9,7 +9,7 @@ function releaseImage(name: string): ReturnType<typeof image> {
 }
 
 const sharedBackendEnvironment = {
-  APP_VERSION: preserve(), BACKUP_DIR: preserve(), COOKIE_SECURE: preserve(), CORS_ORIGINS: preserve(), DATABASE_URL: preserve(),
+  APP_VERSION: preserve(), BACKUP_DIR: preserve(), COOKIE_SECURE: preserve(), CORS_ORIGINS: preserve(),
   ENTITLEMENT_KEY_ID: preserve(), ENTITLEMENT_PUBLIC_KEY: preserve(), ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON: preserve(),
   GIT_COMMIT: preserve(), INSTALLATION_KEY_DIR: preserve(), JWT_KEY_ID: preserve(), JWT_SECRET: preserve(), JWT_SECONDARY_SECRETS_JSON: preserve(),
   MARKETPLACE_REQUEST_TIMEOUT_MS: preserve(), MARKETPLACE_URL: preserve(), NODE_ENV: preserve(), PLUGIN_DATA_DIR: preserve(), PLUGIN_DIR: preserve(),
@@ -35,7 +35,6 @@ export default defineRailway(() => {
   Postgres.networking = { privateNetworkEndpoint: "postgres" };
   const pluginArtifacts = bucket("plugin-artifacts", { region: "sin" });
   const splitRuntimeEnvironment = {
-    DATABASE_URL: ref(Postgres, "DATABASE_URL"),
     PLUGIN_REQUIRED_RUNTIME_ROLES: "api,worker",
     PLUGIN_STORAGE_PROVIDER: "s3",
     PLUGIN_STORAGE_S3_ACCESS_KEY_ID: ref(pluginArtifacts, "ACCESS_KEY_ID"),
@@ -59,13 +58,13 @@ export default defineRailway(() => {
     source: backendRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
     volumeMounts: { "/data": apiVolume },
-    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, MIGRATION_DATABASE_URL: preserve(), PROCESS_ROLE: "api", PORT: preserve(), PUBLIC_APP_URL: preserve() },
+    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, DATABASE_URL: preserve(), MIGRATION_DATABASE_URL: preserve(), PROCESS_ROLE: "api", PORT: preserve(), PUBLIC_APP_URL: preserve() },
   });
   const worker = service("worker", {
     source: backendRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
     volumeMounts: { "/data": workerVolume },
-    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, PROCESS_ROLE: "worker", WORKER_PORT: "3002" },
+    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, DATABASE_URL: preserve(), PROCESS_ROLE: "worker", WORKER_PORT: "3002" },
   });
   const gateway = service("gateway", {
     source: gatewayRelease,
