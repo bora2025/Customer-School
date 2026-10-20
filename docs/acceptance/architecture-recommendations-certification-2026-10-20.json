@@ -45,9 +45,9 @@
     "failures": []
   },
   "ci": {
-    "customerSchoolValidationRun": 39371584305,
+    "customerSchoolValidationRun": 39373458969,
     "customerSchoolValidation": "success",
-    "marketplaceValidationRun": 39373420050,
-    "marketplaceValidation": "in_progress"
+    "marketplaceValidationRun": 39373800632,
+    "marketplaceValidation": "success"
   }
 }
