@@ -14,10 +14,12 @@ const sharedBackendEnvironment = {
   GIT_COMMIT: preserve(), INSTALLATION_KEY_DIR: preserve(), JWT_KEY_ID: preserve(), JWT_SECRET: preserve(), JWT_SECONDARY_SECRETS_JSON: preserve(),
   MARKETPLACE_REQUEST_TIMEOUT_MS: preserve(), MARKETPLACE_URL: preserve(), NODE_ENV: preserve(), PLUGIN_DATA_DIR: preserve(), PLUGIN_DIR: preserve(),
   PLUGIN_EVENT_MAX_BYTES: preserve(), PLUGIN_JOB_DRAIN_TIMEOUT_MS: preserve(), PLUGIN_JOB_QUOTA_PER_PLUGIN: preserve(),
+  PLUGIN_IN_PROCESS_PUBLISHERS: preserve(),
   PLUGIN_MIGRATION_LOCK_TIMEOUT_MS: preserve(), PLUGIN_MIGRATION_STATEMENT_TIMEOUT_MS: preserve(), PLUGIN_NOTIFICATION_DAILY_LIMIT: preserve(),
   PLUGIN_READ_MODEL_MAX_BYTES: preserve(), PLUGIN_REALTIME_QUOTA_PER_MINUTE: preserve(), PLUGIN_REQUEST_QUOTA_PER_MINUTE: preserve(),
   PLUGIN_REQUIRED_RUNTIME_ROLES: preserve(), PLUGIN_STORAGE_PROVIDER: preserve(), PLUGIN_STORAGE_S3_ACCESS_KEY_ID: preserve(),
   PLUGIN_REVOKED_PUBLISHER_KEYS_JSON: preserve(),
+  PLUGIN_SAFE_MODE: preserve(),
   PLUGIN_SQL_LOCK_TIMEOUT_MS: preserve(), PLUGIN_SQL_QUOTA_PER_MINUTE: preserve(), PLUGIN_SQL_STATEMENT_TIMEOUT_MS: preserve(),
   PLUGIN_STORAGE_MAX_FILE_BYTES: preserve(), PLUGIN_STORAGE_MAX_TOTAL_BYTES: preserve(),
   PLUGIN_STORAGE_S3_BUCKET: preserve(), PLUGIN_STORAGE_S3_ENDPOINT: preserve(), PLUGIN_STORAGE_S3_FORCE_PATH_STYLE: preserve(),
@@ -26,14 +28,14 @@ const sharedBackendEnvironment = {
   UPDATE_REPOSITORY_PUBLIC_KEYS_JSON: preserve(), WATTANAM_DISTRIBUTION: preserve(), RECOVERY_DRILL_DATABASE_URL: preserve(), RECOVERY_DRILL_CONFIRM_TARGET: preserve(),
 };
 
-export default defineRailway(() => {
+export default defineRailway((context) => {
   const backendRelease = releaseImage("API_IMAGE");
   const webRelease = releaseImage("WEB_IMAGE");
   const gatewayRelease = releaseImage("GATEWAY_IMAGE");
 
   const Postgres = postgres("Postgres", { region: "asia-southeast1-eqsg3a" });
   Postgres.networking = { privateNetworkEndpoint: "postgres" };
-  const pluginArtifacts = bucket("plugin-artifacts", { region: "sin" });
+  const pluginArtifacts = bucket(context.isEnvironment("plugin-certification-20261018") ? "plugin-cert-artifacts-20261018" : "plugin-artifacts", { region: "sin" });
   const splitRuntimeEnvironment = {
     PLUGIN_REQUIRED_RUNTIME_ROLES: "api,worker",
     PLUGIN_STORAGE_PROVIDER: "s3",
