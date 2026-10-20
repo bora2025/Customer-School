@@ -45,8 +45,9 @@ test('Railway IaC owns the complete production topology without embedding secret
   assert.doesNotMatch(source, /(?:SECRET|PRIVATE_KEY|PASSWORD):\s*["'`](?!api|worker|core|s3)/, 'IaC must not embed secret values');
 });
 
-test('legacy Config-as-Code files stay non-authoritative and cannot override image commands', () => {
-  for (const relative of ['railway.json', 'backend/railway.json', 'frontend/railway.json']) {
+test('the repository root has no legacy Config-as-Code file and service references cannot override image commands', () => {
+  assert.equal(fs.existsSync(path.join(root, 'railway.json')), false, 'root railway.json must remain removed after IaC ownership migration');
+  for (const relative of ['backend/railway.json', 'frontend/railway.json']) {
     const config = JSON.parse(fs.readFileSync(path.join(root, relative), 'utf8'));
     assert.equal(config.deploy?.startCommand, undefined, `${relative} must not override the selected image command`);
   }
