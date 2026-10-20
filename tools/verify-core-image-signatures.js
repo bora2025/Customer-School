@@ -39,6 +39,7 @@ if (environmentPath) {
   if (environment.APP_VERSION !== blueprint.release?.version) throw new Error('APP_VERSION does not match the signed release blueprint');
   if (environment.POSTGRES_IMAGE !== blueprint.services?.postgres?.image) throw new Error('POSTGRES_IMAGE does not match the signed release blueprint');
 }
+if (blueprint.services?.api?.image !== blueprint.services?.worker?.image) throw new Error('API and worker images must use the exact same digest');
 const commands = [];
 for (const name of ['api', 'web', 'gateway']) {
   const image = blueprint.services?.[name]?.image || '';

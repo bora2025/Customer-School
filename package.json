@@ -9,7 +9,7 @@
     "build:core": "npm --prefix backend run build:core && npm --prefix frontend run build:core",
     "verify:core": "node tools/verify-clean-core-artifact.js",
     "verify:plugin-boundary": "node tools/verify-plugin-source-boundary.js",
-    "test:core": "node --test frontend/scripts/build-core.test.js tools/core-container-contract.test.js tools/distribution-default.test.js tools/frontend-navigation-registry.test.js tools/provision-railway-school.test.js tools/railway-container-command.test.js tools/railway-core-hosted-preflight.test.js tools/railway-iac-contract.test.js",
+    "test:core": "node --test frontend/scripts/build-core.test.js tools/core-container-contract.test.js tools/core-release-workflow.test.js tools/distribution-default.test.js tools/frontend-navigation-registry.test.js tools/generate-core-release-blueprint.test.js tools/provision-railway-school.test.js tools/railway-container-command.test.js tools/railway-core-hosted-preflight.test.js tools/railway-iac-contract.test.js",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev"
   },

@@ -26,12 +26,27 @@ const sharedStorage = {
   secretAccessKey: process.env.WATTANAM_PROVISION_S3_SECRET_ACCESS_KEY?.trim(),
   prefix: process.env.WATTANAM_PROVISION_S3_PREFIX?.trim() || `schools/${slug || 'unknown'}`,
 };
+const marketplaceTrust = {
+  MARKETPLACE_URL: process.env.WATTANAM_PROVISION_MARKETPLACE_URL?.trim(),
+  UPDATE_REPOSITORY_KEY_ID: process.env.WATTANAM_PROVISION_UPDATE_REPOSITORY_KEY_ID?.trim(),
+  UPDATE_REPOSITORY_PUBLIC_KEY: process.env.WATTANAM_PROVISION_UPDATE_REPOSITORY_PUBLIC_KEY?.trim(),
+  UPDATE_REPOSITORY_PUBLIC_KEYS_JSON: process.env.WATTANAM_PROVISION_UPDATE_REPOSITORY_PUBLIC_KEYS_JSON?.trim(),
+  ENTITLEMENT_KEY_ID: process.env.WATTANAM_PROVISION_ENTITLEMENT_KEY_ID?.trim(),
+  ENTITLEMENT_PUBLIC_KEY: process.env.WATTANAM_PROVISION_ENTITLEMENT_PUBLIC_KEY?.trim(),
+  ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON: process.env.WATTANAM_PROVISION_ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON?.trim(),
+};
+const requiredMarketplaceTrust = ['MARKETPLACE_URL', 'UPDATE_REPOSITORY_KEY_ID', 'UPDATE_REPOSITORY_PUBLIC_KEY', 'ENTITLEMENT_KEY_ID', 'ENTITLEMENT_PUBLIC_KEY'];
+const marketplaceConfigured = Object.values(marketplaceTrust).some(Boolean);
 if (!blueprintPath || !slug || !schoolName) throw new Error('--blueprint, --school-slug, and --school-name are required');
 if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error('school slug must be lowercase kebab-case');
 if (!['core', 'legacy-full'].includes(distribution)) throw new Error('--distribution must be core or legacy-full');
 if (execute && arg('confirm-slug') !== slug) throw new Error('--confirm-slug must exactly match --school-slug for execution');
 if (execute && (!sharedStorage.bucket || !sharedStorage.region)) throw new Error('WATTANAM_PROVISION_S3_BUCKET and WATTANAM_PROVISION_S3_REGION are required for split runtime execution');
 if (execute && Boolean(sharedStorage.accessKeyId) !== Boolean(sharedStorage.secretAccessKey)) throw new Error('WATTANAM_PROVISION_S3_ACCESS_KEY_ID and WATTANAM_PROVISION_S3_SECRET_ACCESS_KEY must be configured together');
+if (marketplaceConfigured) {
+  const missing = requiredMarketplaceTrust.filter((name) => !marketplaceTrust[name]);
+  if (missing.length) throw new Error(`Marketplace trust configuration is incomplete: ${missing.join(', ')}`);
+}
 
 const blueprint = JSON.parse(fs.readFileSync(blueprintPath, 'utf8'));
 if (blueprint.invariants?.tenancy !== 'one-school-per-project') throw new Error('Blueprint does not enforce one-school-per-project');
@@ -61,7 +76,7 @@ const plan = [
 ];
 
 if (!execute) {
-  process.stdout.write(`${JSON.stringify({ mode: 'dry-run', projectName, slug, distribution, release: blueprint.release, runtimeRoles: ['api', 'worker'], requiredExecutionEnvironment: ['WATTANAM_PROVISION_S3_BUCKET', 'WATTANAM_PROVISION_S3_REGION'], optionalExecutionEnvironment: ['WATTANAM_PROVISION_S3_ENDPOINT', 'WATTANAM_PROVISION_S3_ACCESS_KEY_ID', 'WATTANAM_PROVISION_S3_SECRET_ACCESS_KEY', 'WATTANAM_PROVISION_S3_PREFIX'], commands: plan.map((parts) => ['railway', ...parts]) }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ mode: 'dry-run', projectName, slug, distribution, release: blueprint.release, runtimeRoles: ['api', 'worker'], requiredExecutionEnvironment: ['WATTANAM_PROVISION_S3_BUCKET', 'WATTANAM_PROVISION_S3_REGION'], optionalExecutionEnvironment: ['WATTANAM_PROVISION_S3_ENDPOINT', 'WATTANAM_PROVISION_S3_ACCESS_KEY_ID', 'WATTANAM_PROVISION_S3_SECRET_ACCESS_KEY', 'WATTANAM_PROVISION_S3_PREFIX', ...Object.keys(marketplaceTrust).map((name) => `WATTANAM_PROVISION_${name}`)], marketplaceTrustAtomic: true, commands: plan.map((parts) => ['railway', ...parts]) }, null, 2)}\n`);
   process.exit(0);
 }
 
@@ -96,6 +111,14 @@ try {
     setSecret('worker', 'PLUGIN_STORAGE_S3_ACCESS_KEY_ID', sharedStorage.accessKeyId);
     setSecret('api', 'PLUGIN_STORAGE_S3_SECRET_ACCESS_KEY', sharedStorage.secretAccessKey);
     setSecret('worker', 'PLUGIN_STORAGE_S3_SECRET_ACCESS_KEY', sharedStorage.secretAccessKey);
+  }
+  if (marketplaceConfigured) {
+    // Apply one validated trust bundle to both runtime roles without exposing key material in argv.
+    for (const service of ['api', 'worker']) {
+      for (const [name, value] of Object.entries(marketplaceTrust)) {
+        if (value) setSecret(service, name, value);
+      }
+    }
   }
   const storageVariables = {
     PLUGIN_STORAGE_PROVIDER: 's3', PLUGIN_STORAGE_S3_BUCKET: sharedStorage.bucket,

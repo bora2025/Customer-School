@@ -109,6 +109,27 @@
       "backendTypecheck": "pass",
       "frontendTypecheck": "pass",
       "coreProductionBuild": "pass"
+      ,"immutableReleaseAndRailwayTopologyContracts": {
+        "status": "pass",
+        "tests": 44,
+        "backendBuiltOnceForApiAndWorker": true,
+        "signedDigestPinnedBlueprint": true,
+        "workerAndPersistentVolumeDeclaredInIac": true,
+        "atomicMarketplaceTrustProvisioning": true
+      }
+      ,"hostedPreflightV4": {
+        "status": "expected_fail_until_rollout",
+        "checkedAt": "2026-10-20T02:55:35.077Z",
+        "environment": "plugin-certification-20261018",
+        "evidence": ".tmp/railway-core-hosted-preflight-v4-canonical-2026-10-20.json",
+        "healthy": true,
+        "installationState": "installed",
+        "detectedFailures": [
+          "UPDATE_REPOSITORY_PUBLIC_KEY differs between API and worker",
+          "ENTITLEMENT_PUBLIC_KEY differs between API and worker",
+          "API and worker deployment image digests do not match"
+        ]
+      }
     }
   },
   "requirements": {
@@ -127,12 +148,14 @@
     {
       "priority": "P1",
       "id": "ARCH-DEPLOY-004",
+      "implementationStatus": "code_complete_hosted_rollout_pending",
       "finding": "Railway independently builds the API and worker from the same source snapshot, producing different immutable image digests even though both services run the same backend Dockerfile and source snapshot.",
       "requiredExit": "Build the backend image once in CI, publish it to a registry by digest, and configure both Railway API and worker services to deploy that exact digest. Keep the existing same-image preflight fail-closed."
     },
     {
       "priority": "P1",
       "id": "ARCH-CONFIG-005",
+      "implementationStatus": "code_complete_hosted_rollout_pending",
       "finding": "The isolated worker inherited MARKETPLACE_URL without the API role's pinned update-repository and entitlement public keys, so it crash-looped and could not process activation jobs until the trust anchors were copied manually.",
       "requiredExit": "Make Marketplace connection and signing-key rotation an atomic multi-role configuration operation, include the worker and its persistent volume in Railway IaC, and add a hosted preflight that rejects API/worker trust-anchor drift before rollout."
     }
@@ -163,6 +186,10 @@
     ,"Corrected isolated Marketplace public-origin configuration and verified Customer School rejects a production-origin approval URL before accepting the isolated-origin link flow."
     ,"Published and installed signed Organizing Management 0.23.0, activated 64 immutable migrations, updated active to 0.23.1, manually rolled back, and retained 0.23.0 after an induced execution-time migration failure."
     ,"Created and restored a fresh hosted recovery set into a separate disposable PostgreSQL database and staging directories; plugin installation version and all 64 migration records match the source."
+    ,"Added a keyless-signed core release workflow that builds the backend once and assigns its exact digest to both API and worker in the retained release blueprint."
+    ,"Expanded Railway IaC to declare a digest-pinned worker with its own persistent volume and the same preserved trust and storage configuration surface as the API."
+    ,"Added atomic API/worker Marketplace trust provisioning and a v4 hosted preflight that fingerprints runtime-equivalent trust anchors without exposing key material."
+    ,"Ran hosted preflight v4 against the isolated environment; it correctly rejected the known independent image builds and two real API/worker signing-key drifts while confirming gateway health and installation state."
   ],
   "releaseDecision": "not_certified"
 }
