@@ -1,6 +1,6 @@
 # Wattanam Lean Core and Plugin-First Architecture Plan
 
-Status: **architecture reviewed; conditionally recommended; blocking ADRs remain; planning only**  
+Status: **adopted by ADR-0008; implemented and certified in isolation**
 Written: 2026-09-11  
 Reviewed: 2026-09-11 against the current SDK/runtime, frontend host, marketplace, Railway topology,
 backup/update model, and school billing enforcement.  
@@ -12,7 +12,7 @@ Wattanam will use a **lean core, plugin-first modular-monolith architecture**. A
 
 This is the same product idea users recognize from WordPress: the initial installation is useful and manageable, but optional capabilities are progressively added through plugins. It does **not** mean an empty application. Authentication, administration, security, plugin management, recovery, billing enforcement, and other platform foundations must always remain available.
 
-This plan changes the earlier proposed DEC-004 boundary. `docs/architecture/module-boundaries.md` currently classifies attendance and academic structure as core because DEC-004 proposed that scope. After this plan is approved, DEC-004 and that classification must be amended before feature extraction begins.
+ADR-0008 accepts this plan and supersedes the business-module boundary proposed by DEC-004. Attendance, academic structure and workforce management are optional signed plugins; the permanent core boundary is defined below.
 
 ## 2. Product goals
 
@@ -388,7 +388,7 @@ and telemetry that does not expose school records.
 
 ### Phase LC-0 — Approve the boundary
 
-- [ ] Accept this lean-core decision and supersede/amend DEC-004.
+- [x] Accept this lean-core decision and supersede/amend DEC-004 through ADR-0008.
 - [ ] Update `module-boundaries.md` so attendance and academic structure are plugin-owned.
 - [ ] Decide whether minimal users include student/parent records or only login identities. Recommended: core owns generic identities and relationships; domain-specific profiles belong to plugins.
 - [ ] Decide whether Communication is one plugin or separate Announcements and Messaging plugins.

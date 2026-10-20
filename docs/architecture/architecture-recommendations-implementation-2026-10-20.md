@@ -27,6 +27,9 @@ This program advances the certified universal plugin architecture without weaken
 | Scheduled recovery and restore drill | Implemented and certified in isolation | Strict recovery-set v2 with four plugin contracts restored into `wattanam_recovery_drill`; evidence file `recovery-drill-1792472323263.json`; post-drill hosted preflight passed |
 | Publisher review and key revocation | Implemented and catalog-wide CI gate added | Marketplace two-person review/quarantine distributes revoked keys in the signed index; Customer School persists and enforces them after every trust merge; every official signed package is now verified to fail closed under publisher-key revocation |
 | Universal UI modularity and accessibility | Implemented and CI-certified | Declarative UI v2 supports bounded, cycle-safe reusable fragments; the scaffold uses them; CLI validation rejects non-universal UI before packaging; rendered pages expose named regions and sortable tables expose accessible sort state |
+| Marketplace Railway IaC | Implemented in repository and zero-change planned in isolation | `.railway/railway.ts` imports the live control-plane topology with externally managed secrets; the certification environment is already detached from deprecated Config-as-Code |
+| External KMS/HSM signing boundary | Implemented and locally verified | Marketplace supports a remote Ed25519 signing endpoint, stores only configured public keys, sends canonical payload bytes, applies a bounded timeout and verifies every returned signature before publication |
+| Third-party backend isolation | Fail-closed boundary adopted | ADR-0008 defines declarative-only and trusted in-process profiles; third-party backend entries remain rejected until a separately deployed execution service is implemented and certified |
 
 ## Hosted certification snapshot (2026-10-20)
 

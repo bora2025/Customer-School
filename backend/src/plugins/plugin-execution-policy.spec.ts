@@ -13,4 +13,8 @@ describe('plugin backend execution policy', () => {
     const env = { PLUGIN_IN_PROCESS_PUBLISHERS: 'wattanam,acme-reviewed' } as NodeJS.ProcessEnv;
     expect(pluginExecutionDecision({ publisher: 'acme-reviewed', backendEntry: 'backend/index.js' }, env).allowed).toBe(true);
   });
+  it('fails closed for isolated execution until a separate runtime is certified', () => {
+    expect(pluginExecutionDecision({ publisher: 'community', backendEntry: 'backend/index.js', executionMode: 'isolated' })).toMatchObject({ mode: 'isolated', allowed: false });
+    expect(() => assertPluginExecutionAllowed({ publisher: 'community', backendEntry: 'backend/index.js', executionMode: 'isolated' })).toThrow('Isolated plugin execution is not enabled');
+  });
 });

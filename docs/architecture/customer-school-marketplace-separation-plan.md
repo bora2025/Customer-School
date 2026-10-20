@@ -1,6 +1,6 @@
 # Customer School and Marketplace Separation Plan
 
-Status: **implementation in progress**  
+Status: **implemented and certified in isolation; production rollout pending**
 Updated: **2026-10-02**
 
 ## 1. Decision

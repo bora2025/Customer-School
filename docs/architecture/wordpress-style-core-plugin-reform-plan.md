@@ -1,6 +1,6 @@
 # Wattanam WordPress-Style Core and Plugin Directory Reform Plan
 
-Status: **proposed execution plan**  
+Status: **implemented; certification and production rollout tracked separately**
 Created: **2026-09-25**  
 Applies to: new customer schools, existing-school upgrades, Wattanam Marketplace, official and third-party plugins
 
