@@ -1,0 +1,35 @@
+{
+  "format": "wattanam-production-architecture-risk-status-v1",
+  "checkedAt": "2026-10-20T08:40:09.998Z",
+  "customerSchool": {
+    "releaseVersion": "0.1.0-7c2e6ab",
+    "signedImages": true,
+    "apiWorkerDigestParity": true,
+    "runtimeDatabaseRolesSplit": true,
+    "hostedPreflightPassed": true,
+    "legacyRootRailwayConfigRemoved": true,
+    "iacPlan": "zero-change"
+  },
+  "marketplace": {
+    "releaseVersion": "0.1.0-7210484",
+    "deploymentId": "69b3fc9c-70f8-4198-8f12-d188517cd5b3",
+    "runningReplicas": 2,
+    "artifactProvider": "s3",
+    "localArtifactVolumeMounted": false,
+    "rollbackVolumeRetained": true,
+    "concurrentReadinessPassed": 24,
+    "concurrentArtifactDownloadsPassed": 24,
+    "artifactDigestMismatches": 0,
+    "productionDependencyVulnerabilities": 0,
+    "legacyRootRailwayConfigRemoved": true,
+    "iacPlan": "zero-change"
+  },
+  "externalGates": {
+    "kmsHsmSigner": "blocked-missing-provider-endpoint-credential-and-managed-keys",
+    "twoKeyProductionRotation": "not-run-depends-on-kms-hsm-signer",
+    "localRepositoryPrivateKeyRemoval": "not-safe-until-remote-verification-passes",
+    "transactionalEmail": "blocked-missing-sendgrid-credential-and-verified-sender",
+    "isolatedThirdPartyRuntime": "gated-until-kms-rotation-and-email-certification-pass"
+  },
+  "overall": "incomplete-external-controls-required"
+}

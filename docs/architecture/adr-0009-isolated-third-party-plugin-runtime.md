@@ -32,4 +32,4 @@ Exit criteria include container-escape and SSRF tests, denial of direct database
 
 ## Dependencies
 
-Implementation may begin only after production uses immutable artifact storage, split runtime database identities, Railway IaC ownership, visible release metadata, and a remote KMS/HSM-backed repository signer with a tested overlap rotation. As of 2026-10-20, all prerequisites except the external KMS/HSM signer and its production rotation are complete.
+Implementation may begin only after production uses immutable artifact storage, split runtime database identities, Railway IaC ownership, visible release metadata, verified transactional email, and a remote KMS/HSM-backed repository signer with a tested overlap rotation. As of 2026-10-20, immutable S3 storage, split database identities, IaC ownership, release metadata, and the two-instance concurrency drill pass. External KMS/HSM provisioning, production key overlap/rollback, and transactional-email delivery certification remain incomplete, so execution-service implementation remains gated.

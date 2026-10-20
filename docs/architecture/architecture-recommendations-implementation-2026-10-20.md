@@ -44,10 +44,20 @@ The coordinated repository-signing rotation was completed in the isolated enviro
 - A fresh production database recovery point was created before mutation: `wattanam-20261020T074213Z.dump`, SHA-256 `d031d40c856e459ecb0377b9da5670cdb5d6fdbb972b9ee06568b30ca27e7d29`.
 - Customer School production runs the certified signed images. API and worker use the same backend digest, explicit plugin quotas/timeouts/revocation controls, distinct restricted database identities, and migration-owner credentials are API-only.
 - Marketplace production runs the hardened release and stores 79 verified content-addressed artifacts in the Railway S3-compatible `marketplace-artifacts` bucket. A public Academic Management artifact was downloaded after cutover and its SHA-256 matched the signed repository index.
-- Customer School and Marketplace production report no remaining services on deprecated Railway Config-as-Code. Both post-cutover IaC plans are zero-change.
-- Release version and commit metadata are configured in both production systems.
+- Marketplace deployment `69b3fc9c-70f8-4198-8f12-d188517cd5b3` runs two healthy Node 22 API replicas with no local artifact volume mount. Twenty-four concurrent readiness requests and twenty-four concurrent S3 artifact downloads passed; every downloaded package matched catalog SHA-256 `84380e07f5a6eb5e8ec8bf967648e0f872ceb575942db0522e3a353a725ede52`.
+- Customer School and Marketplace production report no remaining services on deprecated Railway Config-as-Code. Both post-cutover IaC plans are zero-change, and obsolete repository-root `railway.json` files have been removed so the CLI no longer emits the Config-as-Code retirement warning.
+- Customer School reports release `0.1.0-7c2e6ab`; Marketplace request logs report release `0.1.0-7210484`. Development release metadata is rejected by hosted preflight.
 - Remote KMS/HSM activation remains externally blocked: no production signer endpoint, bearer credential or HSM-managed Ed25519 key has been provisioned. Local private-key signing remains active; it must not be described as HSM-backed. Production overlap rotation is deferred until that external signer exists.
-- The isolated third-party execution plane is designed in ADR-0009 but remains fail-closed and unimplemented, as required by the delivery order.
+- Transactional email activation remains externally blocked: no SendGrid API credential or verified production sender has been provisioned. Recovery generation is database-rate-limited, but delivery, provider failure handling, and production recovery delivery cannot be certified until those inputs exist.
+- The isolated third-party execution plane is designed in ADR-0009 but remains fail-closed and unimplemented, as required by the delivery order. Implementation cannot begin until remote signer rotation and transactional-email certification pass.
+
+## Repository and lockfile policy
+
+- The repository-root lockfile owns orchestration dependencies and scripts.
+- Backend and frontend lockfiles own independently built production images.
+- Plugin SDK and plugin CLI lockfiles own independently published developer tools.
+- These lockfiles are intentional build boundaries, not ambiguous duplicate roots. Dockerfiles run `npm ci` against the lockfile for the component they build.
+- Generated output, local evidence, downloads, and scratch directories remain ignored. User-owned untracked files are never deleted as part of automated cleanup.
 
 ## Implemented controls
 
