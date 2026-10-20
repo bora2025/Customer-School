@@ -1,6 +1,6 @@
 {
   "format": "wattanam-architecture-recommendations-certification-v1",
-  "checkedAt": "2026-10-20T04:58:56.221Z",
+  "checkedAt": "2026-10-20T05:38:54.673Z",
   "environment": "plugin-certification-20261018",
   "productionChanged": false,
   "release": {
@@ -32,7 +32,12 @@
     "hostOverlapPhase": "pass",
     "apiWorkerParity": true,
     "oldPrimaryRetainedAsSecondary": true,
-    "marketplaceSignerCutover": "pending_explicit_sensitive_key_upload_approval",
+    "marketplaceSignerCutover": "pass",
+    "activeMarketplaceKeyId": "repository-2026-10-20-cert",
+    "retiringMarketplaceKeyId": "repository-2026-10",
+    "marketplaceDeploymentId": "184fd81f-0edc-4c35-a54b-4e4a06d543e1",
+    "dualSignatureVerification": "pass",
+    "finalHostedPreflightAt": "2026-10-20T05:38:54.673Z",
     "temporaryPrivateKeyRetained": false
   },
   "hostedPreflight": {
