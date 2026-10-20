@@ -59,7 +59,7 @@ COPY --chown=node:node --from=production-dependencies /app/node_modules ./node_m
 COPY --chown=node:node --from=production-dependencies /app/generated ./generated
 COPY --chown=node:node --from=builder /app/dist-core ./dist-core
 COPY --chown=node:node --from=builder /app/prisma/core ./prisma/core
-COPY --chown=node:node backend/scripts/db-toolkit.js backend/scripts/plugin-recovery-contract.js backend/scripts/backup-database.js backend/scripts/backup-recovery-set.js backend/scripts/restore-database.js backend/scripts/restore-recovery-set.js backend/scripts/deploy-migrations.js backend/scripts/verify-fresh-core-database.js ./scripts/
+COPY --chown=node:node backend/scripts/db-toolkit.js backend/scripts/plugin-recovery-contract.js backend/scripts/backup-database.js backend/scripts/backup-recovery-set.js backend/scripts/restore-database.js backend/scripts/restore-recovery-set.js backend/scripts/deploy-migrations.js backend/scripts/verify-fresh-core-database.js backend/scripts/provision-runtime-database-roles.js ./scripts/
 
 RUN mkdir -p /data/backups /data/plugins /data/plugin-data /data/update-state /data/marketplace-identity \
     && chown -R node:node /data /app

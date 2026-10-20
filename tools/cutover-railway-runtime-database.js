@@ -52,7 +52,7 @@ function waitForDeployment(service, environment, deploymentId, { timeoutMs = 10 
 }
 function provisionRoles(environment, database, apiPassword, workerPassword) {
   const credentials = JSON.stringify({ RUNTIME_API_DATABASE_PASSWORD: apiPassword, RUNTIME_WORKER_DATABASE_PASSWORD: workerPassword });
-  return command(['ssh', '--service', 'api', '--environment', environment, 'node', 'backend/scripts/provision-runtime-database-roles.js', '--credentials-stdin', '--execute', '--confirm-database', database], { input: credentials, json: true });
+  return command(['ssh', '--service', 'api', '--environment', environment, 'node', 'scripts/provision-runtime-database-roles.js', '--credentials-stdin', '--execute', '--confirm-database', database], { input: credentials, json: true });
 }
 function runPreflight(environment) {
   const confirmation = environment === 'production' ? '--confirm-production' : '--confirm-isolated';

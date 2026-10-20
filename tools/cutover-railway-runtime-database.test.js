@@ -2,6 +2,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { assertCutoverState, buildRuntimeUrls, databaseName, waitForDeployment } = require('./cutover-railway-runtime-database');
+const fs = require('node:fs');
+const path = require('node:path');
+
+test('invokes the provisioner at the runtime image path', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'cutover-railway-runtime-database.js'), 'utf8');
+  assert.match(source, /node', 'scripts\/provision-runtime-database-roles\.js'/);
+  assert.doesNotMatch(source, /node', 'backend\/scripts\/provision-runtime-database-roles\.js'/);
+});
 
 test('builds distinct runtime URLs without changing the database target', () => {
   const admin = 'postgresql://owner:secret@postgres.railway.internal:5432/railway?schema=public';

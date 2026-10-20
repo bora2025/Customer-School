@@ -30,6 +30,7 @@ test('core backend image includes the S3 recovery migration command', () => {
   assert.match(webpack, /'storage-migrate': '\.\/src\/storage\/storage-migrate-cli\.ts'/);
   assert.match(dockerfile, /COPY --chown=node:node --from=builder \/app\/dist-core \.\/dist-core/);
   assert.match(dockerfile, /PROCESS_ROLE.*worker.*dist-core\/worker\.js.*scripts\/deploy-migrations\.js/s);
+  assert.match(dockerfile, /backend\/scripts\/provision-runtime-database-roles\.js \.\/scripts\//, 'least-privilege role provisioner must ship in the runtime image');
 });
 
 test('frontend uses the advisory-clean Tailwind 4 build contract', () => {
