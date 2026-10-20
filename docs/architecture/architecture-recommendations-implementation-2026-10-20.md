@@ -39,6 +39,16 @@ The database cutover is complete in isolation. API and worker use different rest
 
 The coordinated repository-signing rotation was completed in the isolated environments after explicit approval. Customer School API and worker now share `repository-2026-10-20-cert` as their primary trust anchor and retain `repository-2026-10` as secondary trust. Marketplace deployment `184fd81f-0edc-4c35-a54b-4e4a06d543e1` promoted the matching primary signer while retaining the old signer for overlap. Its ready endpoint returned HTTP 200, its repository key document and signed index exposed both key IDs, and the final Customer School hosted preflight passed at `2026-10-20T05:38:54.673Z`. The temporary private key was never committed and was deleted after upload. Production was not changed.
 
+## Production rollout snapshot (2026-10-20)
+
+- A fresh production database recovery point was created before mutation: `wattanam-20261020T074213Z.dump`, SHA-256 `d031d40c856e459ecb0377b9da5670cdb5d6fdbb972b9ee06568b30ca27e7d29`.
+- Customer School production runs the certified signed images. API and worker use the same backend digest, explicit plugin quotas/timeouts/revocation controls, distinct restricted database identities, and migration-owner credentials are API-only.
+- Marketplace production runs the hardened release and stores 79 verified content-addressed artifacts in the Railway S3-compatible `marketplace-artifacts` bucket. A public Academic Management artifact was downloaded after cutover and its SHA-256 matched the signed repository index.
+- Customer School and Marketplace production report no remaining services on deprecated Railway Config-as-Code. Both post-cutover IaC plans are zero-change.
+- Release version and commit metadata are configured in both production systems.
+- Remote KMS/HSM activation remains externally blocked: no production signer endpoint, bearer credential or HSM-managed Ed25519 key has been provisioned. Local private-key signing remains active; it must not be described as HSM-backed. Production overlap rotation is deferred until that external signer exists.
+- The isolated third-party execution plane is designed in ADR-0009 but remains fail-closed and unimplemented, as required by the delivery order.
+
 ## Implemented controls
 
 - Plugin SQL uses bounded, transaction-local statement and lock timeouts. Migrations use a separately bounded policy.
