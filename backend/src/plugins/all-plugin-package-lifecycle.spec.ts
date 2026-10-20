@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writ
 import { tmpdir } from 'os';
 import path from 'path';
 import semver from 'semver';
-import { PluginPackageVerifier, VerifiedPluginPackage } from './plugin-package';
+import { PluginPackageVerifier, REVOKED_PLUGIN_KEY, VerifiedPluginPackage } from './plugin-package';
 import { PluginsService } from './plugins.service';
 
 const externalCatalog = process.env.PLUGIN_SOURCE_CATALOG
@@ -108,6 +108,12 @@ function dependencyOrder(packages: Packed[]) {
       previousPacked.push({ artifact: previousArtifact, verified: previousVerified });
     }
     expect(packed.length).toBeGreaterThanOrEqual(13);
+
+    const revoked = { wattanam: { 'catalog-lifecycle-test': REVOKED_PLUGIN_KEY } };
+    for (const item of packed) {
+      await expect(verifier.verify(item.artifact, revoked, '0.1.0'))
+        .rejects.toThrow('Publisher key is revoked: wattanam/catalog-lifecycle-test');
+    }
 
     const registry = new Map<string, any>();
     const durablePluginData = new Map(packed.map((item) => [item.verified.manifest.id, `preserved:${item.verified.manifest.id}`]));

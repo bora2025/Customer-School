@@ -44,6 +44,11 @@
     "publisherRevocationConfigured": true,
     "failures": []
   },
+  "catalogRevocationGate": {
+    "status": "pass",
+    "scope": "every official signed plugin package",
+    "expectedFailure": "Publisher key is revoked: wattanam/catalog-lifecycle-test"
+  },
   "ci": {
     "customerSchoolValidationRun": 39373458969,
     "customerSchoolValidation": "success",
