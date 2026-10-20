@@ -50,9 +50,9 @@
     "expectedFailure": "Publisher key is revoked: wattanam/catalog-lifecycle-test"
   },
   "ci": {
-    "customerSchoolValidationRun": 39373458969,
+    "customerSchoolValidationRun": 39374410100,
     "customerSchoolValidation": "success",
-    "marketplaceValidationRun": 39373800632,
+    "marketplaceValidationRun": 39374422610,
     "marketplaceValidation": "success"
   }
 }
