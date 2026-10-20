@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "recordedAt": "2026-10-19",
   "scope": "Marketplace control plane, official plugin catalog, and Customer School universal host",
-  "status": "incomplete",
+  "status": "complete",
   "freshEvidence": {
     "marketplace": {
       "unitAndContractTests": { "status": "pass", "tests": 504 },
@@ -134,6 +134,29 @@
         "apiWorkerTrustAnchorParity": true,
         "detectedFailures": []
       }
+      ,"productionSignedSplitRollout": {
+        "status": "pass",
+        "checkedAt": "2026-10-20T03:18:26.268Z",
+        "releaseVersion": "0.1.0-rc.20261020.1",
+        "topologyCommit": "61740f5",
+        "recoverySet": "wattanam-recovery-20261020T031236Z.recovery-set.json",
+        "databaseSha256": "955afc3cc437b7dd7069644c431ef6d106e79a2ff36e29ce3fb46ab222cd0942",
+        "pluginFilesSha256": "780c41bf8ae690910fab3abd2202d5835fa355ce7670b13e80c5799e182af27c",
+        "pluginDataSha256": "f677fee814a5afd11b6e0ec8968d7b02430eaa036d4d7897bfbdc1a6635f2e88",
+        "sharedStorageMigration": { "objects": 26, "bytes": 2354834, "verified": 26 },
+        "backendImageDigest": "sha256:8cee8d2cb77060d70a4394954ac161f2eda79350c769275de18216cd3278e1fe",
+        "webImageDigest": "sha256:9d174a1c9db9dcab0b91fc002c361bc893734581aba5401d508c17e3a5143ca0",
+        "gatewayImageDigest": "sha256:a8f2be8d4e43d171ac95793a5d289aac662adda6128b62d0d6ee69b6d743f1b1",
+        "apiDeployment": "2193e3ac-c355-45b2-ba04-96cc0ecd12f8",
+        "workerDeployment": "2c6b0347-e853-46fa-8d97-473f9fd12983",
+        "webDeployment": "c5ad1e0e-71b9-4649-a7d0-7064c4dd622d",
+        "gatewayDeployment": "ac0ac489-06d8-4501-85b0-69f0cba9229d",
+        "gatewayReadinessStatus": 200,
+        "apiWorkerImageParity": true,
+        "apiWorkerTrustAnchorParity": true,
+        "sharedBucketObjects": 26,
+        "destructivePlanChanges": 0
+      }
     }
   },
   "requirements": {
@@ -152,20 +175,21 @@
     {
       "priority": "P1",
       "id": "ARCH-DEPLOY-004",
-      "implementationStatus": "verified_in_isolated_signed_release",
+      "implementationStatus": "resolved_in_production",
       "finding": "Railway independently builds the API and worker from the same source snapshot, producing different immutable image digests even though both services run the same backend Dockerfile and source snapshot.",
       "requiredExit": "Build the backend image once in CI, publish it to a registry by digest, and configure both Railway API and worker services to deploy that exact digest. Keep the existing same-image preflight fail-closed."
     },
     {
       "priority": "P1",
       "id": "ARCH-CONFIG-005",
-      "implementationStatus": "verified_in_isolated_signed_release",
+      "implementationStatus": "resolved_in_production",
       "finding": "The isolated worker inherited MARKETPLACE_URL without the API role's pinned update-repository and entitlement public keys, so it crash-looped and could not process activation jobs until the trust anchors were copied manually.",
       "requiredExit": "Make Marketplace connection and signing-key rotation an atomic multi-role configuration operation, include the worker and its persistent volume in Railway IaC, and add a hosted preflight that rejects API/worker trust-anchor drift before rollout."
     },
     {
       "priority": "P1",
       "id": "ARCH-PROD-006",
+      "implementationStatus": "resolved_in_production",
       "finding": "The existing production Railway environment still runs source-built web and API services and has no separate worker service, while the signed digest-pinned split topology is verified only in the isolated certification environment.",
       "requiredExit": "Review and apply the pinned Railway IaC plan to production with a recovery point, deploy the signed blueprint images, verify API/worker digest and trust-anchor parity, and rerun non-destructive production health checks."
     }
@@ -202,6 +226,8 @@
     ,"Ran hosted preflight v4 against the isolated environment; it correctly rejected the known independent image builds and two real API/worker signing-key drifts while confirming gateway health and installation state."
     ,"Built and keyless-signed RC 0.1.0-rc.20261020.1 in GitHub Actions run 39361905981; the retained blueprint assigns backend digest sha256:8cee8d2cb77060d70a4394954ac161f2eda79350c769275de18216cd3278e1fe to both API and worker."
     ,"Deployed the signed backend digest to both isolated Railway roles, normalized and aligned their trust bundle, and passed hosted preflight v4 with identical image digests, identical trust-anchor fingerprints, HTTP 200 health, and an installed school."
+    ,"Created a verified production recovery set, migrated and checksum-verified all 26 plugin-data objects into an environment-isolated Railway bucket, and retained the original local source copy for rollback."
+    ,"Applied the pinned zero-destroy production IaC plan, deployed digest-pinned web, API, worker, and gateway services, and verified HTTP 200 readiness plus API/worker role, image, storage, and trust-anchor parity."
   ],
-  "releaseDecision": "not_certified"
+  "releaseDecision": "certified"
 }
