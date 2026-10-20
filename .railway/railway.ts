@@ -1,4 +1,4 @@
-import { defineRailway, image, postgres, preserve, project, service, volume } from "railway/iac";
+import { bucket, defineRailway, image, postgres, preserve, project, ref, service, volume } from "railway/iac";
 
 function releaseImage(name: string): ReturnType<typeof image> {
   const value = process.env[name]?.trim();
@@ -27,6 +27,20 @@ export default defineRailway(() => {
 
   const Postgres = postgres("Postgres", { region: "asia-southeast1-eqsg3a" });
   Postgres.networking = { privateNetworkEndpoint: "postgres" };
+  const pluginArtifacts = bucket("plugin-artifacts", { region: "sin" });
+  const splitRuntimeEnvironment = {
+    DATABASE_URL: ref(Postgres, "DATABASE_URL"),
+    PLUGIN_REQUIRED_RUNTIME_ROLES: "api,worker",
+    PLUGIN_STORAGE_PROVIDER: "s3",
+    PLUGIN_STORAGE_S3_ACCESS_KEY_ID: ref(pluginArtifacts, "ACCESS_KEY_ID"),
+    PLUGIN_STORAGE_S3_BUCKET: ref(pluginArtifacts, "BUCKET"),
+    PLUGIN_STORAGE_S3_ENDPOINT: ref(pluginArtifacts, "ENDPOINT"),
+    PLUGIN_STORAGE_S3_FORCE_PATH_STYLE: "false",
+    PLUGIN_STORAGE_S3_PREFIX: "plugin-data",
+    PLUGIN_STORAGE_S3_REGION: ref(pluginArtifacts, "REGION"),
+    PLUGIN_STORAGE_S3_SECRET_ACCESS_KEY: ref(pluginArtifacts, "SECRET_ACCESS_KEY"),
+    WATTANAM_DISTRIBUTION: "core",
+  };
   const apiVolume = volume("api-volume", { alerts: { usage: { "100": {}, "80": {}, "95": {} } }, allowOnlineResize: true, region: "asia-southeast1-eqsg3a", sizeMB: 50000 });
   const workerVolume = volume("worker-volume", { alerts: { usage: { "100": {}, "80": {}, "95": {} } }, allowOnlineResize: true, region: "asia-southeast1-eqsg3a", sizeMB: 50000 });
   const postgresVolume = volume("postgres-volume", { alerts: { usage: { "100": {}, "80": {}, "95": {} } }, allowOnlineResize: true, region: "asia-southeast1-eqsg3a", sizeMB: 50000 });
@@ -39,13 +53,13 @@ export default defineRailway(() => {
     source: backendRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
     volumeMounts: { "/data": apiVolume },
-    env: { ...sharedBackendEnvironment, PORT: preserve(), PUBLIC_APP_URL: preserve() },
+    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, PROCESS_ROLE: "api", PORT: preserve(), PUBLIC_APP_URL: preserve() },
   });
   const worker = service("worker", {
     source: backendRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
     volumeMounts: { "/data": workerVolume },
-    env: { ...sharedBackendEnvironment, WORKER_PORT: preserve() },
+    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, PROCESS_ROLE: "worker", WORKER_PORT: "3002" },
   });
   const gateway = service("gateway", {
     source: gatewayRelease,
@@ -54,6 +68,6 @@ export default defineRailway(() => {
   });
 
   return project("customer-school", {
-    resources: [web, api, worker, Postgres, gateway, apiVolume, workerVolume, postgresVolume],
+    resources: [web, api, worker, Postgres, gateway, pluginArtifacts, apiVolume, workerVolume, postgresVolume],
   });
 });

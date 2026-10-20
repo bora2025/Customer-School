@@ -18,6 +18,7 @@ test('Railway IaC owns the complete production topology without embedding secret
   }
 
   assert.match(source, /postgres\("Postgres"/);
+  assert.match(source, /bucket\("plugin-artifacts"/);
   assert.match(source, /volume\("api-volume"/);
   assert.match(source, /volume\("worker-volume"/);
   assert.match(source, /volume\("postgres-volume"/);
@@ -28,13 +29,14 @@ test('Railway IaC owns the complete production topology without embedding secret
   assert.match(source, /ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON:\s*preserve\(\)/);
   assert.match(source, /UPDATE_REPOSITORY_PUBLIC_KEYS_JSON:\s*preserve\(\)/);
 
-  const envBlocks = [...source.matchAll(/env:\s*\{([^}]*)\}/gs)];
-  assert.equal(envBlocks.length, 4, 'every application service must preserve its existing environment');
-  for (const [, envBlock] of envBlocks) {
-    const assignments = [...envBlock.matchAll(/:\s*([^,}]+)/g)].map((match) => match[1].trim());
-    assert.ok(assignments.length > 0);
-    assert.ok(assignments.every((value) => value === 'preserve()'), 'IaC must not contain plaintext environment values');
-  }
+  assert.match(source, /DATABASE_URL:\s*ref\(Postgres, "DATABASE_URL"\)/);
+  assert.match(source, /PLUGIN_STORAGE_S3_ACCESS_KEY_ID:\s*ref\(pluginArtifacts, "ACCESS_KEY_ID"\)/);
+  assert.match(source, /PLUGIN_STORAGE_S3_SECRET_ACCESS_KEY:\s*ref\(pluginArtifacts, "SECRET_ACCESS_KEY"\)/);
+  assert.match(source, /PLUGIN_STORAGE_S3_BUCKET:\s*ref\(pluginArtifacts, "BUCKET"\)/);
+  assert.match(source, /PLUGIN_STORAGE_S3_ENDPOINT:\s*ref\(pluginArtifacts, "ENDPOINT"\)/);
+  assert.match(source, /PROCESS_ROLE:\s*"api"/);
+  assert.match(source, /PROCESS_ROLE:\s*"worker"/);
+  assert.doesNotMatch(source, /(?:SECRET|PRIVATE_KEY|PASSWORD):\s*["'`](?!api|worker|core|s3)/, 'IaC must not embed secret values');
 });
 
 test('legacy Config-as-Code files stay non-authoritative and cannot override image commands', () => {
