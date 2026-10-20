@@ -95,6 +95,9 @@ function runtimeControlReadiness(api, worker) {
 
 function evaluate({ variables, workerVariables = {}, deployment, workerDeployment, health, installation, requireMarketplace = false, environment = null }) {
   const distribution = String(variables.WATTANAM_DISTRIBUTION || '').trim();
+  const appVersion = String(variables.APP_VERSION || '').trim().replace(/^\uFEFF/, '');
+  const workerAppVersion = String(workerVariables.APP_VERSION || '').trim().replace(/^\uFEFF/, '');
+  const installedCoreVersion = String(installation?.body?.installation?.coreVersion || '').trim();
   const publicHost = host(variables.PUBLIC_APP_URL || '');
   const marketplaceHost = host(variables.MARKETPLACE_URL || '');
   const apiDigest = deployment?.meta?.imageDigest || null;
@@ -106,6 +109,11 @@ function evaluate({ variables, workerVariables = {}, deployment, workerDeploymen
   if (String(workerVariables.WATTANAM_DISTRIBUTION || '').trim() !== 'core') failures.push('worker WATTANAM_DISTRIBUTION must be core');
   if (variables.PROCESS_ROLE !== 'api') failures.push('API PROCESS_ROLE must be api');
   if (workerVariables.PROCESS_ROLE !== 'worker') failures.push('worker PROCESS_ROLE must be worker');
+  if (!appVersion) failures.push('API APP_VERSION must be configured');
+  if (!workerAppVersion) failures.push('worker APP_VERSION must be configured');
+  else if (appVersion !== workerAppVersion) failures.push('API and worker APP_VERSION must match');
+  if (environment === 'production' && /(?:^|[-.])dev(?:$|[-.])/i.test(appVersion)) failures.push('production APP_VERSION must not be a development version');
+  if (installation?.body?.state === 'installed' && installedCoreVersion !== appVersion) failures.push('installed coreVersion must match APP_VERSION');
   if (variables.PLUGIN_REQUIRED_RUNTIME_ROLES !== 'api,worker' || workerVariables.PLUGIN_REQUIRED_RUNTIME_ROLES !== 'api,worker') failures.push('API and worker must require api,worker rollout roles');
   if (deployment?.status !== 'SUCCESS') failures.push('latest API deployment is not successful');
   if (workerDeployment?.status !== 'SUCCESS') failures.push('latest worker deployment is not successful');
@@ -117,12 +125,12 @@ function evaluate({ variables, workerVariables = {}, deployment, workerDeploymen
   if (requireMarketplace && !marketplaceHost) failures.push('MARKETPLACE_URL is missing or invalid');
   return {
     format: 'wattanam-railway-core-hosted-preflight-v4', passed: failures.length === 0, checkedAt: new Date().toISOString(), environment,
-    distribution, appVersion: variables.APP_VERSION || null, publicHost,
+    distribution, appVersion: appVersion || null, publicHost,
     marketplace: { required: requireMarketplace, configured: Boolean(marketplaceHost), host: marketplaceHost, trustAnchors: trust.anchors },
     controls: { configured: controls.configured, database: controls.database },
     runtime: { requiredRoles: ['api', 'worker'], sameImageDigest: Boolean(apiDigest && apiDigest === workerDigest), api: deploymentSummary(deployment), worker: deploymentSummary(workerDeployment) },
     health: { status: health?.status || null, service: health?.body?.service || null },
-    installation: { status: installation?.status || null, state: installation?.body?.state || null, schoolSlug: installation?.body?.installation?.schoolSlug || null, coreVersion: installation?.body?.installation?.coreVersion || null },
+    installation: { status: installation?.status || null, state: installation?.body?.state || null, schoolSlug: installation?.body?.installation?.schoolSlug || null, coreVersion: installedCoreVersion || null, versionMatchesRelease: Boolean(appVersion && installedCoreVersion === appVersion) },
     failures,
   };
 }
