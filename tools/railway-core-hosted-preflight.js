@@ -18,7 +18,7 @@ function stableJson(value) {
 }
 function canonicalTrustValue(name, value) {
   if (!value) return null;
-  const text = String(value).trim();
+  const text = String(value).trim().replace(/^\uFEFF/, '');
   if (name.endsWith('_PUBLIC_KEY')) return text.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
   if (name.endsWith('_JSON')) {
     try {
