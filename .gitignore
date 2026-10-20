@@ -72,6 +72,9 @@ jspm_packages/
 Thumbs.db
 
 # Local scratch files
+.tmp/
+400
+'createdAt'
 tmp/
 temp_settings.txt
 tools/create-customer-school-bora3.ps1
