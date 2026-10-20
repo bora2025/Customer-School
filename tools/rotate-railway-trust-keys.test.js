@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { assertParity, buildRotationValues } = require('./rotate-railway-trust-keys');
+const { assertParity, buildRotationValues, waitForDeployment } = require('./rotate-railway-trust-keys');
 
 const oldPem = '-----BEGIN PUBLIC KEY-----\nold\n-----END PUBLIC KEY-----';
 const newPem = '-----BEGIN PUBLIC KEY-----\nnew\n-----END PUBLIC KEY-----';
@@ -17,4 +17,10 @@ test('rotation removes the promoted key from the secondary bundle', () => {
 });
 test('rotation fails closed on split-runtime trust drift', () => {
   assert.throws(() => assertParity({ UPDATE_REPOSITORY_KEY_ID: 'a', UPDATE_REPOSITORY_PUBLIC_KEY: oldPem }, { UPDATE_REPOSITORY_KEY_ID: 'b', UPDATE_REPOSITORY_PUBLIC_KEY: oldPem }, 'update'), /differs between API and worker/);
+});
+test('rotation waits for each exact deployment and fails on terminal state', () => {
+  let tick = 0;
+  const result = waitForDeployment('api', 'certification', 'new', { timeoutMs: 10, intervalMs: 1, now: () => tick, pause: () => { tick += 1; }, list: () => [{ id: 'old', status: 'SUCCESS' }, { id: 'new', status: tick > 1 ? 'SUCCESS' : 'DEPLOYING' }] });
+  assert.equal(result.id, 'new');
+  assert.throws(() => waitForDeployment('worker', 'certification', 'bad', { timeoutMs: 10, now: () => 0, pause: () => {}, list: () => [{ id: 'bad', status: 'FAILED' }] }), /ended with FAILED/);
 });

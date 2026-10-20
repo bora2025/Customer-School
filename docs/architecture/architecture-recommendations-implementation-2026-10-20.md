@@ -21,18 +21,20 @@ This program advances the certified universal plugin architecture without weaken
 | Request, SQL, job, storage and notification quotas | Existing and verified | Plugin quota services and tests |
 | Durable versioned events and read models | Existing and verified | Transactional outbox, idempotent consumers and dead letters |
 | Declared event/read-model compatibility | Implemented and catalog-certified locally | SDK 1.3 manifests declare produced/consumed versions and a minimum deprecation window; runtime rejects undeclared use; Marketplace rejects consumers without a declared dependency or a compatible producer version |
-| Least-privilege API/worker database identities | Implementation ready; isolated rehearsal pending | Worker skips core migrations; API supports `MIGRATION_DATABASE_URL`; additive role provisioning CLI is guarded and tested |
+| Least-privilege API/worker database identities | Implemented and certified in isolation | RC4 runs distinct `wattanam_api` and `wattanam_worker` identities; the migration owner is API-only; 19 plugin tables were transferred; hosted preflight passed |
 | Schema-per-plugin isolation | Evaluated; namespaced-table compatibility profile retained | Moving existing installations would break immutable migration checksums and customer backups; restricted runtime identities, table-prefix validation, and bounded SQL are the safe production profile. A future remote-execution profile can opt into schemas without changing existing plugins. |
-| Automated trust rotation | Implemented; hosted drill pending | `trust:rotate:railway` stages an overlap bundle on both roles, redeploys, and runs hosted preflight |
-| Scheduled recovery and restore drill | Implemented; hosted execution pending | Worker cron creates recovery-set v2 from local or S3 storage; monthly workflow restores into a separately named rehearsal database and runs hosted preflight |
+| Automated trust rotation | Host overlap phase certified; Marketplace signer cutover requires explicit key-upload approval | `trust:rotate:railway` now waits for exact API/worker deployments, rolls back the prior trust bundle on failure, and passed hosted preflight after promoting the new public key while retaining the old key as overlap |
+| Scheduled recovery and restore drill | Implemented and certified in isolation | Strict recovery-set v2 with four plugin contracts restored into `wattanam_recovery_drill`; evidence file `recovery-drill-1792472323263.json`; post-drill hosted preflight passed |
 | Publisher review and key revocation | Implemented across Marketplace and host; hosted drill pending | Marketplace two-person review/quarantine exists and now distributes revoked keys in the signed index; Customer School persists and enforces them after every trust merge |
 | Universal UI modularity and accessibility | Implemented locally | Declarative UI v2 supports bounded, cycle-safe reusable fragments; the scaffold uses them; CLI validation rejects non-universal UI before packaging; rendered pages expose named regions and sortable tables expose accessible sort state |
 
 ## Hosted certification snapshot (2026-10-20)
 
-The isolated `plugin-certification-20261018` environment is healthy: core distribution, split API/worker services, identical image digests, gateway health, completed installation, object storage, and Marketplace trust parity all passed. Explicit quota, timeout, payload-size, and publisher-revocation controls were staged on both runtime services without triggering a deployment and are now owned by Railway IaC and the new-school provisioner.
+The isolated `plugin-certification-20261018` environment is healthy on signed release `0.1.0-rc.20261020.4`: core distribution, split API/worker services, identical backend digest `sha256:38eadf8d2c5e56a919e0326e62fe867e7b30b1ed510ceff2af9ccda2e9888416`, gateway health, completed installation, object storage, explicit quotas/timeouts, and Marketplace trust parity all passed.
 
-Certification intentionally remains failed closed on two database controls: API and worker still share one database identity, and the API has no separate `MIGRATION_DATABASE_URL`. These credentials must be created and rehearsed against an isolated restored database before switching service URLs. No production or customer database credentials were changed during this implementation pass.
+The database cutover is complete in isolation. API and worker use different restricted logins, only API receives `MIGRATION_DATABASE_URL`, and Railway IaC preserves those identities rather than restoring the PostgreSQL owner URL. A strict recovery set containing four Organizing Management package contracts was restored into the separately named `wattanam_recovery_drill` database, followed by a passing hosted preflight. Production was not changed.
+
+The host-side update-trust overlap was also rehearsed successfully. The generated private test key was never committed and has been deleted. Coordinated Marketplace signer promotion remains intentionally gated because uploading a newly generated private signing key is a separate sensitive operation requiring explicit approval.
 
 ## Implemented controls
 

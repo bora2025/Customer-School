@@ -47,6 +47,17 @@ function command(args, input) {
 function setSecret(service, environment, name, value) {
   command(['variable', 'set', name, '--stdin', '--service', service, '--environment', environment, '--skip-deploys', '--json'], `${value}\n`);
 }
+function waitForDeployment(service, environment, deploymentId, { timeoutMs = 10 * 60_000, intervalMs = 5_000, now = Date.now, pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms), list = command } = {}) {
+  const deadline = now() + timeoutMs;
+  while (now() < deadline) {
+    const deployments = list(['deployment', 'list', '--service', service, '--environment', environment, '--json']);
+    const deployment = deployments.find((item) => item.id === deploymentId);
+    if (deployment?.status === 'SUCCESS') return deployment;
+    if (deployment && ['FAILED', 'CRASHED', 'REMOVED'].includes(deployment.status)) throw new Error(`${service} deployment ${deploymentId} ended with ${deployment.status}`);
+    pause(intervalMs);
+  }
+  throw new Error(`${service} deployment ${deploymentId} did not complete within ${timeoutMs}ms`);
+}
 function main(argv = process.argv.slice(2)) {
   if (argv.includes('--help')) {
     process.stdout.write('Usage: npm run trust:rotate:railway -- --environment <name> --family <update|entitlement> --new-key-id <id> --new-public-key-file <pem> [--execute --confirm-environment <name>]\n');
@@ -72,14 +83,23 @@ function main(argv = process.argv.slice(2)) {
   const worker = command(['variables', '--service', 'worker', '--environment', environment, '--json']);
   assertParity(api, worker, family);
   const values = buildRotationValues(family, api, newKeyId, newPublicKey);
+  const original = Object.fromEntries(Object.values(FAMILIES[family]).map((name) => [name, api[name] || '']));
   // Stage the complete overlap bundle on both roles before either role is redeployed.
   for (const service of ['api', 'worker']) for (const [name, value] of Object.entries(values)) setSecret(service, environment, name, value);
-  for (const service of ['api', 'worker']) command(['redeploy', '--service', service, '--environment', environment, '--yes', '--json']);
-  const confirmationFlag = environment === 'production' ? '--confirm-production' : '--confirm-isolated';
-  const preflight = spawnSync(process.execPath, [path.join(__dirname, 'railway-core-hosted-preflight.js'), '--environment', environment, confirmationFlag, environment, '--require-marketplace'], { encoding: 'utf8' });
-  if (preflight.status !== 0) throw new Error(`Hosted preflight failed after rotation: ${(preflight.stderr || preflight.stdout).trim()}`);
-  process.stdout.write(preflight.stdout);
+  try {
+    const deployments = Object.fromEntries(['api', 'worker'].map((service) => [service, command(['redeploy', '--service', service, '--environment', environment, '--yes', '--json']).id]));
+    for (const service of ['api', 'worker']) waitForDeployment(service, environment, deployments[service]);
+    const confirmationFlag = environment === 'production' ? '--confirm-production' : '--confirm-isolated';
+    const preflight = spawnSync(process.execPath, [path.join(__dirname, 'railway-core-hosted-preflight.js'), '--environment', environment, confirmationFlag, environment, '--require-marketplace'], { encoding: 'utf8' });
+    if (preflight.status !== 0) throw new Error(`Hosted preflight failed after rotation: ${(preflight.stderr || preflight.stdout).trim()}`);
+    process.stdout.write(preflight.stdout);
+  } catch (error) {
+    for (const service of ['api', 'worker']) for (const [name, value] of Object.entries(original)) setSecret(service, environment, name, value);
+    const rollbacks = Object.fromEntries(['api', 'worker'].map((service) => [service, command(['redeploy', '--service', service, '--environment', environment, '--yes', '--json']).id]));
+    for (const service of ['api', 'worker']) waitForDeployment(service, environment, rollbacks[service]);
+    throw new Error(`trust rotation failed and the prior trust bundle was restored: ${error.message}`);
+  }
 }
 
 if (require.main === module) { try { main(); } catch (error) { process.stderr.write(`Trust rotation failed: ${error.message}\n`); process.exitCode = 1; } }
-module.exports = { assertParity, buildRotationValues, main, normalizePem, parseSecondary, railwayBinary };
+module.exports = { assertParity, buildRotationValues, main, normalizePem, parseSecondary, railwayBinary, waitForDeployment };

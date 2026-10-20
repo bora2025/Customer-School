@@ -1,0 +1,53 @@
+{
+  "format": "wattanam-architecture-recommendations-certification-v1",
+  "checkedAt": "2026-10-20T04:58:56.221Z",
+  "environment": "plugin-certification-20261018",
+  "productionChanged": false,
+  "release": {
+    "version": "0.1.0-rc.20261020.4",
+    "commit": "9de8ee2061920c94116ff191622d49a329676e9c",
+    "signedReleaseRun": 39371598232,
+    "backendImageDigest": "sha256:38eadf8d2c5e56a919e0326e62fe867e7b30b1ed510ceff2af9ccda2e9888416",
+    "apiWorkerImageParity": true
+  },
+  "databaseIsolation": {
+    "status": "pass",
+    "apiRole": "wattanam_api",
+    "workerRole": "wattanam_worker",
+    "runtimeIdentitiesDistinct": true,
+    "migrationIdentityApiOnly": true,
+    "pluginTablesTransferred": 19,
+    "workerCreatePrivilege": false
+  },
+  "recoveryDrill": {
+    "status": "pass",
+    "targetDatabase": "wattanam_recovery_drill",
+    "journalFile": "wattanam-recovery-20261020T045725Z.recovery-set.json",
+    "journalCreatedAt": "2026-10-20T04:57:26.392Z",
+    "pluginContractCount": 4,
+    "evidenceFile": "recovery-drill-1792472323263.json",
+    "completedAt": "2026-10-20T04:58:43.263Z"
+  },
+  "trustRotation": {
+    "hostOverlapPhase": "pass",
+    "apiWorkerParity": true,
+    "oldPrimaryRetainedAsSecondary": true,
+    "marketplaceSignerCutover": "pending_explicit_sensitive_key_upload_approval",
+    "temporaryPrivateKeyRetained": false
+  },
+  "hostedPreflight": {
+    "format": "wattanam-railway-core-hosted-preflight-v4",
+    "passed": true,
+    "healthStatus": 200,
+    "installationState": "installed",
+    "quotaAndTimeoutControlsConfigured": true,
+    "publisherRevocationConfigured": true,
+    "failures": []
+  },
+  "ci": {
+    "customerSchoolValidationRun": 39371584305,
+    "customerSchoolValidation": "success",
+    "marketplaceValidationRun": 39373420050,
+    "marketplaceValidation": "in_progress"
+  }
+}
