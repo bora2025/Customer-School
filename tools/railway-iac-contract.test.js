@@ -24,6 +24,7 @@ test('Railway IaC owns the complete production topology without embedding secret
   assert.match(source, /volumeMounts:\s*\{\s*"\/data": apiVolume\s*\}/);
   assert.match(source, /volumeMounts:\s*\{\s*"\/data": workerVolume\s*\}/);
   assert.match(source, /PLUGIN_REQUIRED_RUNTIME_ROLES:\s*preserve\(\)/);
+  assert.match(source, /RAILWAY_DOCKERFILE_PATH:\s*preserve\(\)/);
   assert.match(source, /ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON:\s*preserve\(\)/);
   assert.match(source, /UPDATE_REPOSITORY_PUBLIC_KEYS_JSON:\s*preserve\(\)/);
 
