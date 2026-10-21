@@ -6,6 +6,7 @@ import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { Roles } from './auth/roles.decorator';
+import { fetchSafeImage } from './security/safe-image-proxy';
 
 @Controller()
 export class AppController {
@@ -55,59 +56,17 @@ export class AppController {
       throw new BadRequestException('url query parameter is required');
     }
 
-    // Only allow http/https image URLs
-    let parsed: URL;
     try {
-      parsed = new URL(url);
-    } catch {
-      throw new BadRequestException('Invalid URL');
-    }
-
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new BadRequestException('Only HTTP/HTTPS URLs are allowed');
-    }
-
-    // Block private/internal IPs to prevent SSRF
-    const hostname = parsed.hostname;
-    if (
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname === '0.0.0.0' ||
-      hostname.startsWith('10.') ||
-      hostname.startsWith('192.168.') ||
-      hostname.startsWith('172.') ||
-      hostname === '::1' ||
-      hostname === '[::1]'
-    ) {
-      throw new BadRequestException('Cannot proxy internal URLs');
-    }
-
-    try {
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'SchoolSync-ImageProxy/1.0' },
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (!response.ok) {
-        res.status(response.status).send('Failed to fetch image');
-        return;
-      }
-
-      const contentType = response.headers.get('content-type') || 'image/jpeg';
-      if (!contentType.startsWith('image/')) {
-        throw new BadRequestException('URL does not point to an image');
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer());
+      const image = await fetchSafeImage(url);
       res.set({
-        'Content-Type': contentType,
+        'Content-Type': image.contentType,
         'Cache-Control': 'public, max-age=86400',
         'Access-Control-Allow-Origin': '*',
+        'X-Content-Type-Options': 'nosniff',
       });
-      res.send(buffer);
-    } catch (err: any) {
-      if (err instanceof BadRequestException) throw err;
-      res.status(502).send('Failed to fetch image');
+      res.send(image.buffer);
+    } catch {
+      throw new BadRequestException('Image URL is unavailable or not permitted');
     }
   }
 }
