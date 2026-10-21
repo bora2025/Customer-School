@@ -37,6 +37,33 @@ describe('runtime environment', () => {
     })).toThrow('CORS_ORIGINS');
   });
 
+  it('requires an explicit distribution in production', () => {
+    expect(() => readRuntimeConfig({
+      ...baseEnvironment,
+      NODE_ENV: 'production',
+      JWT_SECRET: 'a-unique-production-secret-with-more-than-32-characters',
+      CORS_ORIGINS: 'https://school.example.com',
+    })).toThrow('WATTANAM_DISTRIBUTION is required in production');
+  });
+
+  it('requires a time-bounded approval for production legacy-full compatibility', () => {
+    const production = {
+      ...baseEnvironment,
+      NODE_ENV: 'production',
+      JWT_SECRET: 'a-unique-production-secret-with-more-than-32-characters',
+      CORS_ORIGINS: 'https://school.example.com',
+      WATTANAM_DISTRIBUTION: 'legacy-full',
+    };
+    expect(() => readRuntimeConfig(production)).toThrow('LEGACY_FULL_APPROVAL_REASON');
+    expect(() => readRuntimeConfig({ ...production, LEGACY_FULL_APPROVAL_REASON: 'migration rollback' }))
+      .toThrow('LEGACY_FULL_APPROVED_UNTIL');
+    expect(readRuntimeConfig({
+      ...production,
+      LEGACY_FULL_APPROVAL_REASON: 'existing school migration',
+      LEGACY_FULL_APPROVED_UNTIL: '2099-12-31',
+    }).distribution).toBe('legacy-full');
+  });
+
   /* The gateway variant exists because @WebSocketGateway decorators run while the module graph
    * loads, before either entry point's bootstrap() reaches readRuntimeConfig(). If it threw there,
    * a missing CORS_ORIGINS would be reported from inside an unrelated feature module. */
@@ -117,9 +144,7 @@ describe('runtime environment', () => {
     expect(() => readRuntimeConfig({ ...baseEnvironment, WORKER_PORT: '70000' })).toThrow('PORT');
   });
 
-  /* legacy-full is the default so an upgraded school, which never sets the variable, keeps every
-   * module it has (LC2-002). Anything unrecognised stops startup rather than guessing (LC2-007). */
-  it('validates the distribution and keeps legacy-full as the default', () => {
+  it('validates the distribution and keeps the compatibility default outside production', () => {
     expect(getDistribution({})).toBe('legacy-full');
     expect(getDistribution({ WATTANAM_DISTRIBUTION: '  ' })).toBe('legacy-full');
     expect(getDistribution({ WATTANAM_DISTRIBUTION: 'core' })).toBe('core');

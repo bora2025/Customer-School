@@ -97,14 +97,31 @@ export function runsBackgroundJobs(env: NodeJS.ProcessEnv = process.env): boolea
   return getProcessRole(env) !== 'api';
 }
 
-/**
- * The feature set this installation composes (lean-core checklist LC2-001). `legacy-full` is every
- * built-in module and stays the default, so an upgraded school, which never sets the variable, keeps
- * what it has until it is explicitly migrated (LC2-002). `core` is the lean core alone.
- */
+/** Select the installed feature set. Production is fail-closed: it must declare the distribution,
+ * and legacy compatibility requires a named, time-bounded exception. Development/test retain the
+ * old default so source checkouts and migration tooling remain backward compatible. */
 export function getDistribution(env: NodeJS.ProcessEnv = process.env): Distribution {
-  const value = env.WATTANAM_DISTRIBUTION?.trim().toLowerCase() || 'legacy-full';
+  const nodeEnv = parseNodeEnvironment(env.NODE_ENV);
+  const configured = env.WATTANAM_DISTRIBUTION?.trim().toLowerCase();
+  if (nodeEnv === 'production' && !configured) {
+    throw new Error('WATTANAM_DISTRIBUTION is required in production');
+  }
+  const value = configured || 'legacy-full';
   if (!['core', 'legacy-full'].includes(value)) throw new Error(`WATTANAM_DISTRIBUTION must be core or legacy-full (got "${value}")`);
+  if (nodeEnv === 'production' && value === 'legacy-full') {
+    const reason = env.LEGACY_FULL_APPROVAL_REASON?.trim();
+    const approvedUntil = env.LEGACY_FULL_APPROVED_UNTIL?.trim();
+    if (!reason || reason.length < 8) {
+      throw new Error('LEGACY_FULL_APPROVAL_REASON is required for production legacy-full mode');
+    }
+    if (!approvedUntil || !/^\d{4}-\d{2}-\d{2}$/.test(approvedUntil)) {
+      throw new Error('LEGACY_FULL_APPROVED_UNTIL must be a YYYY-MM-DD date for production legacy-full mode');
+    }
+    const expiry = Date.parse(`${approvedUntil}T23:59:59.999Z`);
+    if (!Number.isFinite(expiry) || expiry < Date.now()) {
+      throw new Error('LEGACY_FULL_APPROVED_UNTIL has expired');
+    }
+  }
   return value as Distribution;
 }
 

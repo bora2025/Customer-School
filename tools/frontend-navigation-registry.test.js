@@ -46,7 +46,7 @@ test('LC2-008: plugin navigation requires an identified contribution', async () 
 
 test('LC2-008: frontend distribution validation is explicit and upgrade-safe', async () => {
   const { frontendDistribution } = await registry();
-  assert.equal(frontendDistribution(undefined), 'legacy-full');
+  assert.equal(frontendDistribution(undefined), 'core');
   assert.equal(frontendDistribution(' CORE '), 'core');
   assert.throws(
     () => frontendDistribution('lean'),

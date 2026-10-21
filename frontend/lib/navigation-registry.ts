@@ -98,7 +98,9 @@ export function isCoreNavigationHref(href: string): boolean {
 }
 
 export function frontendDistribution(value = process.env.NEXT_PUBLIC_WATTANAM_DISTRIBUTION): FrontendDistribution {
-  const normalized = value?.trim().toLowerCase() || 'legacy-full';
+  // UI exposure fails closed. The API remains authoritative and reports legacy-full explicitly
+  // for approved migration installations.
+  const normalized = value?.trim().toLowerCase() || 'core';
   if (normalized !== 'core' && normalized !== 'legacy-full') {
     throw new Error(`NEXT_PUBLIC_WATTANAM_DISTRIBUTION must be core or legacy-full (got "${normalized}")`);
   }

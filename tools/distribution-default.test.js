@@ -15,8 +15,9 @@ test('LC2-002: legacy compatibility stays explicit while every new deployment pa
   const rootExample = source('.env.example');
   const backendExample = source('backend/.env.example');
 
-  // The runtime keeps the legacy default solely for existing-school compatibility.
-  assert.match(environment, /WATTANAM_DISTRIBUTION\?\.trim\(\)\.toLowerCase\(\) \|\| 'legacy-full'/);
+  // Production fails closed when the distribution is missing and requires a bounded legacy waiver.
+  assert.match(environment, /WATTANAM_DISTRIBUTION is required in production/);
+  assert.match(environment, /LEGACY_FULL_APPROVED_UNTIL/);
   assert.equal((compose.match(/WATTANAM_DISTRIBUTION: core/g) || []).length, 5);
   assert.doesNotMatch(compose, /legacy-full/);
   assert.match(backendImage, /ENV WATTANAM_DISTRIBUTION=core/);

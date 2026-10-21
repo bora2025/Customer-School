@@ -17,6 +17,10 @@ const workspace = arg('workspace');
 // Every newly provisioned school starts as a lean core. Existing schools that still need the
 // compatibility bundle must opt in explicitly with --distribution legacy-full while they migrate.
 const distribution = arg('distribution') || 'core';
+const legacyApproval = {
+  reason: arg('legacy-approval-reason')?.trim(),
+  approvedUntil: arg('legacy-approved-until')?.trim(),
+};
 const execute = process.argv.includes('--execute');
 const sharedStorage = {
   bucket: process.env.WATTANAM_PROVISION_S3_BUCKET?.trim(),
@@ -40,6 +44,12 @@ const marketplaceConfigured = Object.values(marketplaceTrust).some(Boolean);
 if (!blueprintPath || !slug || !schoolName) throw new Error('--blueprint, --school-slug, and --school-name are required');
 if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error('school slug must be lowercase kebab-case');
 if (!['core', 'legacy-full'].includes(distribution)) throw new Error('--distribution must be core or legacy-full');
+if (distribution === 'legacy-full') {
+  if (!legacyApproval.reason || legacyApproval.reason.length < 8) throw new Error('--legacy-approval-reason is required for legacy-full');
+  if (!legacyApproval.approvedUntil || !/^\d{4}-\d{2}-\d{2}$/.test(legacyApproval.approvedUntil)) throw new Error('--legacy-approved-until must be a YYYY-MM-DD date for legacy-full');
+  const expiry = Date.parse(`${legacyApproval.approvedUntil}T23:59:59.999Z`);
+  if (!Number.isFinite(expiry) || expiry < Date.now()) throw new Error('--legacy-approved-until must be in the future');
+}
 if (execute && arg('confirm-slug') !== slug) throw new Error('--confirm-slug must exactly match --school-slug for execution');
 if (execute && (!sharedStorage.bucket || !sharedStorage.region)) throw new Error('WATTANAM_PROVISION_S3_BUCKET and WATTANAM_PROVISION_S3_REGION are required for split runtime execution');
 if (execute && Boolean(sharedStorage.accessKeyId) !== Boolean(sharedStorage.secretAccessKey)) throw new Error('WATTANAM_PROVISION_S3_ACCESS_KEY_ID and WATTANAM_PROVISION_S3_SECRET_ACCESS_KEY must be configured together');
@@ -76,7 +86,7 @@ const plan = [
 ];
 
 if (!execute) {
-  process.stdout.write(`${JSON.stringify({ mode: 'dry-run', projectName, slug, distribution, release: blueprint.release, runtimeRoles: ['api', 'worker'], requiredExecutionEnvironment: ['WATTANAM_PROVISION_S3_BUCKET', 'WATTANAM_PROVISION_S3_REGION'], optionalExecutionEnvironment: ['WATTANAM_PROVISION_S3_ENDPOINT', 'WATTANAM_PROVISION_S3_ACCESS_KEY_ID', 'WATTANAM_PROVISION_S3_SECRET_ACCESS_KEY', 'WATTANAM_PROVISION_S3_PREFIX', ...Object.keys(marketplaceTrust).map((name) => `WATTANAM_PROVISION_${name}`)], marketplaceTrustAtomic: true, commands: plan.map((parts) => ['railway', ...parts]) }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ mode: 'dry-run', projectName, slug, distribution, ...(distribution === 'legacy-full' ? { legacyApproval } : {}), release: blueprint.release, runtimeRoles: ['api', 'worker'], requiredExecutionEnvironment: ['WATTANAM_PROVISION_S3_BUCKET', 'WATTANAM_PROVISION_S3_REGION'], optionalExecutionEnvironment: ['WATTANAM_PROVISION_S3_ENDPOINT', 'WATTANAM_PROVISION_S3_ACCESS_KEY_ID', 'WATTANAM_PROVISION_S3_SECRET_ACCESS_KEY', 'WATTANAM_PROVISION_S3_PREFIX', ...Object.keys(marketplaceTrust).map((name) => `WATTANAM_PROVISION_${name}`)], marketplaceTrustAtomic: true, commands: plan.map((parts) => ['railway', ...parts]) }, null, 2)}\n`);
   process.exit(0);
 }
 
@@ -135,21 +145,25 @@ try {
     PLUGIN_STORAGE_MAX_FILE_BYTES: '1048576', PLUGIN_STORAGE_MAX_TOTAL_BYTES: '104857600',
     PLUGIN_REVOKED_PUBLISHER_KEYS_JSON: '[]',
   };
+  const legacyApprovalVariables = distribution === 'legacy-full' ? {
+    LEGACY_FULL_APPROVAL_REASON: legacyApproval.reason,
+    LEGACY_FULL_APPROVED_UNTIL: legacyApproval.approvedUntil,
+  } : {};
   setVariables('api', {
     NODE_ENV: 'production', PORT: '3001', APP_VERSION: blueprint.release.version, GIT_COMMIT: blueprint.release.commit,
     // New schools are core-first. legacy-full is an explicit migration/rollback compatibility mode.
-    WATTANAM_DISTRIBUTION: distribution, PROCESS_ROLE: 'api', PLUGIN_REQUIRED_RUNTIME_ROLES: 'api,worker',
+    WATTANAM_DISTRIBUTION: distribution, ...legacyApprovalVariables, PROCESS_ROLE: 'api', PLUGIN_REQUIRED_RUNTIME_ROLES: 'api,worker',
     DATABASE_URL: '${{Postgres.DATABASE_URL}}', CORS_ORIGINS: `https://${domain}`, PUBLIC_APP_URL: `https://${domain}`, COOKIE_SECURE: 'true',
     BACKUP_DIR: '/data/backups', PLUGIN_DIR: '/data/plugins', PLUGIN_DATA_DIR: '/data/plugin-data', ...storageVariables, ...pluginRuntimeControls,
   });
   setVariables('worker', {
     NODE_ENV: 'production', WORKER_PORT: '3002', APP_VERSION: blueprint.release.version, GIT_COMMIT: blueprint.release.commit,
-    WATTANAM_DISTRIBUTION: distribution, PROCESS_ROLE: 'worker', PLUGIN_REQUIRED_RUNTIME_ROLES: 'api,worker',
+    WATTANAM_DISTRIBUTION: distribution, ...legacyApprovalVariables, PROCESS_ROLE: 'worker', PLUGIN_REQUIRED_RUNTIME_ROLES: 'api,worker',
     DATABASE_URL: '${{Postgres.DATABASE_URL}}', CORS_ORIGINS: `https://${domain}`, COOKIE_SECURE: 'true',
     BACKUP_DIR: '/data/backups', PLUGIN_DIR: '/data/plugins',
     PLUGIN_DATA_DIR: '/data/plugin-data', ...storageVariables, ...pluginRuntimeControls,
   });
-  setVariables('web', { NODE_ENV: 'production', WATTANAM_DISTRIBUTION: distribution, NEXT_PUBLIC_WATTANAM_DISTRIBUTION: distribution, PORT: '3000', API_URL: 'http://${{api.RAILWAY_PRIVATE_DOMAIN}}:3001', NEXT_PUBLIC_API_URL: '' });
+  setVariables('web', { NODE_ENV: 'production', WATTANAM_DISTRIBUTION: distribution, NEXT_PUBLIC_WATTANAM_DISTRIBUTION: distribution, ...legacyApprovalVariables, PORT: '3000', API_URL: 'http://${{api.RAILWAY_PRIVATE_DOMAIN}}:3001', NEXT_PUBLIC_API_URL: '' });
   setVariables('gateway', { API_UPSTREAM: '${{api.RAILWAY_PRIVATE_DOMAIN}}:3001', WEB_UPSTREAM: '${{web.RAILWAY_PRIVATE_DOMAIN}}:3000' });
   journal.gatewayOrigin = `https://${domain}`;
   journal.completedAt = new Date().toISOString();
