@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../lib/api';
 import { resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
@@ -18,7 +18,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
   source: { method: 'POST' | 'PUT' | 'PATCH'; path: string };
   params: Record<string, string>;
   fields: Field[];
-  options?: { submitLabel?: string; confirmation?: string; successMessage?: string; successRoute?: string; collapsible?: boolean; defaultCollapsed?: boolean; triggerLabel?: string };
+  options?: { submitLabel?: string; confirmation?: string; successMessage?: string; successRoute?: string; collapsible?: boolean; defaultCollapsed?: boolean; triggerLabel?: string; idempotencyField?: string; idempotencyPrefix?: string };
   initialData?: unknown;
   onSuccess(result: unknown): void | Promise<void>;
 }) {
@@ -30,6 +30,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(!(options?.collapsible && options?.defaultCollapsed !== false));
+  const commandKey = useRef('');
   useEffect(() => { const next: Record<string, unknown> = {}; fields.forEach((field) => {
     const value = initial[field.id] ?? field.defaultValue;
     next[field.id] = field.type === 'json' && value && typeof value === 'object'
@@ -70,6 +71,10 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
         field.type === 'number' && values[field.id] !== '' ? Number(values[field.id])
           : field.type === 'json' ? JSON.parse(String(values[field.id])) : values[field.id],
       ]));
+      if (options?.idempotencyField) {
+        commandKey.current ||= `${options.idempotencyPrefix || pluginId}:${globalThis.crypto.randomUUID()}`;
+        body[options.idempotencyField] = commandKey.current;
+      }
       const routeValues = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value ?? '')]));
       const endpoint = `/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(source.path, { ...routeValues, ...params })}`;
       const response = await apiFetch(endpoint, { method: source.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -79,6 +84,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
         throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message || `Request failed (${response.status})`);
       }
       setSuccess(options?.successMessage || 'Saved successfully.');
+      commandKey.current = '';
       await onSuccess(result);
       if (options?.successRoute && result && typeof result === 'object' && !Array.isArray(result)) {
         const destination = resolvePluginSourcePath(options.successRoute, Object.fromEntries(Object.entries(result as Record<string, unknown>).map(([key, value]) => [key, String(value ?? '')])));
