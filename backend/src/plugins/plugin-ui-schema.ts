@@ -276,13 +276,15 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           const field = object(candidateField, `form fields[${fieldIndex}]`);
           const fieldId = string(field.id, 'form field id', 100);
           const fieldType = string(field.type, 'form field type', 30);
-          if (!ID.test(fieldId) || fieldIds.has(fieldId) || !['text', 'email', 'password', 'number', 'date', 'datetime', 'select', 'textarea', 'json', 'checkbox'].includes(fieldType)) throw new BadRequestException('Plugin UI form field id or type is invalid');
+          if (!ID.test(fieldId) || fieldIds.has(fieldId) || !['text', 'email', 'password', 'number', 'date', 'datetime', 'select', 'textarea', 'json', 'checkbox', 'file'].includes(fieldType)) throw new BadRequestException('Plugin UI form field id or type is invalid');
           fieldIds.add(fieldId);
           string(field.label, 'form field label', 120);
           if (field.jsonShape !== undefined && (fieldType !== 'json' || !['object', 'array', 'any'].includes(String(field.jsonShape)))) throw new BadRequestException('Plugin UI form jsonShape is invalid');
           if (field.defaultValue !== undefined) inspectSafeJson(field.defaultValue, `form fields[${fieldIndex}].defaultValue`);
           for (const booleanKey of ['required', 'disabled'] as const) if (field[booleanKey] !== undefined && typeof field[booleanKey] !== 'boolean') throw new BadRequestException(`Plugin UI form ${booleanKey} must be boolean`);
-          for (const numericKey of ['min', 'max', 'minLength', 'maxLength'] as const) if (field[numericKey] !== undefined && typeof field[numericKey] !== 'number') throw new BadRequestException(`Plugin UI form ${numericKey} must be numeric`);
+          for (const numericKey of ['min', 'max', 'minLength', 'maxLength', 'maxBytes'] as const) if (field[numericKey] !== undefined && typeof field[numericKey] !== 'number') throw new BadRequestException(`Plugin UI form ${numericKey} must be numeric`);
+          if (field.accept !== undefined) string(field.accept, 'form file accept', 200);
+          if (field.helpText !== undefined) string(field.helpText, 'form field help text', 500);
           if (fieldType === 'select') {
             if (!Array.isArray(field.options) || field.options.length < 1 || field.options.length > 100) throw new BadRequestException('Plugin UI select requires 1 to 100 options');
             field.options.forEach((choice, choiceIndex) => {

@@ -166,6 +166,12 @@ describe('Plugin UI v2 schema', () => {
     expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('form field id or type');
   });
 
+  it('allows bounded text-file fields for universal CSV imports', () => {
+    const value: any = valid();
+    value.pages[0].components[1].fields = [{ id: 'csv', type: 'file', label: 'CSV file', required: true, accept: '.csv,text/csv', maxBytes: 2097152, helpText: 'Up to 2,000 rows.' }];
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[1].fields[0].type).toBe('file');
+  });
+
   catalogIt('wattanam.document-designer')('validates the Document Designer edit page against its declared permissions', () => {
     const root = pluginRoot('wattanam.document-designer');
     const descriptor = JSON.parse(readFileSync(path.join(root, 'frontend/page.json'), 'utf8'));

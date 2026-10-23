@@ -6,8 +6,9 @@ import { apiFetch } from '../../lib/api';
 import { resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
 
 type Field = {
-  id: string; type: 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime' | 'select' | 'textarea' | 'json' | 'checkbox'; label: string;
+  id: string; type: 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime' | 'select' | 'textarea' | 'json' | 'checkbox' | 'file'; label: string;
   required?: boolean; disabled?: boolean; min?: number; max?: number; minLength?: number; maxLength?: number;
+  accept?: string; maxBytes?: number; helpText?: string;
   jsonShape?: 'object' | 'array' | 'any'; defaultValue?: unknown;
   options?: Array<{ label: string; value: string }>; visibleWhen?: { field: string; equals: string | number | boolean };
 };
@@ -25,6 +26,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
   const router = useRouter();
   const initial = useMemo(() => initialData && typeof initialData === 'object' && !Array.isArray(initialData) ? initialData as Record<string, unknown> : {}, [initialData]);
   const [values, setValues] = useState<Record<string, unknown>>({});
+  const [fileNames, setFileNames] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState('');
   const [success, setSuccess] = useState('');
@@ -59,6 +61,28 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
       else if (field.type === 'number' && text !== '' && (!Number.isFinite(Number(text)) || (field.min !== undefined && Number(text) < field.min) || (field.max !== undefined && Number(text) > field.max))) next[field.id] = `Enter a number${field.min !== undefined ? ` from ${field.min}` : ''}${field.max !== undefined ? ` to ${field.max}` : ''}.`;
     });
     setErrors(next); return Object.keys(next).length === 0;
+  }
+
+  async function selectFile(field: Field, file?: File) {
+    setErrors((current) => { const next = { ...current }; delete next[field.id]; return next; });
+    if (!file) {
+      setValues((current) => ({ ...current, [field.id]: '' }));
+      setFileNames((current) => ({ ...current, [field.id]: '' }));
+      return;
+    }
+    if (field.maxBytes !== undefined && file.size > field.maxBytes) {
+      setValues((current) => ({ ...current, [field.id]: '' }));
+      setFileNames((current) => ({ ...current, [field.id]: file.name }));
+      setErrors((current) => ({ ...current, [field.id]: `Choose a file no larger than ${Math.ceil(field.maxBytes! / 1024)} KiB.` }));
+      return;
+    }
+    try {
+      const content = await file.text();
+      setValues((current) => ({ ...current, [field.id]: content }));
+      setFileNames((current) => ({ ...current, [field.id]: file.name }));
+    } catch {
+      setErrors((current) => ({ ...current, [field.id]: 'The selected file could not be read.' }));
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -100,11 +124,14 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
     <div className="space-y-4 px-6" aria-live="polite">
     {serverError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{serverError}</div>}
     {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{success}</div>}
-    </div><div className="grid gap-5 px-6 sm:grid-cols-2">{fields.filter(visible).map((field) => <label key={field.id} className={`block text-sm font-medium text-slate-700 ${field.type === 'textarea' || field.type === 'json' ? 'sm:col-span-2' : ''}`}>{field.label}{field.required && <span aria-hidden="true" className="text-red-600"> *</span>}
+    </div><div className="grid gap-5 px-6 sm:grid-cols-2">{fields.filter(visible).map((field) => <label key={field.id} className={`block text-sm font-medium text-slate-700 ${field.type === 'textarea' || field.type === 'json' || field.type === 'file' ? 'sm:col-span-2' : ''}`}>{field.label}{field.required && <span aria-hidden="true" className="text-red-600"> *</span>}
       {field.type === 'textarea' || field.type === 'json' ? <textarea className={`mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 ${field.type === 'json' ? 'min-h-64 font-mono text-xs' : 'min-h-28'}`} value={String(values[field.id] ?? '')} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />
       : field.type === 'select' ? <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={String(values[field.id] ?? '')} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}><option value="">Select…</option>{field.options?.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select>
       : field.type === 'checkbox' ? <input className="ml-3" type="checkbox" checked={Boolean(values[field.id])} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.checked }))} />
+      : field.type === 'file' ? <input className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:font-semibold file:text-indigo-700" type="file" accept={field.accept} disabled={field.disabled || busy} onChange={(event) => void selectFile(field, event.target.files?.[0])} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />
       : <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" type={field.type === 'datetime' ? 'datetime-local' : field.type} value={String(values[field.id] ?? '')} disabled={field.disabled || busy} min={field.min} max={field.max} minLength={field.minLength} maxLength={field.maxLength} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />}
+      {field.type === 'file' && fileNames[field.id] && <span className="mt-1 block text-xs font-normal text-slate-500">Selected: {fileNames[field.id]}</span>}
+      {field.helpText && <span className="mt-1 block text-xs font-normal text-slate-500">{field.helpText}</span>}
       {errors[field.id] && <span id={`${field.id}-error`} className="mt-1 block text-xs font-normal text-red-600">{errors[field.id]}</span>}
     </label>)}</div>
     <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-6 py-4"><button className="btn btn-primary min-w-32" type="submit" disabled={busy} aria-busy={busy}>{busy ? 'Saving…' : options?.submitLabel || 'Save'}</button></div>
