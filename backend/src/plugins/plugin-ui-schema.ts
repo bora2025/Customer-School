@@ -301,8 +301,9 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         });
         component.fields.forEach((candidateField) => { const condition = (candidateField as Record<string, any>).visibleWhen; if (condition && !fieldIds.has(condition.field)) throw new BadRequestException('Plugin UI form visibleWhen references an unknown field'); });
         const options = (component.options || {}) as Record<string, unknown>;
-        for (const key of ['submitLabel', 'confirmation', 'successMessage', 'triggerLabel'] as const) if (options[key] !== undefined) string(options[key], `form ${key}`, 240);
-        for (const key of ['collapsible', 'defaultCollapsed'] as const) if (options[key] !== undefined && typeof options[key] !== 'boolean') throw new BadRequestException(`Plugin UI form ${key} must be boolean`);
+        for (const key of ['submitLabel', 'confirmation', 'successMessage', 'triggerLabel', 'actionMenu', 'actionMenuLabel', 'actionMenuTitle', 'actionMenuDescription', 'actionDescription', 'actionMenuIcon'] as const) if (options[key] !== undefined) string(options[key], `form ${key}`, 240);
+        if (options.actionMenuOrder !== undefined && (!Number.isInteger(options.actionMenuOrder) || Number(options.actionMenuOrder) < 0 || Number(options.actionMenuOrder) > 100)) throw new BadRequestException('Plugin UI form actionMenuOrder must be between 0 and 100');
+        for (const key of ['collapsible', 'defaultCollapsed', 'keepExpanded'] as const) if (options[key] !== undefined && typeof options[key] !== 'boolean') throw new BadRequestException(`Plugin UI form ${key} must be boolean`);
         if (options.initialSource !== undefined && (typeof options.initialSource !== 'string' || !sourceIds.has(options.initialSource) || sourceMethods.get(options.initialSource) !== 'GET')) throw new BadRequestException('Plugin UI form initialSource must reference a GET data source');
       }
       if (type === 'actions') {

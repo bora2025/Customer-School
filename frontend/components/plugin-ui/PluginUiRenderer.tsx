@@ -27,6 +27,7 @@ import PluginSelfAttendanceScanner from './PluginSelfAttendanceScanner';
 import PluginAttendanceWindowManager from './PluginAttendanceWindowManager';
 import PluginWorkflowHeader from './PluginWorkflowHeader';
 import PluginProfileManager from './PluginProfileManager';
+import PluginFormMenu from './PluginFormMenu';
 import { usePluginUiPresentation } from '../../lib/plugin-ui-presentation';
 import type { PluginUiPageDescriptor } from '../../lib/plugin-ui-routing';
 
@@ -46,12 +47,29 @@ export default function PluginUiRenderer({ pluginId, page, params, data, loading
     return { ...current, [source]: ids };
   }), []);
   const exclusiveType = ['profile-manager', 'attendance-report-manager', 'attendance-window-manager'].find((type) => page.components.some((component: any) => component.type === type));
-  const pageComponents = exclusiveType ? page.components.filter((component: any) => component.type === exclusiveType) : page.components;
+  const rawPageComponents = exclusiveType ? page.components.filter((component: any) => component.type === exclusiveType) : page.components;
+  const groupedForms = rawPageComponents.filter((component: any) => component.type === 'form' && typeof component.options?.actionMenu === 'string');
+  const creationForms = rawPageComponents.filter((component: any) => {
+    const source = page.dataSources.find((entry) => entry.id === component.source);
+    return component.type === 'form' && !component.options?.actionMenu && source?.method === 'POST' && !component.options?.initialSource && component.options?.keepExpanded !== true;
+  });
+  const firstTableIndex = rawPageComponents.findIndex((component: any) => component.type === 'table');
+  const promotedForms = [...groupedForms, ...(firstTableIndex >= 0 ? creationForms : [])];
+  const pageComponents = promotedForms.length && firstTableIndex >= 0
+    ? [...rawPageComponents.slice(0, firstTableIndex).filter((component: any) => !promotedForms.includes(component)), ...promotedForms, ...rawPageComponents.slice(firstTableIndex).filter((component: any) => !promotedForms.includes(component))]
+    : rawPageComponents;
+  const actionMenuForms = (menu: string) => pageComponents.filter((candidate: any) => candidate.type === 'form' && candidate.options?.actionMenu === menu).sort((left: any, right: any) => Number(left.options?.actionMenuOrder || 0) - Number(right.options?.actionMenuOrder || 0));
   return <div className="space-y-5" role="region" aria-label={page.title}>{pageComponents.map((component: any) => {
     const localized = { ...component, title: presentation.translate(component.titleKey, component.title), fields: component.fields?.map((field: any) => ({ ...field, label: presentation.translate(field.labelKey, field.label) })), options: { ...component.options, submitLabel: presentation.translate(component.options?.submitLabelKey, component.options?.submitLabel), confirmation: presentation.translate(component.options?.confirmationKey, component.options?.confirmation), successMessage: presentation.translate(component.options?.successMessageKey, component.options?.successMessage), actions: component.options?.actions?.map((action: any) => ({ ...action, label: presentation.translate(action.labelKey, action.label), confirmation: presentation.translate(action.confirmationKey, action.confirmation) })), rowActions: component.options?.rowActions?.map((action: any) => ({ ...action, label: presentation.translate(action.labelKey, action.label), confirmation: presentation.translate(action.confirmationKey, action.confirmation) })), states: component.options?.states?.map((state: any) => ({ ...state, label: presentation.translate(state.labelKey, state.label) })) } }; component = localized;
     if (component.type === 'workflow') return <PluginWorkflowHeader key={component.id} pluginId={pluginId} title={component.title || page.title} options={component.options} params={params} />;
     if (component.type === 'table') return <PluginDataTable key={component.id} title={component.title} value={component.source ? valueAtPath(renderedData[component.source], component.options?.itemsPath) : []} fields={component.fields} options={component.options} loading={loading} error={component.source ? errors[component.source] : undefined} onSelectionChange={component.source ? (ids) => updateSelection(component.source, ids) : undefined} formatValue={presentation.format} pluginId={pluginId} pageParams={params} sources={page.dataSources as any} onRefresh={onRefresh} />;
-    if (component.type === 'form') { const source = page.dataSources.find((entry) => entry.id === component.source); const initialSource = component.options?.initialSource ?? component.initialSource; return source && source.method !== 'GET' && source.method !== 'DELETE' ? <PluginForm key={component.id} title={component.title} pluginId={pluginId} source={source as any} params={params} fields={component.fields || []} options={component.options as any} initialData={typeof initialSource === 'string' ? renderedData[initialSource] : undefined} onSuccess={async (result) => { setMutationResults((current) => ({ ...current, [source.id]: result })); await onRefresh(); }} /> : null; }
+    if (component.type === 'form') {
+      const menu = typeof component.options?.actionMenu === 'string' ? component.options.actionMenu : '';
+      const menuForms = menu ? actionMenuForms(menu) : [];
+      if (menu && menuForms[0]?.id !== component.id) return null;
+      if (menu) return <PluginFormMenu key={`menu-${menu}`} pluginId={pluginId} params={params} forms={menuForms as any} sources={page.dataSources as any} data={renderedData} onSuccess={async (sourceId, result) => { setMutationResults((current) => ({ ...current, [sourceId]: result })); await onRefresh(); }} />;
+      const source = page.dataSources.find((entry) => entry.id === component.source); const initialSource = component.options?.initialSource ?? component.initialSource; const isPromotedCreation = creationForms.includes(component); const formOptions = isPromotedCreation ? { ...component.options, collapsible: true, defaultCollapsed: true, triggerLabel: component.options?.triggerLabel || component.title || 'Add record' } : component.options; return source && source.method !== 'GET' && source.method !== 'DELETE' ? <PluginForm key={component.id} title={component.title} pluginId={pluginId} source={source as any} params={params} fields={component.fields || []} options={formOptions as any} initialData={typeof initialSource === 'string' ? renderedData[initialSource] : undefined} onSuccess={async (result) => { setMutationResults((current) => ({ ...current, [source.id]: result })); await onRefresh(); }} /> : null;
+    }
     if (component.type === 'actions') return <PluginActions key={component.id} pluginId={pluginId} sources={page.dataSources.filter((entry) => entry.method !== 'GET') as any} params={params} actions={(component.options?.actions || []) as any} selections={selections} onSuccess={onRefresh} />;
     if (component.type === 'metric') return <PluginMetric key={component.id} title={component.title} value={data[component.source]} options={component.options} loading={loading} error={errors[component.source]} formatValue={presentation.format} />;
     if (component.type === 'status') return <PluginStatus key={component.id} title={component.title} value={data[component.source]} options={component.options} loading={loading} error={errors[component.source]} />;

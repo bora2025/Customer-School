@@ -64,6 +64,8 @@ export default function PluginDataTable({
   const rowParameterMap = options?.rowParameterMap && typeof options.rowParameterMap === 'object' ? options.rowParameterMap as Record<string, string> : {};
   const rowActions = Array.isArray(options?.rowActions) ? options.rowActions as RowAction[] : [];
   const [filter, setFilter] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ id: string; direction: 'asc' | 'desc' } | null>(null);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -74,10 +76,16 @@ export default function PluginDataTable({
 
   const filtered = useMemo(() => {
     const needle = filter.trim().toLocaleLowerCase();
-    const result = needle ? sourceRows.filter((row) => columns.some((column) => column.filterable && display(row[column.id]).toLocaleLowerCase().includes(needle))) : [...sourceRows];
-    if (sort) result.sort((left, right) => display(left[sort.id]).localeCompare(display(right[sort.id]), undefined, { numeric: true }) * (sort.direction === 'asc' ? 1 : -1));
+    const result = sourceRows.filter((row) => {
+      const matchesSearch = !needle || columns.some((column) => column.filterable && display(valueAtPath(row, column.id)).toLocaleLowerCase().includes(needle));
+      const matchesColumns = Object.entries(columnFilters).every(([id, expected]) => !expected || display(valueAtPath(row, id)) === expected);
+      return matchesSearch && matchesColumns;
+    });
+    if (sort) result.sort((left, right) => display(valueAtPath(left, sort.id)).localeCompare(display(valueAtPath(right, sort.id)), undefined, { numeric: true }) * (sort.direction === 'asc' ? 1 : -1));
     return result;
-  }, [columns, filter, sort, sourceRows]);
+  }, [columns, columnFilters, filter, sort, sourceRows]);
+  const filterColumns = useMemo(() => columns.filter((column) => column.filterable).map((column) => ({ ...column, values: [...new Set(sourceRows.map((row) => display(valueAtPath(row, column.id))).filter((value) => value !== '—'))].sort((left, right) => left.localeCompare(right, undefined, { numeric: true })) })).filter((column) => column.values.length > 1 && column.values.length <= 30).slice(0, 6), [columns, sourceRows]);
+  const activeFilterCount = Object.values(columnFilters).filter(Boolean).length;
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -126,8 +134,9 @@ export default function PluginDataTable({
   return <section className="card overflow-hidden border-slate-200 shadow-sm">
     <div className="flex flex-col gap-4 border-b border-slate-200 bg-gradient-to-r from-white via-white to-indigo-50/50 p-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-100 text-lg text-indigo-700" aria-hidden="true">▦</span><div><h2 className="font-bold text-slate-900">{title || 'Records'}</h2><p className="mt-0.5 text-xs text-slate-500">{sourceRows.length} total record{sourceRows.length === 1 ? '' : 's'}{selectable && selected.size > 0 ? ` · ${selected.size} selected` : ''}</p></div></div>
-      <label className="relative block text-sm text-slate-600"><span className="sr-only">Search records</span><span className="pointer-events-none absolute left-3 top-2.5 text-slate-400" aria-hidden="true">⌕</span><input className="w-full min-w-64 rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" placeholder="Search records…" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }} type="search" /></label>
+      <div className="flex flex-col gap-2 sm:flex-row"><label className="relative block text-sm text-slate-600"><span className="sr-only">Search records</span><span className="pointer-events-none absolute left-3 top-2.5 text-slate-400" aria-hidden="true">⌕</span><input className="w-full min-w-64 rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" placeholder="Search records…" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(1); }} type="search" /></label>{filterColumns.length > 0 && <button type="button" className={`btn btn-secondary whitespace-nowrap ${activeFilterCount ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : ''}`} onClick={() => setFiltersOpen((value) => !value)} aria-expanded={filtersOpen}>☷ Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}</button>}</div>
     </div>
+    {filtersOpen && filterColumns.length > 0 && <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{filterColumns.map((column) => <label key={column.id} className="text-xs font-semibold text-slate-600">{column.label}<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-800" value={columnFilters[column.id] || ''} onChange={(event) => { setColumnFilters((current) => ({ ...current, [column.id]: event.target.value })); setPage(1); }}><option value="">All</option>{column.values.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>)}</div>{activeFilterCount > 0 && <button type="button" className="mt-3 text-xs font-bold text-indigo-700 hover:underline" onClick={() => { setColumnFilters({}); setPage(1); }}>Clear all filters</button>}</div>}
     {sourceRows.length === 0 ? <div className="p-12 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-400" aria-hidden="true">◇</div><h3 className="mt-4 font-semibold text-slate-800">No records yet</h3><p className="mt-1 text-sm text-slate-500">Create the first record using the form on this page.</p></div> : filtered.length === 0 ? <div className="p-12 text-center"><h3 className="font-semibold text-slate-800">No matching records</h3><p className="mt-1 text-sm text-slate-500">Clear or change the filter to see more results.</p></div> : <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50"><tr>

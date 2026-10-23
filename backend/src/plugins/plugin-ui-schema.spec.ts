@@ -172,6 +172,32 @@ describe('Plugin UI v2 schema', () => {
     expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[1].fields[0].type).toBe('file');
   });
 
+  it('accepts grouped creation menus for universal plugin forms', () => {
+    const value: any = valid();
+    value.pages[0].components[1].options = {
+      actionMenu: 'student-create',
+      actionMenuOrder: 1,
+      actionMenuLabel: 'Add student',
+      actionMenuTitle: 'Add students',
+      actionMenuDescription: 'Create one student or import a CSV roster.',
+      actionDescription: 'Create one student profile.',
+      actionMenuIcon: '+',
+    };
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[1])
+      .toMatchObject({ options: expect.objectContaining({ actionMenu: 'student-create', actionMenuOrder: 1 }) });
+    value.pages[0].components[1].options.actionMenuOrder = 101;
+    expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('actionMenuOrder');
+  });
+
+  it('allows a plugin to keep an inline creation form expanded', () => {
+    const value: any = valid();
+    value.pages[0].components[1].options = { keepExpanded: true };
+    expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[1])
+      .toMatchObject({ options: { keepExpanded: true } });
+    value.pages[0].components[1].options.keepExpanded = 'yes';
+    expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow('keepExpanded must be boolean');
+  });
+
   catalogIt('wattanam.document-designer')('validates the Document Designer edit page against its declared permissions', () => {
     const root = pluginRoot('wattanam.document-designer');
     const descriptor = JSON.parse(readFileSync(path.join(root, 'frontend/page.json'), 'utf8'));
