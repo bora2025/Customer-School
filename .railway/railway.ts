@@ -35,7 +35,7 @@ export default defineRailway((context) => {
 
   const Postgres = postgres("Postgres", { region: "asia-southeast1-eqsg3a" });
   Postgres.networking = { privateNetworkEndpoint: "postgres" };
-  const pluginArtifacts = bucket(context.isEnvironment("plugin-certification-20261018") ? "plugin-cert-artifacts-20261018" : "plugin-artifacts", { region: "sin" });
+  const pluginArtifacts = bucket(context.environmentName === "plugin-certification-20261018" ? "plugin-cert-artifacts-20261018" : "plugin-artifacts", { region: "sin" });
   const splitRuntimeEnvironment = {
     PLUGIN_REQUIRED_RUNTIME_ROLES: "api,worker",
     PLUGIN_STORAGE_PROVIDER: "s3",
