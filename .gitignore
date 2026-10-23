@@ -72,6 +72,7 @@ jspm_packages/
 Thumbs.db
 
 # Local scratch files
+.release-*/
 .tmp/
 400
 'createdAt'
