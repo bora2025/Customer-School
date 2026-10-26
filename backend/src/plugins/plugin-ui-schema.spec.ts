@@ -305,8 +305,9 @@ describe('Plugin UI v2 schema', () => {
     value.pages[0].dataSources.push(
       { id: 'departments', method: 'GET', path: 'departments', permission: 'wattanam.test.read' },
       { id: 'deactivate', method: 'PATCH', path: 'officers/:officerId', parameters: ['officerId'], autoload: false, permission: 'wattanam.test.manage' },
+      { id: 'remove-officer', method: 'DELETE', path: 'officers/:officerId', parameters: ['officerId'], autoload: false, permission: 'wattanam.test.manage' },
     );
-    value.pages[0].components = [{ id: 'officers', type: 'officer-manager', source: 'record', options: { departmentsSource: 'departments', createSource: 'save', deactivateSource: 'deactivate', editRoute: 'officers/edit', departmentsRoute: 'departments' } }];
+    value.pages[0].components = [{ id: 'officers', type: 'officer-manager', source: 'record', options: { departmentsSource: 'departments', createSource: 'save', deactivateSource: 'deactivate', deleteSource: 'remove-officer', editRoute: 'officers/edit', departmentsRoute: 'departments' } }];
     expect(parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'officer-manager' });
   });
 

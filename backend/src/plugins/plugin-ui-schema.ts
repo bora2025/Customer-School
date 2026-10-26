@@ -286,12 +286,18 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           if (field.accept !== undefined) string(field.accept, 'form file accept', 200);
           if (field.helpText !== undefined) string(field.helpText, 'form field help text', 500);
           if (fieldType === 'select') {
-            if (!Array.isArray(field.options) || field.options.length < 1 || field.options.length > 100) throw new BadRequestException('Plugin UI select requires 1 to 100 options');
-            field.options.forEach((choice, choiceIndex) => {
+            const dynamicSource = field.optionsSource === undefined ? undefined : string(field.optionsSource, 'select optionsSource', 100);
+            if (dynamicSource && (!sourceIds.has(dynamicSource) || sourceMethods.get(dynamicSource) !== 'GET')) throw new BadRequestException('Plugin UI select optionsSource must reference a GET data source');
+            if (!dynamicSource && (!Array.isArray(field.options) || field.options.length < 1 || field.options.length > 100)) throw new BadRequestException('Plugin UI select requires 1 to 100 options or a GET optionsSource');
+            if (field.options !== undefined && (!Array.isArray(field.options) || field.options.length > 100)) throw new BadRequestException('Plugin UI select options are invalid');
+            const staticOptions = Array.isArray(field.options) ? field.options : [];
+            staticOptions.forEach((choice, choiceIndex) => {
               const option = object(choice, `select options[${choiceIndex}]`);
               string(option.label, 'select option label', 120);
               if (typeof option.value !== 'string' || option.value.length > 160) throw new BadRequestException('select option value is invalid');
             });
+            for (const key of ['optionValuePath', 'optionLabelPath'] as const) if (field[key] !== undefined && !DATA_PATH.test(string(field[key], `select ${key}`, 100))) throw new BadRequestException(`Plugin UI select ${key} is invalid`);
+            if (field.searchable !== undefined && typeof field.searchable !== 'boolean') throw new BadRequestException('Plugin UI select searchable must be boolean');
           }
           if (field.visibleWhen !== undefined) {
             const condition = object(field.visibleWhen, 'form field visibleWhen');
@@ -491,6 +497,10 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         for (const key of ['createSource', 'deactivateSource'] as const) {
           const sourceId = string(options[key], `officer-manager ${key}`, 100);
           if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) === 'GET') throw new BadRequestException(`Plugin UI officer-manager ${key} must reference a mutation data source`);
+        }
+        if (options.deleteSource !== undefined) {
+          const sourceId = string(options.deleteSource, 'officer-manager deleteSource', 100);
+          if (!sourceIds.has(sourceId) || sourceMethods.get(sourceId) !== 'DELETE') throw new BadRequestException('Plugin UI officer-manager deleteSource must reference a DELETE data source');
         }
         for (const key of ['editRoute', 'departmentsRoute'] as const) {
           if (!ROUTE.test(string(options[key], `officer-manager ${key}`, 100))) throw new BadRequestException(`Plugin UI officer-manager ${key} is invalid`);

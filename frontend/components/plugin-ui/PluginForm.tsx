@@ -6,14 +6,18 @@ import { apiFetch } from '../../lib/api';
 import { resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
 
 type Field = {
-  id: string; type: 'text' | 'email' | 'password' | 'number' | 'date' | 'datetime' | 'select' | 'textarea' | 'json' | 'checkbox' | 'file'; label: string;
+  id: string; type: 'text' | 'email' | 'url' | 'password' | 'number' | 'date' | 'datetime' | 'select' | 'textarea' | 'json' | 'checkbox' | 'file'; label: string;
   required?: boolean; disabled?: boolean; min?: number; max?: number; minLength?: number; maxLength?: number;
   accept?: string; maxBytes?: number; helpText?: string;
   jsonShape?: 'object' | 'array' | 'any'; defaultValue?: unknown;
   options?: Array<{ label: string; value: string }>; visibleWhen?: { field: string; equals: string | number | boolean };
+  optionsSource?: string; optionValuePath?: string; optionLabelPath?: string; searchable?: boolean;
 };
 
-export default function PluginForm({ title, pluginId, source, params, fields, options, initialData, onSuccess }: {
+function sourceRows(value: unknown): Record<string, unknown>[] { return Array.isArray(value) ? value : value && typeof value === 'object' && Array.isArray((value as any).items) ? (value as any).items : []; }
+function pathValue(value: unknown, path: string) { return path.split('.').reduce((current: any, key) => current?.[key], value as any); }
+
+export default function PluginForm({ title, pluginId, source, params, fields, options, initialData, data = {}, onSuccess }: {
   title?: string;
   pluginId: string;
   source: { method: 'POST' | 'PUT' | 'PATCH'; path: string };
@@ -21,6 +25,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
   fields: Field[];
   options?: { submitLabel?: string; confirmation?: string; successMessage?: string; successRoute?: string; collapsible?: boolean; defaultCollapsed?: boolean; triggerLabel?: string; idempotencyField?: string; idempotencyPrefix?: string };
   initialData?: unknown;
+  data?: Record<string, unknown>;
   onSuccess(result: unknown): void | Promise<void>;
 }) {
   const router = useRouter();
@@ -126,7 +131,7 @@ export default function PluginForm({ title, pluginId, source, params, fields, op
     {success && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{success}</div>}
     </div><div className="grid gap-5 px-6 sm:grid-cols-2">{fields.filter(visible).map((field) => <label key={field.id} className={`block text-sm font-medium text-slate-700 ${field.type === 'textarea' || field.type === 'json' || field.type === 'file' ? 'sm:col-span-2' : ''}`}>{field.label}{field.required && <span aria-hidden="true" className="text-red-600"> *</span>}
       {field.type === 'textarea' || field.type === 'json' ? <textarea className={`mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 ${field.type === 'json' ? 'min-h-64 font-mono text-xs' : 'min-h-28'}`} value={String(values[field.id] ?? '')} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />
-      : field.type === 'select' ? <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={String(values[field.id] ?? '')} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}><option value="">Select…</option>{field.options?.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select>
+      : field.type === 'select' ? <select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={String(values[field.id] ?? '')} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))}><option value="">Select…</option>{(field.options || sourceRows(data[field.optionsSource || '']).map((item) => ({ value: String(pathValue(item, field.optionValuePath || 'id') || ''), label: String(pathValue(item, field.optionLabelPath || 'name') || pathValue(item, field.optionValuePath || 'id') || '') }))).map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select>
       : field.type === 'checkbox' ? <input className="ml-3" type="checkbox" checked={Boolean(values[field.id])} disabled={field.disabled || busy} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.checked }))} />
       : field.type === 'file' ? <input className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:font-semibold file:text-indigo-700" type="file" accept={field.accept} disabled={field.disabled || busy} onChange={(event) => void selectFile(field, event.target.files?.[0])} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />
       : <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" type={field.type === 'datetime' ? 'datetime-local' : field.type} value={String(values[field.id] ?? '')} disabled={field.disabled || busy} min={field.min} max={field.max} minLength={field.minLength} maxLength={field.maxLength} onChange={(event) => setValues((current) => ({ ...current, [field.id]: event.target.value }))} aria-invalid={Boolean(errors[field.id])} aria-describedby={errors[field.id] ? `${field.id}-error` : undefined} />}
