@@ -361,6 +361,7 @@ describe('Plugin UI v2 schema', () => {
 
   it('validates the take attendance workspace declaration', () => {
     const value: any = valid();
+    value.portability = 'universal';
     value.pages[0].dataSources.push(
       { id: 'sessions', method: 'GET', path: 'sessions', permission: 'wattanam.test.read' },
       { id: 'students', method: 'GET', path: 'classes/:classId/students', parameters: ['classId'], autoload: false, permission: 'wattanam.test.read' },
