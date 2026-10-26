@@ -61,7 +61,7 @@ const COMPONENTS = new Set<PluginUiComponentType>([
 const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form',
   'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner',
-  'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager',
+  'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager', 'class-manager',
 ]);
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
