@@ -30,8 +30,15 @@ Copy `.env.example` to `.env`, replace every placeholder, and leave `MARKETPLACE
 docker compose --env-file .env -f docker-compose.core.yml up -d
 ```
 
+This Compose file is the provider-neutral single-node reference for a school-owned VPS or local
+installation. Railway is optional. For a multi-node production deployment, split API and worker
+processes, provision separate restricted database roles, and use shared S3-compatible plugin storage
+as required by the production runbook.
+
 ## Optional Marketplace connection
 
 Set `MARKETPLACE_URL` only to the trusted HTTPS origin operated by Wattanam. The school initiates outbound requests; Marketplace receives no school database credentials and no installation private key. Owner approval occurs on the Marketplace origin, and delegated credentials remain server-side in the school installation.
 
 See `docs/architecture/customer-school-marketplace-separation-plan.md` for the trust boundary and production acceptance gates.
+
+See `docs/architecture/provider-neutral-platform-review-2026-10-26.md` for the current cross-repository architecture review after removal of the previous Railway projects.

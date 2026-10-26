@@ -18,7 +18,7 @@ test('Railway IaC owns the complete production topology without embedding secret
   }
 
   assert.match(source, /postgres\("Postgres"/);
-  assert.match(source, /context\.isEnvironment\("plugin-certification-20261018"\)\s*\?\s*"plugin-cert-artifacts-20261018"\s*:\s*"plugin-artifacts"/);
+  assert.match(source, /context\.environmentName\s*===\s*"plugin-certification-20261018"\s*\?\s*"plugin-cert-artifacts-20261018"\s*:\s*"plugin-artifacts"/);
   assert.match(source, /volume\("api-volume"/);
   assert.match(source, /volume\("worker-volume"/);
   assert.match(source, /volume\("postgres-volume"/);
