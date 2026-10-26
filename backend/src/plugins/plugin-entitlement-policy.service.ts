@@ -22,6 +22,23 @@ export interface PluginEntitlementDecision {
 export class PluginEntitlementPolicyService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * A signed repository release marked free is authoritative evidence that no paid entitlement is
+   * required. Clear a stale UNKNOWN cache row left by an older failed entitlement lookup so it
+   * cannot make a free plugin read-only during activation after an update.
+   */
+  async acknowledgeFreeRelease(pluginId: string, now = new Date()) {
+    const fields = {
+      status: 'NONE', tokenId: null, generation: 0, signedTokenJson: null,
+      expiresAt: null, updatesThrough: null, offlineRecheckAfter: null,
+      lastVerifiedAt: now, lastRefreshAttemptAt: now, lastRefreshSucceededAt: now,
+      consecutiveFailures: 0, lastError: null,
+    };
+    return this.prisma.pluginEntitlementCache.upsert({
+      where: { pluginId }, create: { pluginId, ...fields }, update: fields,
+    });
+  }
+
   async decision(pluginId: string, now = new Date()): Promise<PluginEntitlementDecision> {
     const cache = await this.prisma.pluginEntitlementCache.findUnique({ where: { pluginId } });
     const base = {

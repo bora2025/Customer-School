@@ -16,7 +16,10 @@ describe('UpdatesService', () => {
   const prisma = { pluginInstallation: { findMany: jest.fn() } } as any;
   const plugins = { install: jest.fn() } as any;
   const backup = { create: jest.fn() } as any;
-  const entitlements = { assertCanUpdate: jest.fn().mockResolvedValue({ mode: 'active' }) } as any;
+  const entitlements = {
+    assertCanUpdate: jest.fn().mockResolvedValue({ mode: 'active' }),
+    acknowledgeFreeRelease: jest.fn().mockResolvedValue({ status: 'NONE' }),
+  } as any;
   let service: UpdatesService;
   let stateDirectory: string;
 
@@ -64,22 +67,27 @@ describe('UpdatesService', () => {
     const manifest = { capabilities: ['api.routes'], permissions: ['wattanam.announcements.read'], dependencies: {}, migrations: [] };
     const payload = {
       schemaVersion: 1, coreReleases: [], advisories: [],
-      pluginReleases: [{ pluginId: 'wattanam.announcements', version: '1.1.0', sha256, downloadUrl: `https://marketplace.example.com/v1/artifacts/${sha256}`, manifest }],
+      pluginReleases: [{ pluginId: 'wattanam.announcements', version: '1.1.0', paid: false, sha256, downloadUrl: `https://marketplace.example.com/v1/artifacts/${sha256}`, manifest }],
     };
     jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify(signed(payload)), { status: 200 }))
       .mockResolvedValueOnce(new Response(artifact, { status: 200, headers: { 'content-length': String(artifact.length) } }));
     plugins.install.mockResolvedValue({ id: 'wattanam.announcements', version: '1.1.0' });
     await expect(service.installPlugin('wattanam.announcements', '1.1.0', pluginInstallConsentDigest(manifest))).resolves.toMatchObject({ version: '1.1.0' });
-    expect(entitlements.assertCanUpdate).toHaveBeenCalledWith('wattanam.announcements');
+    expect(entitlements.acknowledgeFreeRelease).toHaveBeenCalledWith('wattanam.announcements');
     expect(plugins.install).toHaveBeenCalledWith(artifact);
   });
 
-  it('does not contact the repository when entitlement policy denies an update', async () => {
+  it('does not download a paid artifact when entitlement policy denies an update', async () => {
     entitlements.assertCanUpdate.mockRejectedValueOnce(Object.assign(new Error('updates expired'), { status: 402 }));
-    const fetchMock = jest.spyOn(global, 'fetch');
+    const payload = { schemaVersion: 1, coreReleases: [], advisories: [], pluginReleases: [{
+      pluginId: 'wattanam.paid', version: '1.1.0', paid: true, sha256: 'a'.repeat(64),
+      downloadUrl: `https://marketplace.example.com/v1/artifacts/${'a'.repeat(64)}`,
+      manifest: { capabilities: [], permissions: [], dependencies: {}, migrations: [] },
+    }] };
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(signed(payload)), { status: 200 }));
     await expect(service.installPlugin('wattanam.paid', '1.1.0', 'a'.repeat(64))).rejects.toMatchObject({ status: 402 });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(plugins.install).not.toHaveBeenCalled();
   });
 

@@ -155,6 +155,8 @@ export class MarketplaceCommerceService {
     if (release.paid === true) {
       await this.entitlementCache.refreshOne(pluginId);
       await this.entitlementPolicy.assertCanActivate(pluginId);
+    } else {
+      await this.entitlementPolicy.acknowledgeFreeRelease(pluginId);
     }
     const download = new URL(release.downloadUrl);
     if (download.origin !== updateConfig.url || !download.pathname.startsWith('/v1/artifacts/')) throw new BadGatewayException('Repository returned an untrusted artifact URL');

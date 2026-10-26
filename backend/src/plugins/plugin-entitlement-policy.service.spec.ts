@@ -1,6 +1,16 @@
 import { PluginEntitlementPolicyService } from './plugin-entitlement-policy.service';
 
 describe('PluginEntitlementPolicyService', () => {
+  it('clears a stale unknown entitlement when a signed repository release is free', async () => {
+    const upsert = jest.fn().mockResolvedValue({ pluginId: 'wattanam.free', status: 'NONE' });
+    const policy = new PluginEntitlementPolicyService({ pluginEntitlementCache: { upsert } } as any);
+    await expect(policy.acknowledgeFreeRelease('wattanam.free', new Date('2026-10-26T00:00:00Z')))
+      .resolves.toMatchObject({ status: 'NONE' });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { pluginId: 'wattanam.free' },
+      update: expect.objectContaining({ status: 'NONE', lastError: null, consecutiveFailures: 0 }),
+    }));
+  });
   const now = new Date('2026-09-25T00:00:00.000Z');
   const row = (overrides: Record<string, unknown> = {}) => ({
     status: 'ACTIVE', expiresAt: new Date('2026-10-25T00:00:00.000Z'),

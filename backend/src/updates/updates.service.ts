@@ -53,7 +53,6 @@ export class UpdatesService {
   }
 
   async installPlugin(pluginId: string, version: string, consentDigest: string) {
-    await this.entitlements.assertCanUpdate(pluginId);
     const config = readUpdateRepositoryConfig();
     if (!config) throw new ServiceUnavailableException('Update repository is not configured');
     if (!semver.valid(version)) throw new BadRequestException('version must be semantic versioning');
@@ -61,6 +60,8 @@ export class UpdatesService {
     const payload = await this.index(config, coreVersion);
     const release = payload.pluginReleases.find((candidate: any) => candidate.pluginId === pluginId && candidate.version === version);
     if (!release) throw new NotFoundException('Compatible repository release not found');
+    if (release.paid === true) await this.entitlements.assertCanUpdate(pluginId);
+    else await this.entitlements.acknowledgeFreeRelease(pluginId);
     if (!/^[a-f0-9]{64}$/.test(consentDigest) || consentDigest !== pluginInstallConsentDigest(release.manifest)) {
       throw new BadRequestException('Plugin update capabilities changed or were not approved; review the update disclosure again');
     }

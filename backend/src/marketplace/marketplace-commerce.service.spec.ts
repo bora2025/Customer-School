@@ -54,13 +54,15 @@ describe('MarketplaceCommerceService install', () => {
     trustedPluginKeysMock.mockResolvedValue({});
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response(artifact, { status: 200, headers: { 'content-length': String(artifact.length) } }) as any);
 
-    const service = new MarketplaceCommerceService(prisma, link, updates, plugins, {} as any, {} as any);
+    const policy = { acknowledgeFreeRelease: jest.fn().mockResolvedValue({ status: 'NONE' }) } as any;
+    const service = new MarketplaceCommerceService(prisma, link, updates, plugins, {} as any, policy);
     await expect(service.install('wattanam.announcements', '1.1.0', false, pluginInstallConsentDigest(manifest))).resolves.toMatchObject({ id: 'wattanam.announcements', status: 'installed' });
 
     expect(plugins.install).toHaveBeenCalledWith(artifact, undefined, {});
     expect(prisma.pluginInstallation.findUnique).not.toHaveBeenCalled();
     expect(prisma.pluginInstallation.findMany).not.toHaveBeenCalled();
     expect(recordMarketplaceTrustedKeyMock).not.toHaveBeenCalled();
+    expect(policy.acknowledgeFreeRelease).toHaveBeenCalledWith('wattanam.announcements');
   });
 
   it('merges and persists a release publisher key, then activates when requested', async () => {
@@ -97,7 +99,7 @@ describe('MarketplaceCommerceService install', () => {
     recordMarketplaceTrustedKeyMock.mockResolvedValue(undefined);
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response(artifact, { status: 200, headers: { 'content-length': String(artifact.length) } }) as any);
 
-    const service = new MarketplaceCommerceService(prisma, link, updates, plugins, {} as any, {} as any);
+    const service = new MarketplaceCommerceService(prisma, link, updates, plugins, {} as any, { acknowledgeFreeRelease: jest.fn() } as any);
     await expect(service.install('wattanam.announcements', '1.2.0', true, pluginInstallConsentDigest(manifest))).resolves.toMatchObject({ id: 'wattanam.announcements', status: 'active' });
 
     expect(plugins.install).toHaveBeenCalledWith(
@@ -128,7 +130,7 @@ describe('MarketplaceCommerceService install', () => {
     } as any;
     trustedPluginKeysMock.mockResolvedValue({});
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response(artifact, { status: 200, headers: { 'content-length': String(artifact.length) } }) as any);
-    const service = new MarketplaceCommerceService({} as any, { getValidAccessToken: jest.fn().mockResolvedValue('token') } as any, updates, plugins, {} as any, {} as any);
+    const service = new MarketplaceCommerceService({} as any, { getValidAccessToken: jest.fn().mockResolvedValue('token') } as any, updates, plugins, {} as any, { acknowledgeFreeRelease: jest.fn() } as any);
 
     await expect(service.install('wattanam.test', '1.1.0', true, pluginInstallConsentDigest(manifest)))
       .resolves.toMatchObject({ id: 'wattanam.test', status: 'activating' });
