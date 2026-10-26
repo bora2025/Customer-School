@@ -61,7 +61,7 @@ const COMPONENTS = new Set<PluginUiComponentType>([
 const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form',
   'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner',
-  'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager', 'class-manager',
+  'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager', 'class-manager', 'officer-manager',
 ]);
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
@@ -276,7 +276,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
           const field = object(candidateField, `form fields[${fieldIndex}]`);
           const fieldId = string(field.id, 'form field id', 100);
           const fieldType = string(field.type, 'form field type', 30);
-          if (!ID.test(fieldId) || fieldIds.has(fieldId) || !['text', 'email', 'password', 'number', 'date', 'datetime', 'select', 'textarea', 'json', 'checkbox', 'file'].includes(fieldType)) throw new BadRequestException('Plugin UI form field id or type is invalid');
+          if (!ID.test(fieldId) || fieldIds.has(fieldId) || !['text', 'email', 'url', 'password', 'number', 'date', 'datetime', 'select', 'textarea', 'json', 'checkbox', 'file'].includes(fieldType)) throw new BadRequestException('Plugin UI form field id or type is invalid');
           fieldIds.add(fieldId);
           string(field.label, 'form field label', 120);
           if (field.jsonShape !== undefined && (fieldType !== 'json' || !['object', 'array', 'any'].includes(String(field.jsonShape)))) throw new BadRequestException('Plugin UI form jsonShape is invalid');
