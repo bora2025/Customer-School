@@ -5,7 +5,7 @@ import QRCode from 'qrcode';
 import { apiFetch } from '../../lib/api';
 
 type Source = { id: string; method: string; path: string };
-type Person = { id: string; name?: string; nameKh?: string; studentNumber?: string; employeeNumber?: string; position?: string; photo?: string; phone?: string; email?: string; qrCode?: string; dateOfBirth?: string; address?: string; department?: { id?: string; name?: string; nameKh?: string }; user?: { name?: string; email?: string; phone?: string; photo?: string } };
+type Person = { id: string; name?: string; nameKh?: string; studentNumber?: string; employeeNumber?: string; position?: string; photo?: string; photoUrl?: string; phone?: string; email?: string; qrCode?: string; dateOfBirth?: string; address?: string; department?: { id?: string; name?: string; nameKh?: string }; user?: { name?: string; email?: string; phone?: string; photo?: string } };
 type ClassRow = { id: string; name: string; subject?: string; studentCount?: number; teacher?: { name?: string }; studyYearId?: string; studyYear?: { id: string; label?: string; isCurrent?: boolean } };
 type CardTemplate = { schoolName: string; cardTitle: string; logoUrl: string; cardSize: 'cr80-portrait' | 'cr80-landscape'; designPreset: string; primaryColor: string; accentColor: string; footerText: string; extraInfo: string; showPhone: boolean; showEmail: boolean; showAddress: boolean; showDateOfBirth: boolean };
 const STUDENT_PRESETS = [
@@ -42,7 +42,7 @@ function displayDate(value?: string) {
 function IdentityCard({ person, subtitle, year, template }: { person: Person; subtitle: string; year?: string; template: CardTemplate }) {
   const [qr, setQr] = useState(''); const code = person.qrCode || '';
   useEffect(() => { let alive = true; if (!code) { setQr(''); return; } QRCode.toDataURL(code, { width: 320, margin: 1, errorCorrectionLevel: 'M' }).then((value) => { if (alive) setQr(value); }); return () => { alive = false; }; }, [code]);
-  const photo = person.photo || person.user?.photo; const number = person.studentNumber || person.employeeNumber || person.id.slice(0, 8);
+  const photo = person.photoUrl || person.photo || person.user?.photo; const number = person.studentNumber || person.employeeNumber || person.id.slice(0, 8);
   function downloadQr() { if (!qr) return; const anchor = document.createElement('a'); anchor.href = qr; anchor.download = `${number}-attendance-qr.png`; anchor.click(); }
   const phone = person.user?.phone || person.phone; const email = person.user?.email || person.email;
   const landscape = template.cardSize === 'cr80-landscape';
