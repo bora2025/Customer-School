@@ -145,6 +145,7 @@ export default function PluginDataTable({
     ? (options.rowActions as RowAction[])
     : [];
   const workforce = options?.variant === "workforce";
+  const company = options?.theme === "company";
   const compactActions = options?.compactActions === true;
   const [filter, setFilter] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -386,11 +387,11 @@ export default function PluginDataTable({
         </div>
       )}
       <div
-        className={`flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between ${workforce ? "bg-white" : "bg-gradient-to-r from-white via-white to-indigo-50/50"}`}
+        className={`flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between ${workforce || company ? "bg-white" : "bg-gradient-to-r from-white via-white to-indigo-50/50"}`}
       >
         <div className="flex items-center gap-3">
           <span
-            className={`grid h-10 w-10 place-items-center rounded-xl text-lg ${workforce ? "bg-slate-950 text-white" : "bg-indigo-100 text-indigo-700"}`}
+            className={`grid h-10 w-10 place-items-center rounded-xl text-lg ${workforce || company ? "bg-slate-950 text-white" : "bg-indigo-100 text-indigo-700"}`}
             aria-hidden="true"
           >
             ▦

@@ -1,104 +1,704 @@
-'use client';
+"use client";
 
-import PluginDataTable from './PluginDataTable';
-import PluginForm from './PluginForm';
-import PluginActions from './PluginActions';
-import { useCallback, useState } from 'react';
-import { PluginCard, PluginChart, PluginMetric, PluginStatus } from './PluginDashboard';
-import PluginFiles from './PluginFiles';
-import PluginPrintExport from './PluginPrintExport';
-import PluginDocumentPreview from './PluginDocumentPreview';
-import PluginDocumentDesigner from './PluginDocumentDesigner';
-import { usePluginUiRealtime } from '../../lib/plugin-ui-realtime';
-import PluginScanner from './PluginScanner';
-import PluginQueryFilter from './PluginQueryFilter';
-import PluginStudyYearManager from './PluginStudyYearManager';
-import PluginClassManager from './PluginClassManager';
-import PluginOfficerManager from './PluginOfficerManager';
-import PluginSessionManager from './PluginSessionManager';
-import PluginTakeAttendance from './PluginTakeAttendance';
-import PluginIdCardManager from './PluginIdCardManager';
-import PluginAttendanceReportManager from './PluginAttendanceReportManager';
-import PluginAttendanceDashboard from './PluginAttendanceDashboard';
-import PluginOrganizingDashboard from './PluginOrganizingDashboard';
-import PluginOrganizingReports from './PluginOrganizingReports';
-import PluginOrganizingProfiles from './PluginOrganizingProfiles';
-import PluginSelfAttendanceScanner from './PluginSelfAttendanceScanner';
-import PluginAttendanceWindowManager from './PluginAttendanceWindowManager';
-import PluginWorkflowHeader from './PluginWorkflowHeader';
-import PluginProfileManager from './PluginProfileManager';
-import PluginFormMenu from './PluginFormMenu';
-import { usePluginUiPresentation } from '../../lib/plugin-ui-presentation';
-import type { PluginUiPageDescriptor } from '../../lib/plugin-ui-routing';
+import PluginDataTable from "./PluginDataTable";
+import PluginForm from "./PluginForm";
+import PluginActions from "./PluginActions";
+import { useCallback, useState } from "react";
+import {
+  PluginCard,
+  PluginChart,
+  PluginMetric,
+  PluginStatus,
+} from "./PluginDashboard";
+import PluginFiles from "./PluginFiles";
+import PluginPrintExport from "./PluginPrintExport";
+import PluginDocumentPreview from "./PluginDocumentPreview";
+import PluginDocumentDesigner from "./PluginDocumentDesigner";
+import { usePluginUiRealtime } from "../../lib/plugin-ui-realtime";
+import PluginScanner from "./PluginScanner";
+import PluginQueryFilter from "./PluginQueryFilter";
+import PluginStudyYearManager from "./PluginStudyYearManager";
+import PluginClassManager from "./PluginClassManager";
+import PluginOfficerManager from "./PluginOfficerManager";
+import PluginSessionManager from "./PluginSessionManager";
+import PluginTakeAttendance from "./PluginTakeAttendance";
+import PluginIdCardManager from "./PluginIdCardManager";
+import PluginAttendanceReportManager from "./PluginAttendanceReportManager";
+import PluginAttendanceDashboard from "./PluginAttendanceDashboard";
+import PluginOrganizingDashboard from "./PluginOrganizingDashboard";
+import PluginOrganizingReports from "./PluginOrganizingReports";
+import PluginOrganizingProfiles from "./PluginOrganizingProfiles";
+import PluginSelfAttendanceScanner from "./PluginSelfAttendanceScanner";
+import PluginAttendanceWindowManager from "./PluginAttendanceWindowManager";
+import PluginWorkflowHeader from "./PluginWorkflowHeader";
+import PluginProfileManager from "./PluginProfileManager";
+import PluginFormMenu from "./PluginFormMenu";
+import { usePluginUiPresentation } from "../../lib/plugin-ui-presentation";
+import type { PluginUiPageDescriptor } from "../../lib/plugin-ui-routing";
 
 function valueAtPath(value: unknown, path?: string) {
   if (!path) return value;
-  return path.split('.').reduce<unknown>((current, key) => current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined, value);
+  return path
+    .split(".")
+    .reduce<unknown>(
+      (current, key) =>
+        current && typeof current === "object"
+          ? (current as Record<string, unknown>)[key]
+          : undefined,
+      value,
+    );
 }
 
-export default function PluginUiRenderer({ pluginId, page, params, data, loading, errors, onRefresh, onQueryFilters }: { pluginId: string; page: PluginUiPageDescriptor; params: Record<string, string>; data: Record<string, unknown>; loading: boolean; errors: Record<string, string>; onRefresh(): void | Promise<void>; onQueryFilters(sources: string[], values: Record<string, string>): void | Promise<void> }) {
+export default function PluginUiRenderer({
+  pluginId,
+  page,
+  params,
+  data,
+  loading,
+  errors,
+  onRefresh,
+  onQueryFilters,
+}: {
+  pluginId: string;
+  page: PluginUiPageDescriptor;
+  params: Record<string, string>;
+  data: Record<string, unknown>;
+  loading: boolean;
+  errors: Record<string, string>;
+  onRefresh(): void | Promise<void>;
+  onQueryFilters(
+    sources: string[],
+    values: Record<string, string>,
+  ): void | Promise<void>;
+}) {
+  const companyUi = pluginId === "wattanam.organizing-management";
   const [selections, setSelections] = useState<Record<string, string[]>>({});
-  const [mutationResults, setMutationResults] = useState<Record<string, unknown>>({});
+  const [mutationResults, setMutationResults] = useState<
+    Record<string, unknown>
+  >({});
   const renderedData = { ...data, ...mutationResults };
   const presentation = usePluginUiPresentation(page);
   usePluginUiRealtime(pluginId, page.realtime, onRefresh);
-  const updateSelection = useCallback((source: string, ids: string[]) => setSelections((current) => {
-    if ((current[source] || []).join('\0') === ids.join('\0')) return current;
-    return { ...current, [source]: ids };
-  }), []);
-  const exclusiveType = ['profile-manager', 'attendance-report-manager', 'attendance-window-manager'].find((type) => page.components.some((component: any) => component.type === type));
-  const rawPageComponents = exclusiveType ? page.components.filter((component: any) => component.type === exclusiveType) : page.components;
-  const groupedForms = rawPageComponents.filter((component: any) => component.type === 'form' && typeof component.options?.actionMenu === 'string');
+  const updateSelection = useCallback(
+    (source: string, ids: string[]) =>
+      setSelections((current) => {
+        if ((current[source] || []).join("\0") === ids.join("\0"))
+          return current;
+        return { ...current, [source]: ids };
+      }),
+    [],
+  );
+  const exclusiveType = [
+    "profile-manager",
+    "attendance-report-manager",
+    "attendance-window-manager",
+  ].find((type) =>
+    page.components.some((component: any) => component.type === type),
+  );
+  const rawPageComponents = exclusiveType
+    ? page.components.filter(
+        (component: any) => component.type === exclusiveType,
+      )
+    : page.components;
+  const groupedForms = rawPageComponents.filter(
+    (component: any) =>
+      component.type === "form" &&
+      typeof component.options?.actionMenu === "string",
+  );
   const creationForms = rawPageComponents.filter((component: any) => {
-    const source = page.dataSources.find((entry) => entry.id === component.source);
-    return component.type === 'form' && !component.options?.actionMenu && source?.method === 'POST' && !component.options?.initialSource && component.options?.keepExpanded !== true;
+    const source = page.dataSources.find(
+      (entry) => entry.id === component.source,
+    );
+    return (
+      component.type === "form" &&
+      !component.options?.actionMenu &&
+      source?.method === "POST" &&
+      !component.options?.initialSource &&
+      component.options?.keepExpanded !== true
+    );
   });
-  const firstTableIndex = rawPageComponents.findIndex((component: any) => component.type === 'table');
-  const promotedForms = [...groupedForms, ...(firstTableIndex >= 0 ? creationForms : [])];
-  const pageComponents = promotedForms.length && firstTableIndex >= 0
-    ? [...rawPageComponents.slice(0, firstTableIndex).filter((component: any) => !promotedForms.includes(component)), ...promotedForms, ...rawPageComponents.slice(firstTableIndex).filter((component: any) => !promotedForms.includes(component))]
-    : rawPageComponents;
-  const actionMenuForms = (menu: string) => pageComponents.filter((candidate: any) => candidate.type === 'form' && candidate.options?.actionMenu === menu).sort((left: any, right: any) => Number(left.options?.actionMenuOrder || 0) - Number(right.options?.actionMenuOrder || 0));
-  return <div className="space-y-5" role="region" aria-label={page.title}>{pageComponents.map((component: any) => {
-    const localized = { ...component, title: presentation.translate(component.titleKey, component.title), fields: component.fields?.map((field: any) => ({ ...field, label: presentation.translate(field.labelKey, field.label) })), options: { ...component.options, submitLabel: presentation.translate(component.options?.submitLabelKey, component.options?.submitLabel), confirmation: presentation.translate(component.options?.confirmationKey, component.options?.confirmation), successMessage: presentation.translate(component.options?.successMessageKey, component.options?.successMessage), actions: component.options?.actions?.map((action: any) => ({ ...action, label: presentation.translate(action.labelKey, action.label), confirmation: presentation.translate(action.confirmationKey, action.confirmation) })), rowActions: component.options?.rowActions?.map((action: any) => ({ ...action, label: presentation.translate(action.labelKey, action.label), confirmation: presentation.translate(action.confirmationKey, action.confirmation) })), states: component.options?.states?.map((state: any) => ({ ...state, label: presentation.translate(state.labelKey, state.label) })) } }; component = localized;
-    if (component.type === 'workflow') return <PluginWorkflowHeader key={component.id} pluginId={pluginId} title={component.title || page.title} options={component.options} params={params} />;
-    if (component.type === 'table') return <PluginDataTable key={component.id} title={component.title} value={component.source ? valueAtPath(renderedData[component.source], component.options?.itemsPath) : []} fields={component.fields} options={component.options} loading={loading} error={component.source ? errors[component.source] : undefined} onSelectionChange={component.source ? (ids) => updateSelection(component.source, ids) : undefined} formatValue={presentation.format} pluginId={pluginId} pageParams={params} sources={page.dataSources as any} onRefresh={onRefresh} />;
-    if (component.type === 'form') {
-      const menu = typeof component.options?.actionMenu === 'string' ? component.options.actionMenu : '';
-      const menuForms = menu ? actionMenuForms(menu) : [];
-      if (menu && menuForms[0]?.id !== component.id) return null;
-      if (menu) return <PluginFormMenu key={`menu-${menu}`} pluginId={pluginId} params={params} forms={menuForms as any} sources={page.dataSources as any} data={renderedData} onSuccess={async (sourceId, result) => { setMutationResults((current) => ({ ...current, [sourceId]: result })); await onRefresh(); }} />;
-      const source = page.dataSources.find((entry) => entry.id === component.source); const initialSource = component.options?.initialSource ?? component.initialSource; const isPromotedCreation = creationForms.includes(component); const formOptions = isPromotedCreation ? { ...component.options, collapsible: true, defaultCollapsed: true, triggerLabel: component.options?.triggerLabel || component.title || 'Add record' } : component.options; return source && source.method !== 'GET' && source.method !== 'DELETE' ? <PluginForm key={component.id} title={component.title} pluginId={pluginId} source={source as any} params={params} fields={component.fields || []} options={formOptions as any} initialData={typeof initialSource === 'string' ? renderedData[initialSource] : undefined} data={renderedData} onSuccess={async (result) => { setMutationResults((current) => ({ ...current, [source.id]: result })); await onRefresh(); }} /> : null;
-    }
-    if (component.type === 'actions') return <PluginActions key={component.id} pluginId={pluginId} sources={page.dataSources.filter((entry) => entry.method !== 'GET') as any} params={params} actions={(component.options?.actions || []) as any} selections={selections} onSuccess={onRefresh} />;
-    if (component.type === 'metric') return <PluginMetric key={component.id} title={component.title} value={data[component.source]} options={component.options} loading={loading} error={errors[component.source]} formatValue={presentation.format} />;
-    if (component.type === 'status') return <PluginStatus key={component.id} title={component.title} value={data[component.source]} options={component.options} loading={loading} error={errors[component.source]} />;
-    if (component.type === 'detail') return <PluginCard key={component.id} title={component.title} value={data[component.source]} fields={component.fields || []} loading={loading} error={errors[component.source]} formatValue={presentation.format} />;
-    if (component.type === 'card') return <PluginCard key={component.id} title={component.title} value={data[component.source]} fields={component.fields || []} loading={loading} error={errors[component.source]} formatValue={presentation.format} />;
-    if (component.type === 'chart') return <PluginChart key={component.id} title={component.title} value={data[component.source]} options={component.options} loading={loading} error={errors[component.source]} />;
-    if (component.type === 'file') return <PluginFiles key={component.id} pluginId={pluginId} value={data[component.source]} sources={page.dataSources} params={params} options={component.options} loading={loading} error={errors[component.source]} onRefresh={onRefresh} />;
-    if (component.type === 'print') return <PluginPrintExport key={component.id} title={component.title} value={valueAtPath(renderedData[component.source], component.options?.itemsPath)} fields={component.fields || []} options={component.options} loading={loading} error={errors[component.source]} />;
-    if (component.type === 'document') return <PluginDocumentPreview key={component.id} pluginId={pluginId} title={component.title} value={valueAtPath(renderedData[component.source], component.options?.documentsPath)} options={component.options} loading={loading} error={errors[component.source]} />;
-    if (component.type === 'designer') return <PluginDocumentDesigner key={component.id} pluginId={pluginId} title={component.title} value={renderedData[component.source]} assets={component.options?.assetSource ? renderedData[component.options.assetSource] : []} sources={page.dataSources} params={params} options={component.options} loading={loading} error={errors[component.source]} onSaved={onRefresh} />;
-    if (component.type === 'scanner') { const source = page.dataSources.find((entry) => entry.id === component.source); return source && source.method !== 'GET' && source.method !== 'DELETE' ? <PluginScanner key={component.id} pluginId={pluginId} source={source} params={params} options={component.options} onSuccess={onRefresh} /> : null; }
-    if (component.type === 'self-attendance-scanner') { const source = page.dataSources.find((entry) => entry.id === component.source); return source && source.method !== 'GET' && source.method !== 'DELETE' ? <PluginSelfAttendanceScanner key={component.id} pluginId={pluginId} source={source} params={params} options={component.options} onSuccess={onRefresh} /> : null; }
-    if (component.type === 'attendance-window-manager') return <PluginAttendanceWindowManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} sources={page.dataSources} options={component.options || {}} onRefresh={onRefresh} />;
-    if (component.type === 'filter') return <PluginQueryFilter key={component.id} fields={component.fields || []} options={component.options} onApply={onQueryFilters} />;
-    if (component.type === 'study-year-manager') return <PluginStudyYearManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
-    if (component.type === 'class-manager') return <PluginClassManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
-    if (component.type === 'officer-manager') return <PluginOfficerManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
-    if (component.type === 'session-manager') return <PluginSessionManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
-    if (component.type === 'profile-manager') return <PluginProfileManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : {}} relations={component.options?.relationsSource ? renderedData[component.options.relationsSource] : {}} sources={page.dataSources as any} params={params} fields={component.fields || []} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
-    if (component.type === 'take-attendance') return <PluginTakeAttendance key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} />;
-    if (component.type === 'id-card-manager') return <PluginIdCardManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} />;
-    if (component.type === 'attendance-report-manager') return <PluginAttendanceReportManager key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} sources={page.dataSources} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} />;
-    if (component.type === 'attendance-dashboard') return <PluginAttendanceDashboard key={component.id} pluginId={pluginId} value={component.source ? renderedData[component.source] : []} data={renderedData} options={component.options || {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
-    // Legacy adapters remain available so already-installed package versions keep rendering.
-    if (component.type === 'organizing-dashboard') return <PluginOrganizingDashboard key={component.id} value={component.source ? renderedData[component.source] : {}} loading={loading} error={component.source ? errors[component.source] : undefined} onRefresh={onRefresh} />;
-    if (component.type === 'organizing-reports') return <PluginOrganizingReports key={component.id} />;
-    if (component.type === 'organizing-profiles') return <PluginOrganizingProfiles key={component.id} />;
-    if (component.type === 'heading') return <h2 key={component.id} className="text-xl font-semibold text-slate-800">{component.title}</h2>;
-    if (component.type === 'text') return <p key={component.id} className="text-sm text-slate-600">{component.title}</p>;
-    return <section key={component.id} className="card p-5 text-sm text-slate-500">{component.title || component.type} will be rendered by its LC3 component.</section>;
-  })}</div>;
+  const firstTableIndex = rawPageComponents.findIndex(
+    (component: any) => component.type === "table",
+  );
+  const promotedForms = [
+    ...groupedForms,
+    ...(firstTableIndex >= 0 ? creationForms : []),
+  ];
+  const pageComponents =
+    promotedForms.length && firstTableIndex >= 0
+      ? [
+          ...rawPageComponents
+            .slice(0, firstTableIndex)
+            .filter((component: any) => !promotedForms.includes(component)),
+          ...promotedForms,
+          ...rawPageComponents
+            .slice(firstTableIndex)
+            .filter((component: any) => !promotedForms.includes(component)),
+        ]
+      : rawPageComponents;
+  const actionMenuForms = (menu: string) =>
+    pageComponents
+      .filter(
+        (candidate: any) =>
+          candidate.type === "form" && candidate.options?.actionMenu === menu,
+      )
+      .sort(
+        (left: any, right: any) =>
+          Number(left.options?.actionMenuOrder || 0) -
+          Number(right.options?.actionMenuOrder || 0),
+      );
+  return (
+    <div
+      className={
+        companyUi
+          ? "space-y-6 rounded-[2rem] bg-slate-50/70 p-3 sm:p-5"
+          : "space-y-5"
+      }
+      role="region"
+      aria-label={page.title}
+    >
+      {pageComponents.map((component: any) => {
+        const localized = {
+          ...component,
+          title: presentation.translate(component.titleKey, component.title),
+          fields: component.fields?.map((field: any) => ({
+            ...field,
+            label: presentation.translate(field.labelKey, field.label),
+          })),
+          options: {
+            ...component.options,
+            ...(companyUi
+              ? {
+                  theme: "company",
+                  compactActions:
+                    component.type === "table"
+                      ? true
+                      : component.options?.compactActions,
+                }
+              : {}),
+            submitLabel: presentation.translate(
+              component.options?.submitLabelKey,
+              component.options?.submitLabel,
+            ),
+            confirmation: presentation.translate(
+              component.options?.confirmationKey,
+              component.options?.confirmation,
+            ),
+            successMessage: presentation.translate(
+              component.options?.successMessageKey,
+              component.options?.successMessage,
+            ),
+            actions: component.options?.actions?.map((action: any) => ({
+              ...action,
+              label: presentation.translate(action.labelKey, action.label),
+              confirmation: presentation.translate(
+                action.confirmationKey,
+                action.confirmation,
+              ),
+            })),
+            rowActions: component.options?.rowActions?.map((action: any) => ({
+              ...action,
+              label: presentation.translate(action.labelKey, action.label),
+              confirmation: presentation.translate(
+                action.confirmationKey,
+                action.confirmation,
+              ),
+            })),
+            states: component.options?.states?.map((state: any) => ({
+              ...state,
+              label: presentation.translate(state.labelKey, state.label),
+            })),
+          },
+        };
+        component = localized;
+        if (component.type === "workflow")
+          return (
+            <PluginWorkflowHeader
+              key={component.id}
+              pluginId={pluginId}
+              title={component.title || page.title}
+              options={component.options}
+              params={params}
+            />
+          );
+        if (component.type === "table")
+          return (
+            <PluginDataTable
+              key={component.id}
+              title={component.title}
+              value={
+                component.source
+                  ? valueAtPath(
+                      renderedData[component.source],
+                      component.options?.itemsPath,
+                    )
+                  : []
+              }
+              fields={component.fields}
+              options={component.options}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onSelectionChange={
+                component.source
+                  ? (ids) => updateSelection(component.source, ids)
+                  : undefined
+              }
+              formatValue={presentation.format}
+              pluginId={pluginId}
+              pageParams={params}
+              sources={page.dataSources as any}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "form") {
+          const menu =
+            typeof component.options?.actionMenu === "string"
+              ? component.options.actionMenu
+              : "";
+          const menuForms = menu ? actionMenuForms(menu) : [];
+          if (menu && menuForms[0]?.id !== component.id) return null;
+          if (menu)
+            return (
+              <PluginFormMenu
+                key={`menu-${menu}`}
+                pluginId={pluginId}
+                params={params}
+                forms={menuForms as any}
+                sources={page.dataSources as any}
+                data={renderedData}
+                onSuccess={async (sourceId, result) => {
+                  setMutationResults((current) => ({
+                    ...current,
+                    [sourceId]: result,
+                  }));
+                  await onRefresh();
+                }}
+              />
+            );
+          const source = page.dataSources.find(
+            (entry) => entry.id === component.source,
+          );
+          const initialSource =
+            component.options?.initialSource ?? component.initialSource;
+          const isPromotedCreation = creationForms.includes(component);
+          const formOptions = isPromotedCreation
+            ? {
+                ...component.options,
+                collapsible: true,
+                defaultCollapsed: true,
+                triggerLabel:
+                  component.options?.triggerLabel ||
+                  component.title ||
+                  "Add record",
+              }
+            : component.options;
+          return source &&
+            source.method !== "GET" &&
+            source.method !== "DELETE" ? (
+            <PluginForm
+              key={component.id}
+              title={component.title}
+              pluginId={pluginId}
+              source={source as any}
+              params={params}
+              fields={component.fields || []}
+              options={formOptions as any}
+              initialData={
+                typeof initialSource === "string"
+                  ? renderedData[initialSource]
+                  : undefined
+              }
+              data={renderedData}
+              onSuccess={async (result) => {
+                setMutationResults((current) => ({
+                  ...current,
+                  [source.id]: result,
+                }));
+                await onRefresh();
+              }}
+            />
+          ) : null;
+        }
+        if (component.type === "actions")
+          return (
+            <PluginActions
+              key={component.id}
+              pluginId={pluginId}
+              sources={
+                page.dataSources.filter(
+                  (entry) => entry.method !== "GET",
+                ) as any
+              }
+              params={params}
+              actions={(component.options?.actions || []) as any}
+              selections={selections}
+              onSuccess={onRefresh}
+            />
+          );
+        if (component.type === "metric")
+          return (
+            <PluginMetric
+              key={component.id}
+              title={component.title}
+              value={data[component.source]}
+              options={component.options}
+              loading={loading}
+              error={errors[component.source]}
+              formatValue={presentation.format}
+            />
+          );
+        if (component.type === "status")
+          return (
+            <PluginStatus
+              key={component.id}
+              title={component.title}
+              value={data[component.source]}
+              options={component.options}
+              loading={loading}
+              error={errors[component.source]}
+            />
+          );
+        if (component.type === "detail")
+          return (
+            <PluginCard
+              key={component.id}
+              title={component.title}
+              value={data[component.source]}
+              fields={component.fields || []}
+              loading={loading}
+              error={errors[component.source]}
+              formatValue={presentation.format}
+            />
+          );
+        if (component.type === "card")
+          return (
+            <PluginCard
+              key={component.id}
+              title={component.title}
+              value={data[component.source]}
+              fields={component.fields || []}
+              loading={loading}
+              error={errors[component.source]}
+              formatValue={presentation.format}
+            />
+          );
+        if (component.type === "chart")
+          return (
+            <PluginChart
+              key={component.id}
+              title={component.title}
+              value={data[component.source]}
+              options={component.options}
+              loading={loading}
+              error={errors[component.source]}
+            />
+          );
+        if (component.type === "file")
+          return (
+            <PluginFiles
+              key={component.id}
+              pluginId={pluginId}
+              value={data[component.source]}
+              sources={page.dataSources}
+              params={params}
+              options={component.options}
+              loading={loading}
+              error={errors[component.source]}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "print")
+          return (
+            <PluginPrintExport
+              key={component.id}
+              title={component.title}
+              value={valueAtPath(
+                renderedData[component.source],
+                component.options?.itemsPath,
+              )}
+              fields={component.fields || []}
+              options={component.options}
+              loading={loading}
+              error={errors[component.source]}
+            />
+          );
+        if (component.type === "document")
+          return (
+            <PluginDocumentPreview
+              key={component.id}
+              pluginId={pluginId}
+              title={component.title}
+              value={valueAtPath(
+                renderedData[component.source],
+                component.options?.documentsPath,
+              )}
+              options={component.options}
+              loading={loading}
+              error={errors[component.source]}
+            />
+          );
+        if (component.type === "designer")
+          return (
+            <PluginDocumentDesigner
+              key={component.id}
+              pluginId={pluginId}
+              title={component.title}
+              value={renderedData[component.source]}
+              assets={
+                component.options?.assetSource
+                  ? renderedData[component.options.assetSource]
+                  : []
+              }
+              sources={page.dataSources}
+              params={params}
+              options={component.options}
+              loading={loading}
+              error={errors[component.source]}
+              onSaved={onRefresh}
+            />
+          );
+        if (component.type === "scanner") {
+          const source = page.dataSources.find(
+            (entry) => entry.id === component.source,
+          );
+          return source &&
+            source.method !== "GET" &&
+            source.method !== "DELETE" ? (
+            <PluginScanner
+              key={component.id}
+              pluginId={pluginId}
+              source={source}
+              params={params}
+              options={component.options}
+              onSuccess={onRefresh}
+            />
+          ) : null;
+        }
+        if (component.type === "self-attendance-scanner") {
+          const source = page.dataSources.find(
+            (entry) => entry.id === component.source,
+          );
+          return source &&
+            source.method !== "GET" &&
+            source.method !== "DELETE" ? (
+            <PluginSelfAttendanceScanner
+              key={component.id}
+              pluginId={pluginId}
+              source={source}
+              params={params}
+              options={component.options}
+              onSuccess={onRefresh}
+            />
+          ) : null;
+        }
+        if (component.type === "attendance-window-manager")
+          return (
+            <PluginAttendanceWindowManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              sources={page.dataSources}
+              options={component.options || {}}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "filter")
+          return (
+            <PluginQueryFilter
+              key={component.id}
+              fields={component.fields || []}
+              options={component.options}
+              onApply={onQueryFilters}
+            />
+          );
+        if (component.type === "study-year-manager")
+          return (
+            <PluginStudyYearManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              sources={page.dataSources}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "class-manager")
+          return (
+            <PluginClassManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              sources={page.dataSources}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "officer-manager")
+          return (
+            <PluginOfficerManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              sources={page.dataSources}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "session-manager")
+          return (
+            <PluginSessionManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              sources={page.dataSources}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "profile-manager")
+          return (
+            <PluginProfileManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : {}}
+              relations={
+                component.options?.relationsSource
+                  ? renderedData[component.options.relationsSource]
+                  : {}
+              }
+              sources={page.dataSources as any}
+              params={params}
+              fields={component.fields || []}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "take-attendance")
+          return (
+            <PluginTakeAttendance
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              sources={page.dataSources}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+            />
+          );
+        if (component.type === "id-card-manager")
+          return (
+            <PluginIdCardManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              sources={page.dataSources}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+            />
+          );
+        if (component.type === "attendance-report-manager")
+          return (
+            <PluginAttendanceReportManager
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              sources={page.dataSources}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+            />
+          );
+        if (component.type === "attendance-dashboard")
+          return (
+            <PluginAttendanceDashboard
+              key={component.id}
+              pluginId={pluginId}
+              value={component.source ? renderedData[component.source] : []}
+              data={renderedData}
+              options={component.options || {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onRefresh={onRefresh}
+            />
+          );
+        // Legacy adapters remain available so already-installed package versions keep rendering.
+        if (component.type === "organizing-dashboard")
+          return (
+            <PluginOrganizingDashboard
+              key={component.id}
+              value={component.source ? renderedData[component.source] : {}}
+              loading={loading}
+              error={component.source ? errors[component.source] : undefined}
+              onRefresh={onRefresh}
+            />
+          );
+        if (component.type === "organizing-reports")
+          return <PluginOrganizingReports key={component.id} />;
+        if (component.type === "organizing-profiles")
+          return <PluginOrganizingProfiles key={component.id} />;
+        if (component.type === "heading")
+          return (
+            <div
+              key={component.id}
+              className={companyUi ? "flex items-center gap-3 pt-2" : ""}
+            >
+              <span
+                className={
+                  companyUi ? "h-7 w-1 rounded-full bg-blue-600" : "hidden"
+                }
+              />
+              <h2
+                className={
+                  companyUi
+                    ? "text-xl font-black tracking-tight text-slate-950"
+                    : "text-xl font-semibold text-slate-800"
+                }
+              >
+                {component.title}
+              </h2>
+            </div>
+          );
+        if (component.type === "text")
+          return (
+            <p
+              key={component.id}
+              className={
+                companyUi
+                  ? "rounded-2xl border border-blue-100 bg-blue-50/70 px-5 py-4 text-sm leading-6 text-slate-700"
+                  : "text-sm text-slate-600"
+              }
+            >
+              {component.title}
+            </p>
+          );
+        return (
+          <section
+            key={component.id}
+            className="card p-5 text-sm text-slate-500"
+          >
+            {component.title || component.type} will be rendered by its LC3
+            component.
+          </section>
+        );
+      })}
+    </div>
+  );
 }
