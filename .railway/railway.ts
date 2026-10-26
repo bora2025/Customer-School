@@ -54,7 +54,7 @@ export default defineRailway((context) => {
   const web = service("web", {
     source: webRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
-    env: { API_URL: preserve(), MARKETPLACE_URL: preserve(), NEXT_PUBLIC_API_URL: preserve(), NEXT_PUBLIC_WATTANAM_DISTRIBUTION: preserve(), NODE_ENV: preserve(), PORT: preserve(), RAILWAY_DOCKERFILE_PATH: preserve(), WATTANAM_DISTRIBUTION: preserve() },
+    env: { API_URL: preserve(), APP_VERSION: preserve(), GIT_COMMIT: preserve(), MARKETPLACE_URL: preserve(), NEXT_PUBLIC_API_URL: preserve(), NEXT_PUBLIC_WATTANAM_DISTRIBUTION: preserve(), NODE_ENV: preserve(), PORT: preserve(), RAILWAY_DOCKERFILE_PATH: preserve(), WATTANAM_DISTRIBUTION: preserve() },
   });
   const api = service("api", {
     source: backendRelease,
