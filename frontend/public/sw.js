@@ -2,7 +2,7 @@
 // Strategy: network-first with cache fallback for navigation requests; passthrough for everything else.
 // Bump this whenever scanner UI behavior changes so installed gate devices do
 // not keep an old navigation document while operating on a weak connection.
-const CACHE = 'wattaman-shell-v2';
+const CACHE = 'wattaman-shell-v3';
 const SHELL = ['/', '/manifest.json', '/favicon.svg', '/logo.png'];
 
 self.addEventListener('install', (event) => {
