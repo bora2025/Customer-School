@@ -1,0 +1,47 @@
+# Local-only override: builds the physical core images from source and connects to a Marketplace
+# running on the same Docker host (Wattanam-V2 `npm run local:up`, port 3010).
+#
+#   node scripts/bootstrap-local-connected.js
+#   docker compose --env-file .env.connected.local -f docker-compose.core.yml -f docker-compose.local.yml up --build -d
+#
+# The API runs with NODE_ENV=development only so that MARKETPLACE_URL may be plain HTTP on this
+# machine. Never use this file for a real school: production still requires an HTTPS Marketplace.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+
+  api:
+    image: wattanam-core-api:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.core
+    environment:
+      NODE_ENV: development
+      COOKIE_SECURE: "false"
+      INSTALLATION_KEY_DIR: /data/marketplace-identity
+      ENTITLEMENT_KEY_ID: ${ENTITLEMENT_KEY_ID:-local-entitlement}
+      ENTITLEMENT_PUBLIC_KEY: ${ENTITLEMENT_PUBLIC_KEY:?ENTITLEMENT_PUBLIC_KEY is required}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  web:
+    image: wattanam-core-web:local
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.core
+
+  gateway:
+    image: wattanam-core-gateway:local
+    build:
+      context: .
+      dockerfile: infrastructure/gateway/Dockerfile
+
+  backup:
+    image: wattanam-core-api:local
+
+  postgres_restore:
+    image: postgres:16-alpine
+
+  restore:
+    image: wattanam-core-api:local
