@@ -7,7 +7,7 @@ import { SchoolAccessService } from './school-access.service';
 // what the lock screen polls, and /admin/data-export lets the SUPER_ADMIN take the school's own
 // records out. Every controller on this list still checks who is asking; the list only lets a
 // request get past the lock, which runs before sign-in is checked and so cannot tell roles apart.
-const ALLOWED_WHILE_SUSPENDED = ['/health', '/health/ready', '/version', '/auth', '/admin/marketplace/billing-control', '/school-access', '/admin/data-export'];
+const ALLOWED_WHILE_SUSPENDED = ['/health', '/health/ready', '/version', '/auth', '/admin/marketplace/billing-control', '/school-access', '/admin/data-export', '/csp-report'];
 
 @Injectable()
 export class SchoolBillingAccessGuard implements CanActivate {

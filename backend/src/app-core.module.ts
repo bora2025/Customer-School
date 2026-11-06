@@ -18,6 +18,7 @@ import { NotificationModule } from './notification/notification.module';
 import { NotificationPreferenceModule } from './notification-preference/notification-preference.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { PluginsModule } from './plugins/plugins.module';
+import { SecurityModule } from './security/security.module';
 import { SiteSettingsModule } from './site-settings/site-settings.module';
 import { UpdatesModule } from './updates/updates.module';
 
@@ -52,6 +53,7 @@ export class AppCoreModule {
         UpdatesModule,
         MarketplaceModule,
         ObservabilityModule,
+        SecurityModule,
         SiteSettingsModule,
         NotificationModule,
         NotificationPreferenceModule,

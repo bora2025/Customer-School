@@ -22,6 +22,8 @@ export async function bootstrapApi(rootModule: Type<unknown> | DynamicModule) {
   app.set('trust proxy', config.trustProxyHops);
   app.use(helmet());
   app.use(cookieParser());
+  // Browser CSP reports use their own media types; parse them on that route only, with a small cap.
+  app.use('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '16kb' }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(compression());
