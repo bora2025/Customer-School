@@ -24,6 +24,22 @@ server {
     gzip on;
     gzip_types application/javascript application/json application/xml text/css text/plain;
 
+    # Browser security headers for every response. Keep add_header out of location blocks:
+    # any add_header there silently drops all of these for that location.
+    # Camera and geolocation stay allowed for this origin (attendance scanners, transport).
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Permissions-Policy "camera=(self), geolocation=(self), microphone=(), payment=(), usb=()" always;
+    # Drop upstream copies (helmet on the API sets some) so each header is sent exactly once;
+    # a duplicated X-Frame-Options can make browsers ignore it.
+    proxy_hide_header Strict-Transport-Security;
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header Permissions-Policy;
+    proxy_hide_header X-Powered-By;
+    server_tokens off;
+
     location = /gateway-health {
         default_type text/plain;
         return 200 "ok";
