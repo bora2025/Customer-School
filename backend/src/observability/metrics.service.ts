@@ -141,6 +141,21 @@ export class MetricsService implements OnModuleInit {
         } catch { this.set(Infinity); }
       },
     });
+    // Off-site state is read from the bucket, so the API reports the worker's backups correctly
+    // even though the two processes have separate volumes.
+    new client.Gauge({
+      name: 'offsite_backup_configured', help: '1 when encrypted off-site backup is configured', registers: [this.registry],
+      collect() { this.set(backupService.offsiteConfigured() ? 1 : 0); },
+    });
+    new client.Gauge({
+      name: 'offsite_backup_age_seconds', help: 'Seconds since the recovery point of the newest complete off-site set; +Inf if none or unreadable', registers: [this.registry],
+      async collect() {
+        try {
+          const latest = await backupService.offsiteLatest();
+          this.set(latest ? (Date.now() - Date.parse(latest.createdAt)) / 1000 : Infinity);
+        } catch { this.set(Infinity); }
+      },
+    });
     new client.Gauge({
       name: 'recovery_set_contract_verified', help: '1 when the latest recovery set has complete verified plugin contracts', registers: [this.registry],
       async collect() {

@@ -7,6 +7,7 @@ import { Cron } from '@nestjs/schedule';
 import { createHash } from 'crypto';
 import { ObjectStorageProvider, safeObjectKey } from '../storage/object-storage';
 import { PLUGIN_OBJECT_STORAGE } from '../storage/storage.module';
+import { OFFSITE_BACKUP, OffsiteBackupUploader, OffsiteSetRecord } from './offsite-backup';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,7 +35,20 @@ interface RecoverySetJournal {
 @Injectable()
 export class BackupService {
   private readonly logger = new Logger(BackupService.name);
-  constructor(@Optional() @Inject(PLUGIN_OBJECT_STORAGE) private readonly pluginStorage?: ObjectStorageProvider) {}
+  constructor(
+    @Optional() @Inject(PLUGIN_OBJECT_STORAGE) private readonly pluginStorage?: ObjectStorageProvider,
+    @Optional() @Inject(OFFSITE_BACKUP) private readonly offsite?: OffsiteBackupUploader | null,
+  ) {}
+
+  /** Newest complete off-site set. API and worker have separate volumes, so this is the one piece
+   * of backup state both processes (and the monitor) can see. Null when not configured. */
+  async offsiteLatest(): Promise<OffsiteSetRecord | null> {
+    return this.offsite ? this.offsite.latest() : null;
+  }
+
+  offsiteConfigured(): boolean {
+    return !!this.offsite;
+  }
   private backupDirectory() {
     return path.resolve(process.env.BACKUP_DIR || (process.env.NODE_ENV === 'production' ? '/data/backups' : './backups'));
   }
@@ -183,11 +197,22 @@ export class BackupService {
    */
   @Cron('0 2 * * *')
   async scheduledBackup(): Promise<void> {
+    let journal: RecoverySetJournal;
     try {
-      const journal = await this.createRecoverySet();
+      journal = await this.createRecoverySet();
       this.logger.log(`Scheduled recovery-set backup completed: ${journal.journalFile}`);
     } catch (error) {
       this.logger.error(`Scheduled recovery-set backup failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    if (!this.offsite) return;
+    try {
+      const record = await this.offsite.upload(this.backupDirectory(), journal);
+      const pruned = await this.offsite.prune();
+      // warn, not log: production keeps only warn/error, and this line is the evidence a copy left the host.
+      this.logger.warn(`Off-site backup uploaded: ${record.setId} (${record.files.length} files; pruned ${pruned.length} old sets)`);
+    } catch (error) {
+      this.logger.error(`Off-site backup upload failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

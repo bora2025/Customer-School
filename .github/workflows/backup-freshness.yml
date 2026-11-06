@@ -1,0 +1,25 @@
+name: Backup freshness
+
+# Fails (and notifies) when the live school has no fresh encrypted off-site backup.
+# Requires repository variable SCHOOL_GATEWAY_URL and secret SCHOOL_METRICS_TOKEN.
+on:
+  schedule:
+    - cron: '30 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Newest off-site recovery set is under 26 hours old
+        env:
+          SCHOOL_GATEWAY_URL: ${{ vars.SCHOOL_GATEWAY_URL }}
+          METRICS_TOKEN: ${{ secrets.SCHOOL_METRICS_TOKEN }}
+        run: node tools/check-backup-freshness.js
