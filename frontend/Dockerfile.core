@@ -40,6 +40,7 @@ USER nextjs
 EXPOSE 3000
 
 ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
+# "::" accepts IPv4 and IPv6; Railway's private network routes over IPv6.
+ENV HOSTNAME="::"
 
 CMD ["node", "server.js"]

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Observable, tap, catchError, throwError } from 'rxjs';
 import { AuditService } from './audit.service';
+import { clientIp } from '../common/client-ip';
 
 /**
  * Auto-records every mutating HTTP request (POST/PUT/PATCH/DELETE) made by an
@@ -126,9 +127,7 @@ export class AuditInterceptor implements NestInterceptor {
   }
 
   private clientIp(req: any): string | null {
-    const xff = req.headers?.['x-forwarded-for'];
-    if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0].trim();
-    return req.ip ?? req.socket?.remoteAddress ?? null;
+    return clientIp(req);
   }
 
   private sanitize(value: any): any {

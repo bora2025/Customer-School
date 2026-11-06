@@ -60,7 +60,8 @@ export default defineRailway((context) => {
     source: backendRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
     volumeMounts: { "/data": apiVolume },
-    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, DATABASE_URL: preserve(), MIGRATION_DATABASE_URL: preserve(), PROCESS_ROLE: "api", PORT: preserve(), PUBLIC_APP_URL: preserve() },
+    // TRUST_PROXY_HOPS=2: Railway edge + school gateway sit in front of the API.
+    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, DATABASE_URL: preserve(), MIGRATION_DATABASE_URL: preserve(), PROCESS_ROLE: "api", PORT: preserve(), PUBLIC_APP_URL: preserve(), TRUST_PROXY_HOPS: "2" },
   });
   const worker = service("worker", {
     source: backendRelease,

@@ -38,7 +38,7 @@ async function bootstrap() {
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(config.workerPort, '0.0.0.0', resolve);
+    server.listen(config.workerPort, '::', resolve);
   });
   let stopping = false;
   const shutdown = async (signal: string) => {

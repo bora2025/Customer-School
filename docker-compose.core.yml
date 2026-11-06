@@ -34,6 +34,8 @@ services:
       CORS_ORIGINS: ${APP_URL:?APP_URL is required}
       PUBLIC_APP_URL: ${APP_URL:?APP_URL is required}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # Proxies in front of the API: 1 = this gateway. Add one per extra TLS proxy or load balancer.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       BACKUP_DIR: /data/backups
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
       PLUGIN_DIR: /data/plugins

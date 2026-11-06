@@ -12,6 +12,7 @@ import { getJwtSecret } from '../config/environment';
 import { PasswordResetService } from './password-reset.service';
 import { ConfirmPasswordResetDto, RequestPasswordResetDto } from './dto/password-reset.dto';
 import { MfaService } from './mfa.service';
+import { clientIp } from '../common/client-ip';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const secureCookies = process.env.COOKIE_SECURE === undefined
@@ -49,11 +50,9 @@ export class AuthController {
     return { reset: true };
   }
 
-  /** Extract client IP honouring X-Forwarded-For */
+  /** Trusted client address; see common/client-ip.ts. */
   private clientIp(req: any): string | null {
-    const xff = req.headers?.['x-forwarded-for'];
-    if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0].trim();
-    return req.ip ?? req.socket?.remoteAddress ?? null;
+    return clientIp(req);
   }
 
   /**

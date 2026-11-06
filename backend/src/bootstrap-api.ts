@@ -1,5 +1,6 @@
 import { Type, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import express from 'express';
@@ -13,10 +14,12 @@ export async function bootstrapApi(rootModule: Type<unknown> | DynamicModule) {
   const config = readApiStartupConfig();
   readUpdateRepositoryConfig();
   readNotificationProviderConfig();
-  const app = await NestFactory.create(rootModule, {
+  const app = await NestFactory.create<NestExpressApplication>(rootModule, {
     logger: config.nodeEnv === 'production' ? ['error', 'warn'] : ['log', 'error', 'warn'],
   });
 
+  // Without this, req.ip is the gateway's address, so every user shares one rate-limit bucket.
+  app.set('trust proxy', config.trustProxyHops);
   app.use(helmet());
   app.use(cookieParser());
   app.use(express.json({ limit: '10mb' }));
@@ -43,7 +46,8 @@ export async function bootstrapApi(rootModule: Type<unknown> | DynamicModule) {
     credentials: true,
   });
   app.enableShutdownHooks(undefined, { useProcessExit: true });
-  await app.listen(config.port, '0.0.0.0');
+  // '::' accepts IPv4 and IPv6; Railway's private network routes over IPv6.
+  await app.listen(config.port, '::');
   console.log(`API server running on port ${config.port} (${config.processRole} role, ${config.distribution} distribution)`);
 }
 

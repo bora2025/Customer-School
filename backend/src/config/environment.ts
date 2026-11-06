@@ -33,6 +33,10 @@ export interface RuntimeConfig {
   processRole: ProcessRole;
   workerPort: number;
   distribution: Distribution;
+  /** Reverse proxies in front of the API (Express `trust proxy` hop count). The client address is
+   * taken that many hops from the right of X-Forwarded-For, so client-supplied entries further left
+   * are ignored. 1 = school gateway only (Compose); 2 = Railway edge + gateway. */
+  trustProxyHops: number;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -208,6 +212,7 @@ export function readRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Runtime
     processRole: getProcessRole(env),
     workerPort: parsePort(env.WORKER_PORT || '3002'),
     distribution: getDistribution(env),
+    trustProxyHops: integer(env, 'TRUST_PROXY_HOPS', 1, 0, 5),
   };
 }
 
