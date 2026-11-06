@@ -22,3 +22,28 @@ test('selects only the newest strict v2 recovery set', () => {
     assert.equal(path.basename(latestRecoverySet(directory).file), 'wattanam-recovery-new.recovery-set.json');
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('creates the recovery-named target database on the rehearsal server only when missing', () => {
+  const { ensureTargetDatabase } = require('./scheduled-recovery-drill');
+  const calls = [];
+  const fakeSpawn = (exists) => (command, args, options) => {
+    const sql = args[args.length - 1];
+    calls.push({ command, sql, database: options.env.PGDATABASE, host: options.env.PGHOST });
+    return { status: 0, stdout: sql.startsWith('SELECT') && exists ? '1\n' : '', stderr: '' };
+  };
+  const target = 'postgresql://drill:secret@recovery-drill.railway.internal:5432/recovery_drill';
+  assert.equal(ensureTargetDatabase(target, 'recovery_drill', fakeSpawn(false)), true);
+  assert.deepEqual(calls.map((call) => call.sql), [
+    "SELECT 1 FROM pg_database WHERE datname = 'recovery_drill'",
+    'CREATE DATABASE "recovery_drill"',
+  ]);
+  assert.ok(calls.every((call) => call.command === 'psql' && call.database === 'postgres' && call.host === 'recovery-drill.railway.internal'));
+  calls.length = 0;
+  assert.equal(ensureTargetDatabase(target, 'recovery_drill', fakeSpawn(true)), false);
+  assert.equal(calls.length, 1, 'an existing database is reused, never recreated');
+});
+
+test('refuses database names that could inject SQL', () => {
+  const { ensureTargetDatabase } = require('./scheduled-recovery-drill');
+  assert.throws(() => ensureTargetDatabase('postgresql://u:p@h/x', 'recovery_drill"; DROP DATABASE railway; --', () => ({ status: 0 })), /letters, digits and underscores/);
+});
