@@ -41,6 +41,12 @@ export default defineRailway((context) => {
 
   const Postgres = postgres("Postgres", { region: "asia-southeast1-eqsg3a" });
   Postgres.networking = { privateNetworkEndpoint: "postgres" };
+  // Rehearsal target for the monthly restore drill (scheduled-recovery-drill.yml). It never holds
+  // live data; the drill creates its `recovery_drill` database on first run and restores into it.
+  const recoveryDrill = postgres("recovery-drill", { region: "asia-southeast1-eqsg3a" });
+  // Railway resolves ${{...}} references at runtime, so no credential is stored here. The database
+  // name must identify itself as a rehearsal target (enforced by the drill script).
+  const recoveryDrillDatabaseUrl = "postgresql://${{recovery-drill.PGUSER}}:${{recovery-drill.PGPASSWORD}}@${{recovery-drill.PGHOST}}:${{recovery-drill.PGPORT}}/recovery_drill";
   const pluginArtifacts = bucket(context.environmentName === "plugin-certification-20261018" ? "plugin-cert-artifacts-20261018" : "plugin-artifacts", { region: "sin" });
   const splitRuntimeEnvironment = {
     PLUGIN_REQUIRED_RUNTIME_ROLES: "api,worker",
@@ -73,7 +79,7 @@ export default defineRailway((context) => {
     source: backendRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
     volumeMounts: { "/data": workerVolume },
-    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, DATABASE_URL: preserve(), PROCESS_ROLE: "worker", WORKER_PORT: "3002" },
+    env: { ...sharedBackendEnvironment, ...splitRuntimeEnvironment, DATABASE_URL: preserve(), PROCESS_ROLE: "worker", WORKER_PORT: "3002", RECOVERY_DRILL_DATABASE_URL: recoveryDrillDatabaseUrl },
   });
   const gateway = service("gateway", {
     source: gatewayRelease,
@@ -82,6 +88,6 @@ export default defineRailway((context) => {
   });
 
   return project("customer-school", {
-    resources: [web, api, worker, Postgres, gateway, pluginArtifacts, apiVolume, workerVolume, postgresVolume],
+    resources: [web, api, worker, Postgres, recoveryDrill, gateway, pluginArtifacts, apiVolume, workerVolume, postgresVolume],
   });
 });
