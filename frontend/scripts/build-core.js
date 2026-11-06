@@ -68,40 +68,75 @@ function prepareWorkspace() {
   for (const directory of ['components', 'lib', 'public']) {
     copyTree(path.join(frontendRoot, directory), path.join(workspace, directory));
   }
-  fs.symlinkSync(path.join(frontendRoot, 'node_modules'), path.join(workspace, 'node_modules'), 'junction');
+  if (!portableDependencies()) {
+    fs.symlinkSync(path.join(frontendRoot, 'node_modules'), path.join(workspace, 'node_modules'), 'junction');
+  }
 }
 
-function materializeStandaloneDependencies() {
-  if (process.env.CORE_BUILD_NODE_MODULES_MODE !== 'copy') return;
+// Portable mode (Docker images and CI) gives Next a real node_modules inside the workspace, so its
+// file tracer follows imports and the standalone output contains only the packages the core
+// server needs. Legacy-only dependencies are therefore absent from the core image. The tree is
+// moved when the filesystem allows it (instant) and always moved back after the build. Docker's
+// overlay filesystem refuses to rename a directory created by an earlier image layer (EXDEV), so
+// there the tree is copied into the workspace and the copy is deleted after the build.
+// Local developer builds keep the fast junction; their standalone output is not portable.
+function portableDependencies() {
+  return process.env.CORE_BUILD_NODE_MODULES_MODE === 'copy';
+}
+
+function withWorkspaceDependencies(run) {
+  if (!portableDependencies()) return run(path.join(frontendRoot, 'node_modules'));
+  const source = path.join(frontendRoot, 'node_modules');
+  const target = path.join(workspace, 'node_modules');
+  let moved = true;
+  try {
+    fs.renameSync(source, target);
+  } catch (error) {
+    if (error.code !== 'EXDEV') throw error;
+    moved = false;
+    fs.cpSync(source, target, { recursive: true, verbatimSymlinks: true });
+  }
+  try {
+    return run(target);
+  } finally {
+    if (moved) fs.renameSync(target, source);
+    else fs.rmSync(target, { recursive: true, force: true });
+  }
+}
+
+function assertPortableStandalone() {
+  if (!portableDependencies()) return;
   const standaloneModules = path.join(workspace, '.next', 'standalone', 'node_modules');
-  fs.rmSync(standaloneModules, { recursive: true, force: true });
-  // The isolated workspace deliberately uses a fast dependency junction while Next compiles.
-  // Its standalone tracer preserves that junction, which points outside a runner image. Replace
-  // it only after a successful build with a real dependency tree so the image is portable.
-  fs.cpSync(path.join(frontendRoot, 'node_modules'), standaloneModules, {
-    recursive: true,
-    dereference: true,
-  });
+  const stat = fs.lstatSync(standaloneModules);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error('Core standalone node_modules must be a real traced directory in portable mode');
+  }
+  if (!fs.existsSync(path.join(standaloneModules, 'next', 'package.json'))) {
+    throw new Error('Core standalone output is missing the traced next runtime');
+  }
 }
 
 function build() {
   prepareWorkspace();
-  const nextBin = path.join(frontendRoot, 'node_modules', 'next', 'dist', 'bin', 'next');
-  const result = spawnSync(process.execPath, [nextBin, 'build', '--webpack'], {
-    cwd: workspace,
-    env: {
-      ...process.env,
-      NEXT_PUBLIC_WATTANAM_DISTRIBUTION: 'core',
-      WATTANAM_DISTRIBUTION: 'core',
-    },
-    encoding: 'utf8',
-    stdio: 'inherit',
+  const status = withWorkspaceDependencies((modules) => {
+    const nextBin = path.join(modules, 'next', 'dist', 'bin', 'next');
+    const result = spawnSync(process.execPath, [nextBin, 'build', '--webpack'], {
+      cwd: workspace,
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_WATTANAM_DISTRIBUTION: 'core',
+        WATTANAM_DISTRIBUTION: 'core',
+      },
+      encoding: 'utf8',
+      stdio: 'inherit',
+    });
+    if (result.error) throw result.error;
+    return result.status;
   });
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status || 1);
-  materializeStandaloneDependencies();
+  if (status !== 0) process.exit(status || 1);
+  assertPortableStandalone();
 }
 
 if (require.main === module) build();
 
-module.exports = { assertWorkspaceSafety, materializeStandaloneDependencies, prepareWorkspace, routeAllowed, routeForDirectory };
+module.exports = { assertPortableStandalone, assertWorkspaceSafety, prepareWorkspace, routeAllowed, routeForDirectory };

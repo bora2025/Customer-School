@@ -32,11 +32,14 @@ test('core navigation exposes the global plugin search page', () => {
   assert.match(navigationRegistry, /CORE_ADMIN_NAVIGATION_HREFS[\s\S]*['"]\/admin\/search['"]/);
 });
 
-test('core Docker builds materialize dependencies for a portable standalone trace', () => {
+test('core Docker builds trace a real dependency tree instead of copying all of node_modules', () => {
   const source = fs.readFileSync(path.join(frontendRoot, 'scripts', 'build-core.js'), 'utf8');
   const dockerfile = fs.readFileSync(path.join(frontendRoot, 'Dockerfile.core'), 'utf8');
-  assert.match(source, /CORE_BUILD_NODE_MODULES_MODE !== 'copy'/);
-  assert.match(source, /materializeStandaloneDependencies/);
-  assert.match(source, /fs\.cpSync\(path\.join\(frontendRoot, 'node_modules'\), standaloneModules/);
+  assert.match(source, /CORE_BUILD_NODE_MODULES_MODE === 'copy'/);
+  assert.match(source, /fs\.renameSync\(source, target\)/);
+  assert.match(source, /error\.code !== 'EXDEV'/);
+  assert.match(source, /if \(moved\) fs\.renameSync\(target, source\)/);
+  assert.match(source, /assertPortableStandalone\(\)/);
+  assert.doesNotMatch(source, /fs\.cpSync\(path\.join\(frontendRoot, 'node_modules'\)/);
   assert.match(dockerfile, /CORE_BUILD_NODE_MODULES_MODE=copy/);
 });

@@ -33,6 +33,10 @@ jobs:
           npm --prefix backend ci
           npm --prefix frontend ci
       - name: Build and verify physical clean core
+        env:
+          # Same traced-dependency layout as frontend/Dockerfile.core, so the audit below sees
+          # exactly the packages the core web image ships.
+          CORE_BUILD_NODE_MODULES_MODE: copy
         run: |
           npm run build:core
           npm run verify:core
@@ -43,7 +47,12 @@ jobs:
           npm audit --omit=dev --audit-level=high
           npm --prefix backend audit --audit-level=high
           npm --prefix backend audit --omit=dev --audit-level=high
-          npm --prefix frontend audit --audit-level=high
+          npm run audit:core
+      # Legacy-full frontend code (e.g. the card designer) is not in the core image. Keep its
+      # advisories visible until goal G4 deletes it, without blocking core releases.
+      - name: Audit full legacy frontend tree (informational)
+        continue-on-error: true
+        run: npm --prefix frontend audit --audit-level=high
 
   plugin-host-contracts:
     runs-on: ubuntu-latest
