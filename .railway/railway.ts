@@ -10,6 +10,12 @@ function releaseImage(name: string): ReturnType<typeof image> {
 
 const sharedBackendEnvironment = {
   APP_VERSION: preserve(), BACKUP_DIR: preserve(), COOKIE_SECURE: preserve(), CORS_ORIGINS: preserve(),
+  // Encrypted off-site backups (src/backup/offsite-backup.ts) and the /metrics bearer token. Listed
+  // so managed-variable applies keep operator-set values instead of removing them.
+  BACKUP_ENCRYPTION_KEY: preserve(), BACKUP_OFFSITE_S3_BUCKET: preserve(), BACKUP_OFFSITE_S3_REGION: preserve(),
+  BACKUP_OFFSITE_S3_ENDPOINT: preserve(), BACKUP_OFFSITE_S3_ACCESS_KEY_ID: preserve(), BACKUP_OFFSITE_S3_SECRET_ACCESS_KEY: preserve(),
+  BACKUP_OFFSITE_S3_PREFIX: preserve(), BACKUP_OFFSITE_S3_FORCE_PATH_STYLE: preserve(), BACKUP_OFFSITE_RETENTION_DAYS: preserve(),
+  METRICS_TOKEN: preserve(), METRICS_SECONDARY_TOKENS_JSON: preserve(),
   ENTITLEMENT_KEY_ID: preserve(), ENTITLEMENT_PUBLIC_KEY: preserve(), ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON: preserve(),
   GIT_COMMIT: preserve(), INSTALLATION_KEY_DIR: preserve(), JWT_KEY_ID: preserve(), JWT_SECRET: preserve(), JWT_SECONDARY_SECRETS_JSON: preserve(),
   MARKETPLACE_REQUEST_TIMEOUT_MS: preserve(), MARKETPLACE_URL: preserve(), NODE_ENV: preserve(), PLUGIN_DATA_DIR: preserve(), PLUGIN_DIR: preserve(),

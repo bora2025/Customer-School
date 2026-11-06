@@ -23,9 +23,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "24" }
-      - run: npm install --no-save railway@3.16.0
+      # The official CLI, pinned. The npm package "railway" is only the IaC SDK; its old 3.16 release
+      # made every drill fail with "requires Railway CLI 5.42.1 or newer".
+      - run: npm install --global @railway/cli@5.71.0 && railway --version
       - name: Restore latest strict recovery set into the dedicated rehearsal database
-        run: npx railway ssh --service worker --environment "$RAILWAY_ENVIRONMENT" npm run recovery-set:drill
+        run: railway ssh --service worker --environment "$RAILWAY_ENVIRONMENT" npm run recovery-set:drill
       - name: Verify the isolated deployment after the drill
         run: node tools/railway-core-hosted-preflight.js --environment "$RAILWAY_ENVIRONMENT" --confirm-isolated "$RAILWAY_ENVIRONMENT" --require-marketplace --out recovery-drill-preflight.json
       - uses: actions/upload-artifact@v4
