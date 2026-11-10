@@ -8,6 +8,7 @@
 // Env: SCHOOL_GATEWAY_URL (https origin), METRICS_TOKEN, optional MAX_BACKUP_AGE_HOURS.
 
 const DEFAULT_MAX_AGE_HOURS = 26;
+const MAX_DRILL_AGE_DAYS = 35;
 
 function gauge(metrics, name) {
   const line = metrics.split('\n').find((row) => row.startsWith(`${name} `) || row.startsWith(`${name}{`));
@@ -26,7 +27,17 @@ function evaluate(metrics, maxAgeHours = DEFAULT_MAX_AGE_HOURS) {
   if (!Number.isFinite(age)) return { ok: false, reason: 'no complete off-site backup exists (or the bucket is unreadable)' };
   const hours = age / 3600;
   if (hours > maxAgeHours) return { ok: false, reason: `newest off-site backup is ${hours.toFixed(1)}h old (limit ${maxAgeHours}h)` };
-  return { ok: true, reason: `newest off-site backup is ${hours.toFixed(1)}h old` };
+  const backup = `newest off-site backup is ${hours.toFixed(1)}h old`;
+
+  // Restore drill: proves the off-site copy actually restores. Monthly, with 5 days of slack.
+  const drillConfigured = gauge(metrics, 'recovery_drill_configured');
+  const drillAge = gauge(metrics, 'recovery_drill_success_age_seconds');
+  if (drillConfigured === undefined || drillAge === undefined) return { ok: false, reason: `${backup}; restore-drill metrics are missing (school release too old?)` };
+  if (drillConfigured !== 1) return { ok: false, reason: `${backup}; restore drill is not configured` };
+  if (!Number.isFinite(drillAge)) return { ok: false, reason: `${backup}; no restore drill has passed yet` };
+  const days = drillAge / 86400;
+  if (days > MAX_DRILL_AGE_DAYS) return { ok: false, reason: `${backup}; last successful restore drill was ${days.toFixed(1)} days ago (limit ${MAX_DRILL_AGE_DAYS})` };
+  return { ok: true, reason: `${backup}; last restore drill passed ${days.toFixed(1)} days ago` };
 }
 
 async function main(env = process.env) {

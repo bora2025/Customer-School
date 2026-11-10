@@ -45,3 +45,23 @@ node scripts/restore-recovery-set.js --from /restore/offsite/<journalFile> ...
 
 `fetch-offsite-backup.js` verifies the GCM authentication tag and each file's SHA-256 before
 writing anything. A wrong key, a corrupted object or a missing object stops the restore.
+
+## Restore drill (automatic)
+
+The worker proves the off-site copy actually restores. At most once per 30 days (checked daily at
+03:30 UTC and two minutes after each worker start), it fetches the newest off-site set with
+`fetch-offsite-backup.js` and restores it with `scheduled-recovery-drill.js` into the separate
+`recovery-drill` Postgres service (database `recovery_drill`, created on the first run). It never
+touches the live database: the target must differ from `DATABASE_URL` and be named as a rehearsal.
+
+Worker variables: `RECOVERY_DRILL_DATABASE_URL` (set by `.railway/railway.ts` from Railway
+references) and `RECOVERY_DRILL_CONFIRM_TARGET` (the school slug restored there by earlier drills).
+
+Evidence is written to the bucket as `drills/latest.json` (last attempt) and
+`drills/last-success.json`. The API exposes `recovery_drill_configured`,
+`recovery_drill_success_age_seconds` and `recovery_drill_last_attempt_passed`. The `Backup
+freshness` workflow fails if no drill has passed in 35 days. Logs: `Recovery drill passed: ...`
+(warn) or `Recovery drill failed: ...` (error, credentials redacted).
+
+This replaced a GitHub workflow that ran the drill over `railway ssh`, which needs SSH keys that a
+CI runner does not have.

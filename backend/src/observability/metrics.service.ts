@@ -1,7 +1,8 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import * as client from 'prom-client';
 import { PrismaService } from '../database/prisma.service';
 import { BackupService } from '../backup/backup.service';
+import { RecoveryDrillService } from '../backup/recovery-drill.service';
 
 /**
  * db_up, db_migrations_pending, backup_age_seconds, and the per-plugin/entitlement gauges
@@ -17,11 +18,12 @@ export class MetricsService implements OnModuleInit {
   private httpRequestsTotal!: client.Counter<'method' | 'route' | 'status_code'>;
   private httpRequestsInFlight!: client.Gauge;
 
-  constructor(private readonly prisma: PrismaService, private readonly backup: BackupService) {}
+  constructor(private readonly prisma: PrismaService, private readonly backup: BackupService, @Optional() private readonly drill?: RecoveryDrillService) {}
 
   onModuleInit() {
     const prisma = this.prisma;
     const backupService = this.backup;
+    const drillService = this.drill;
     client.collectDefaultMetrics({ register: this.registry });
 
     this.httpRequestDuration = new client.Histogram({
@@ -154,6 +156,26 @@ export class MetricsService implements OnModuleInit {
           const latest = await backupService.offsiteLatest();
           this.set(latest ? (Date.now() - Date.parse(latest.createdAt)) / 1000 : Infinity);
         } catch { this.set(Infinity); }
+      },
+    });
+    // Restore-drill evidence lives in the off-site bucket, written by the worker.
+    new client.Gauge({
+      name: 'recovery_drill_configured', help: '1 when the off-site restore drill is configured', registers: [this.registry],
+      collect() { this.set(drillService?.configured() ? 1 : 0); },
+    });
+    new client.Gauge({
+      name: 'recovery_drill_success_age_seconds', help: 'Seconds since the last successful restore of an off-site set into the rehearsal database; +Inf if never or unreadable', registers: [this.registry],
+      async collect() {
+        try {
+          const last = await drillService?.lastSuccess();
+          this.set(last?.passed ? (Date.now() - Date.parse(last.completedAt)) / 1000 : Infinity);
+        } catch { this.set(Infinity); }
+      },
+    });
+    new client.Gauge({
+      name: 'recovery_drill_last_attempt_passed', help: '1 if the most recent restore drill passed, 0 if it failed or none ran', registers: [this.registry],
+      async collect() {
+        try { this.set((await drillService?.lastAttempt())?.passed ? 1 : 0); } catch { this.set(0); }
       },
     });
     new client.Gauge({

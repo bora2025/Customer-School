@@ -64,7 +64,8 @@ describe('root module registry', () => {
       return { ...item, classification, selectedInCore };
     });
 
-    expect(classified.filter((item) => item.kind === 'job')).toHaveLength(7);
+    // 8 = 7 previous + the core off-site restore drill (backup/recovery-drill.service.ts).
+    expect(classified.filter((item) => item.kind === 'job')).toHaveLength(8);
     expect(classified.filter((item) => item.kind === 'gateway')).toHaveLength(4);
     expect(classified.filter((item) => item.kind === 'gateway' && item.selectedInCore)).toEqual([
       expect.objectContaining({ file: 'plugins/plugin-realtime.gateway.ts', classification: 'core' }),
