@@ -130,6 +130,17 @@ export class OffsiteBackupUploader {
     return record;
   }
 
+  /** Small plain-JSON records next to the sets (restore-drill evidence). Keys are restricted so this
+   * can never overwrite or read an encrypted set. They hold no school data. */
+  async writeRecord(key: 'drills/latest.json' | 'drills/last-success.json', value: unknown): Promise<void> {
+    await this.config.storage.put(key, Buffer.from(JSON.stringify(value, null, 2)));
+  }
+
+  async readRecord<T>(key: 'drills/latest.json' | 'drills/last-success.json'): Promise<T | null> {
+    const raw = await this.config.storage.get(key);
+    return raw ? JSON.parse(raw.toString('utf8')) as T : null;
+  }
+
   async latest(): Promise<OffsiteSetRecord | null> {
     const raw = await this.config.storage.get('latest.json');
     if (!raw) return null;
