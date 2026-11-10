@@ -107,7 +107,15 @@ export class OffsiteBackupUploader {
   async upload(directory: string, journal: JournalLike, now = new Date()): Promise<OffsiteSetRecord> {
     const setId = journal.journalFile.replace(/\.recovery-set\.json$/, '');
     if (!/^[A-Za-z0-9._-]+$/.test(setId)) throw new Error(`Unsafe recovery set id: ${setId}`);
-    const names = [journal.database.file, journal.pluginFiles?.archive?.file, journal.pluginData?.archive?.file, journal.journalFile]
+    // restore-database.js refuses a dump without its sibling manifest (checksum + schema lineage),
+    // and the journal does not list it, so it must be uploaded explicitly. Found by the first
+    // restore drill (2026-11-10): sets uploaded without it were not restorable.
+    const databaseManifest = journal.database.file.replace(/\.dump$/, '.manifest.json');
+    if (databaseManifest === journal.database.file) throw new Error(`Unexpected database archive name: ${journal.database.file}`);
+    try { await fs.access(path.join(directory, databaseManifest)); } catch {
+      throw new Error(`Database manifest ${databaseManifest} is missing; refusing to upload an unrestorable set`);
+    }
+    const names = [journal.database.file, databaseManifest, journal.pluginFiles?.archive?.file, journal.pluginData?.archive?.file, journal.journalFile]
       .filter((name): name is string => !!name);
     const files: OffsiteSetFile[] = [];
     for (const name of names) {

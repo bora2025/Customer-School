@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { installationSlug, postgresEnvironment } = require('./db-toolkit');
 
 function configuration(env = process.env) {
   const backupDir = path.resolve(env.BACKUP_DIR || '');
@@ -50,12 +51,18 @@ function ensureTargetDatabase(targetUrl, targetDatabase, spawn = spawnSync) {
   return true;
 }
 
+/** An empty rehearsal database (new, or left empty by a failed single-transaction restore) is
+ * confirmed as EMPTY. One that holds a school keeps the operator-configured slug, so a target that
+ * holds a DIFFERENT school is still refused by restore-database.js. */
+function drillConfirmation(targetSlug, configured) {
+  return targetSlug ? configured : 'EMPTY';
+}
+
 function run(env = process.env) {
   const config = configuration(env);
   const selected = latestRecoverySet(config.backupDir);
-  // A database created just now is guaranteed empty; otherwise the operator-configured school slug
-  // must match what the previous drill restored there.
-  const confirmation = ensureTargetDatabase(config.targetUrl, config.targetDatabase) ? 'EMPTY' : config.confirmation;
+  ensureTargetDatabase(config.targetUrl, config.targetDatabase);
+  const confirmation = drillConfirmation(installationSlug(postgresEnvironment(config.targetUrl)), config.confirmation);
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'wattanam-recovery-drill-'));
   const startedAt = new Date().toISOString();
   try {
@@ -75,4 +82,4 @@ function run(env = process.env) {
 }
 
 if (require.main === module) { try { if (process.argv.includes('--help')) process.stdout.write('Usage: npm run recovery-set:drill\nRequires BACKUP_DIR, DATABASE_URL, RECOVERY_DRILL_DATABASE_URL, and RECOVERY_DRILL_CONFIRM_TARGET.\n'); else process.stdout.write(`${JSON.stringify(run(), null, 2)}\n`); } catch (error) { process.stderr.write(`Scheduled recovery drill failed: ${error.message}\n`); process.exitCode = 1; } }
-module.exports = { configuration, ensureTargetDatabase, latestRecoverySet, run };
+module.exports = { configuration, drillConfirmation, ensureTargetDatabase, latestRecoverySet, run };

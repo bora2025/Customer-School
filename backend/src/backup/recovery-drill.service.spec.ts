@@ -76,3 +76,12 @@ describe('off-site restore drill', () => {
     expect(redact('postgresql://user:secret@host/db token=abc key=xyz')).toBe('postgresql://<redacted>@host/db token=<redacted> key=<redacted>');
   });
 });
+
+describe('redact', () => {
+  it('keeps the end of long tool output, where the failure reason is', () => {
+    const output = `${'Restoring database...\n'.repeat(200)}pg_restore: error: role "wattanam_runtime" does not exist`;
+    const kept = redact(output);
+    expect(kept.length).toBeLessThanOrEqual(1501);
+    expect(kept).toMatch(/role "wattanam_runtime" does not exist$/);
+  });
+});

@@ -30,6 +30,7 @@ async function recoverySet(directory: string, stamp: string) {
     pluginData: { archive: { file: `wattanam-${stamp}.plugin-data.tar` } },
   };
   await fs.writeFile(path.join(directory, journal.database.file), Buffer.from(`student records ${stamp}`));
+  await fs.writeFile(path.join(directory, `wattanam-${stamp}.manifest.json`), JSON.stringify({ format: 'pg_dump-custom-v1', file: journal.database.file }));
   await fs.writeFile(path.join(directory, journal.pluginFiles.archive.file), randomBytes(2048));
   await fs.writeFile(path.join(directory, journal.pluginData.archive.file), randomBytes(1024));
   await fs.writeFile(path.join(directory, journal.journalFile), JSON.stringify(journal));
@@ -56,7 +57,8 @@ describe('off-site recovery-set backups', () => {
     const journal = await recoverySet(directory, '2026-11-06T02-00-00');
     const record = await uploader.upload(directory, journal);
 
-    expect(record.files.map((file) => file.name)).toEqual([journal.database.file, journal.pluginFiles.archive.file, journal.pluginData.archive.file, journal.journalFile]);
+    // The dump's sibling manifest is required by restore-database.js even though the journal omits it.
+    expect(record.files.map((file) => file.name)).toEqual([journal.database.file, 'wattanam-2026-11-06T02-00-00.manifest.json', journal.pluginFiles.archive.file, journal.pluginData.archive.file, journal.journalFile]);
     expect((await uploader.latest())?.setId).toBe('wattanam-recovery-2026-11-06T02-00-00');
     for (const [objectKey, value] of storage.objects) {
       if (objectKey.endsWith('.enc')) expect(value.includes(Buffer.from('student records'))).toBe(false);
@@ -67,6 +69,14 @@ describe('off-site recovery-set backups', () => {
     for (const file of record.files) {
       expect(await fs.readFile(path.join(out, file.name))).toEqual(await fs.readFile(path.join(directory, file.name)));
     }
+  });
+
+  it('refuses to upload a set whose database manifest is missing (it could not be restored)', async () => {
+    const storage = new MemoryStorage();
+    const journal = await recoverySet(directory, '2026-11-06T02-00-00');
+    await fs.rm(path.join(directory, 'wattanam-2026-11-06T02-00-00.manifest.json'));
+    await expect(new OffsiteBackupUploader({ storage, key, retentionDays: 35 }).upload(directory, journal)).rejects.toThrow(/manifest .* is missing/);
+    expect(storage.objects.has('latest.json')).toBe(false);
   });
 
   it('restore refuses a corrupted object instead of writing bad data', async () => {
