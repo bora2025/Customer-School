@@ -33,12 +33,14 @@ const defaultRunner: Runner = async (script, args, env) => {
   return stdout;
 };
 
-/** Errors from pg/S3 tooling can echo connection strings; never let credentials reach logs or the bucket. */
+/** Errors from pg/S3 tooling can echo connection strings; never let credentials reach logs or the bucket.
+ * Keeps the END of long output: the actual failure reason is printed last (the first drill's error
+ * was lost when only the first 500 characters were kept). */
 export function redact(message: string): string {
-  return message
+  const redacted = message
     .replace(/\b(postgres(?:ql)?:\/\/)[^\s@/]+@/gi, '$1<redacted>@')
-    .replace(/(password|secret|token|key)=[^\s&]+/gi, '$1=<redacted>')
-    .slice(0, 500);
+    .replace(/(password|secret|token|key)=[^\s&]+/gi, '$1=<redacted>');
+  return redacted.length > 1500 ? `…${redacted.slice(-1500)}` : redacted;
 }
 
 function lastJsonLine(stdout: string): any {

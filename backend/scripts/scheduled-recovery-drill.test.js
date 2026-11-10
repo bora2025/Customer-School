@@ -47,3 +47,10 @@ test('refuses database names that could inject SQL', () => {
   const { ensureTargetDatabase } = require('./scheduled-recovery-drill');
   assert.throws(() => ensureTargetDatabase('postgresql://u:p@h/x', 'recovery_drill"; DROP DATABASE railway; --', () => ({ status: 0 })), /letters, digits and underscores/);
 });
+
+test('confirms EMPTY for an empty rehearsal database, otherwise the configured school slug', () => {
+  const { drillConfirmation } = require('./scheduled-recovery-drill');
+  assert.equal(drillConfirmation(null, 'angkor-school'), 'EMPTY', 'new or left empty by a failed restore');
+  assert.equal(drillConfirmation('angkor-school', 'angkor-school'), 'angkor-school');
+  assert.equal(drillConfirmation('other-school', 'angkor-school'), 'angkor-school', 'a different school stays a mismatch, so the restore refuses it');
+});
