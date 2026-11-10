@@ -6,6 +6,9 @@
 #
 # The API runs with NODE_ENV=development only so that MARKETPLACE_URL may be plain HTTP on this
 # machine. Never use this file for a real school: production still requires an HTTPS Marketplace.
+#
+# The local Marketplace must advertise PUBLIC_BASE_URL=http://host.docker.internal:3010 (the same
+# origin the school uses): the school only opens link-approval URLs on its configured origin.
 
 services:
   postgres:

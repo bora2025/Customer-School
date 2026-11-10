@@ -360,6 +360,51 @@ describe('PluginRuntimeService', () => {
     delete (global as any).__wattanamTransactionResult;
   });
 
+  // Regression: Academic Management called tx.publish() without await; the commit ran first, the
+  // write then failed on a closed transaction and the unhandled rejection crashed the API.
+  async function transactionRuntime(pluginSource: string, executeImpl: () => Promise<number>) {
+    const installedPath = path.join(directory, 'wattanam.test', '1.0.0');
+    await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });
+    await fs.writeFile(path.join(installedPath, 'backend', 'index.js'), pluginSource);
+    const manifest = { id: 'wattanam.test', version: '1.0.0', publisher: 'wattanam', backendEntry: 'backend/index.js', capabilities: ['database.read', 'database.write', 'database.transaction'], permissions: [], dependencies: {} };
+    const events: string[] = [];
+    const databaseTx = { $queryRawUnsafe: jest.fn(async () => []), $executeRawUnsafe: jest.fn(async () => { const count = await executeImpl(); events.push('write finished'); return count; }) };
+    const prisma = {
+      pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) },
+      $transaction: jest.fn(async (work: any) => { const result = await work(databaseTx); events.push('commit'); return result; }),
+    } as any;
+    const verifier = { verifyInstalledDirectory: jest.fn().mockResolvedValue({ manifest }) } as any;
+    const [extensions, jobs, settings, storage, notifications, directoryService, realtime, notificationQuota, audit] = dependencies();
+    const runtime = new PluginRuntimeService(prisma, verifier, new PluginEventBus(), extensions as any, jobs as any, settings as any, storage as any, notifications as any, directoryService as any, realtime as any, notificationQuota as any, audit as any);
+    return { runtime, events };
+  }
+
+  it('settles writes a plugin forgot to await before committing its transaction', async () => {
+    const { runtime, events } = await transactionRuntime(
+      `module.exports={id:'wattanam.test',async activate(context){await context.database.transaction(async(tx)=>{tx.execute('INSERT INTO plugin_wattanam_test_notes (id) VALUES ($1)',['n1']);return 'done';});}}`,
+      () => new Promise((resolve) => setTimeout(() => resolve(1), 20)),
+    );
+    await runtime.load('wattanam.test');
+    expect(events).toEqual(['write finished', 'commit']);
+  });
+
+  it('rolls back, without an unhandled rejection, when an un-awaited write fails', async () => {
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      const { runtime, events } = await transactionRuntime(
+        `module.exports={id:'wattanam.test',async activate(context){await context.database.transaction(async(tx)=>{tx.execute('INSERT INTO plugin_wattanam_test_notes (id) VALUES ($1)',['n1']);return 'done';});}}`,
+        () => new Promise((_, reject) => setTimeout(() => reject(new Error('duplicate key')), 10)),
+      );
+      await expect(runtime.load('wattanam.test')).rejects.toThrow('duplicate key');
+      expect(events).not.toContain('commit');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
   it('rejects durable event use outside the signed manifest contract declaration', async () => {
     const installedPath = path.join(directory, 'wattanam.test', '1.0.0');
     await fs.mkdir(path.join(installedPath, 'backend'), { recursive: true });

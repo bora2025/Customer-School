@@ -253,23 +253,37 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
           const policy = pluginDatabasePolicy('runtime');
           return this.prisma.$transaction(async (tx) => {
             await applyPluginDatabasePolicy(tx, 'runtime');
-            return work({
+            // A plugin may call tx.publish()/execute() without awaiting it and return. Without this,
+            // the transaction commits while that query is still pending; the query then fails on a
+            // closed transaction and the unhandled rejection crashed the whole API (found by the
+            // marketplace lifecycle e2e, 2026-11-10: Academic Management's department create).
+            // Every operation is tracked and settled BEFORE commit; any failure rolls back.
+            const pending: Promise<unknown>[] = [];
+            const track = <T>(operation: Promise<T>): Promise<T> => {
+              pending.push(operation);
+              operation.catch(() => undefined); // surfaced below, never as an unhandled rejection
+              return operation;
+            };
+            const result = await work({
             query: (sql, params = []) => {
               this.resourceQuota?.consume(id, 'sql'); const label = `Plugin ${id} transactional query`;
               if (!/^\s*SELECT\b/i.test(sql)) throw new Error(`${label} must be a SELECT statement`);
-              assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return tx.$queryRawUnsafe(sql, ...params);
+              assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return track(tx.$queryRawUnsafe(sql, ...params));
             },
-            execute: async (sql, params = []) => {
+            execute: (sql, params = []) => track((async () => {
               this.resourceQuota?.consume(id, 'sql'); const label = `Plugin ${id} transactional execute`;
               if (!/^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql)) throw new Error(`${label} must be an INSERT, UPDATE, or DELETE statement`);
               assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return { count: await tx.$executeRawUnsafe(sql, ...params) };
-            },
+            })()),
             publish: (input) => {
               assertContractVersion('durable event publication', dataContracts?.events.publishes, input.event, [input.version]);
               if (!this.contracts) throw new Error('Durable event runtime is unavailable');
-              return this.contracts.publish(tx, id, input);
+              return track(this.contracts.publish(tx, id, input));
             },
             });
+            const failed = (await Promise.allSettled(pending)).find((outcome) => outcome.status === 'rejected') as PromiseRejectedResult | undefined;
+            if (failed) throw failed.reason;
+            return result;
           }, { timeout: policy.statementTimeoutMs + 1_000, maxWait: 5_000 });
         },
       },

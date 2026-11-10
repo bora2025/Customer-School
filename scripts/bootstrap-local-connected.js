@@ -45,7 +45,8 @@ const entitlementKey = publicFromPrivateFile(path.join(marketplaceSecrets, 'enti
 const trusted = { wattanam: { 'local-official-plugins': publisherPublicKey().trim() } };
 
 const env = [
-  'APP_VERSION=0.2.0-local',
+  // A plain version: a prerelease tag (e.g. 0.2.0-local) does not satisfy plugin requiresCore ranges.
+  'APP_VERSION=0.2.0',
   'APP_URL=http://localhost:3000',
   'WEB_PORT=3000',
   'COOKIE_SECURE=false',
