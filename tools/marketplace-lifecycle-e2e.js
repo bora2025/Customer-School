@@ -6,8 +6,13 @@
 //
 //   install school -> owner login -> MFA on -> register installation with marketplace account
 //   -> link (start / owner approves on marketplace / exchange) -> catalog -> consented install of
-//   Academic Management -> write data -> dependent install (Attendance Manager) -> dependency
-//   protection -> deactivate / reactivate -> uninstall keeps data -> reinstall sees the same data
+//   the PREVIOUS Academic Management release -> write data -> dependent install (Attendance
+//   Manager) -> dependency protection -> in-place upgrade to the latest release while active
+//   (new migration applied, data kept, dependent stays active, downgrade refused) -> deactivate /
+//   reactivate -> uninstall keeps data -> reinstall sees the same data
+//
+// The marketplace catalog must offer at least two STABLE Academic Management releases; the newer
+// one should add a migration (0.3.3 -> 0.3.4+ adds 062, which seeds default attendance sessions).
 //
 // Env: SCHOOL_URL (gateway origin), MARKETPLACE_URL, MP_EMAIL, MP_PASSWORD, MP_TOTP_SECRET,
 //      MP_ACCOUNT_ID (from apps/marketplace-api/scripts/create-marketplace-account.js).
@@ -72,12 +77,20 @@ function totp(secret, now = Date.now()) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pluginState = async (id) => ((await school('GET', '/plugins')).body || []).find((plugin) => plugin.id === id) || null;
 
-async function installFromCatalog(pluginId) {
+// Catalog releases newest first (by SemVer, not by the order the marketplace returns them).
+async function catalogReleases(pluginId) {
+  const catalog = await school('GET', '/admin/marketplace/catalog');
+  const product = Array.isArray(catalog.body) ? catalog.body.find((item) => item.id === pluginId) : null;
+  const newer = (a, b) => b.version.split(/[.-]/).map(Number).reduce((order, part, index) => order || (part - (Number(a.version.split(/[.-]/)[index]) || 0)), 0);
+  return [...(product?.versions || [])].sort(newer);
+}
+
+/** which: 'latest' (default) or 'previous' (the release before the newest one). */
+async function installFromCatalog(pluginId, which = 'latest') {
   const catalog = await school('GET', '/admin/marketplace/catalog');
   if (!Array.isArray(catalog.body)) return { status: catalog.status, body: `catalog unavailable: ${JSON.stringify(catalog.body).slice(0, 300)}` };
-  const product = catalog.body.find((item) => item.id === pluginId);
-  const release = product?.versions?.[0];
-  if (!release) return { status: 404, body: `${pluginId} not in catalog` };
+  const release = (await catalogReleases(pluginId))[which === 'previous' ? 1 : 0];
+  if (!release) return { status: 404, body: `${pluginId} has no ${which} release in the catalog` };
   return school('POST', `/admin/marketplace/plugins/${encodeURIComponent(pluginId)}/${encodeURIComponent(release.version)}/install`, { activate: true, consentDigest: release.consentDigest });
 }
 
@@ -130,8 +143,13 @@ async function main() {
   check('install with a stale or forged consent digest is refused', badConsent.status === 400, `HTTP ${badConsent.status}`);
   const dependentFirst = await installFromCatalog('wattanam.attendance-manager');
   check('a dependent plugin cannot be installed before its dependency', dependentFirst.status >= 400, `HTTP ${dependentFirst.status}`);
-  const academic = await installFromCatalog('wattanam.academic-management');
-  check('Academic Management installs and activates with consent', academic.status < 300 && (await pluginState('wattanam.academic-management'))?.status === 'active', `HTTP ${academic.status}`);
+  // Start one release behind so stage 5 can upgrade a plugin that already holds school data.
+  const academicReleases = await catalogReleases('wattanam.academic-management');
+  check('catalog offers an earlier Academic Management release to upgrade from', academicReleases.length >= 2, academicReleases.map((release) => release.version).join(', ') || 'none');
+  const [latestAcademic, previousAcademic] = academicReleases.map((release) => release.version);
+  const academic = await installFromCatalog('wattanam.academic-management', 'previous');
+  const academicState = await pluginState('wattanam.academic-management');
+  check('Academic Management (previous release) installs and activates with consent', academic.status < 300 && academicState?.status === 'active' && academicState?.version === previousAcademic, `HTTP ${academic.status}, ${academicState?.version}`);
 
   // 4. Data through the plugin's own API
   const department = await school('POST', '/plugin-api/wattanam.academic-management/departments', { name: 'Lifecycle Science' });
@@ -141,7 +159,31 @@ async function main() {
   const removeDependency = await school('DELETE', '/plugins/wattanam.academic-management');
   check('a plugin another active plugin depends on cannot be removed', removeDependency.status >= 400, `HTTP ${removeDependency.status}`);
 
-  // 5. Deactivate / reactivate, uninstall / reinstall with data retained
+  // 5. In-place upgrade of an active plugin that holds data and has an active dependent.
+  // Academic Management 0.3.4 added migration 062, which seeds four default student attendance
+  // sessions; upgrading from 0.3.3 must apply it to the populated database.
+  const defaultSessions = async () => {
+    const response = await school('GET', '/plugin-api/wattanam.academic-management/sessions');
+    const rows = Array.isArray(response.body) ? response.body : [];
+    return { status: response.status, count: rows.filter((row) => /^student-default-session-[1-4]$/.test(row.id)).length };
+  };
+  const sessionsBefore = await defaultSessions();
+  const upgrade = await installFromCatalog('wattanam.academic-management', 'latest');
+  const upgraded = await pluginState('wattanam.academic-management');
+  check(`Academic Management upgrades in place ${previousAcademic} -> ${latestAcademic} while active`, upgrade.status < 300 && upgraded?.status === 'active' && upgraded?.version === latestAcademic, `HTTP ${upgrade.status}, ${upgraded?.status} ${upgraded?.version} ${upgrade.status >= 300 ? JSON.stringify(upgrade.body).slice(0, 300) : ''}`);
+  const sessionsAfter = await defaultSessions();
+  check('the upgrade applied the new migration (default attendance sessions seeded)', sessionsAfter.status < 300 && sessionsAfter.count === 4 && sessionsBefore.count === 0, `before ${sessionsBefore.count} (HTTP ${sessionsBefore.status}), after ${sessionsAfter.count} (HTTP ${sessionsAfter.status})`);
+  check('the dependent Attendance Manager stays active through the upgrade', (await pluginState('wattanam.attendance-manager'))?.status === 'active', (await pluginState('wattanam.attendance-manager'))?.status);
+  const afterUpgrade = await school('GET', '/plugin-api/wattanam.academic-management/departments');
+  const upgradedList = Array.isArray(afterUpgrade.body) ? afterUpgrade.body : afterUpgrade.body?.items || afterUpgrade.body?.data || [];
+  check('data written before the upgrade is still there', afterUpgrade.status < 300 && upgradedList.some((item) => item.id === department.body.id), `HTTP ${afterUpgrade.status}, ${upgradedList.length} departments`);
+  const postUpgradeWrite = await school('POST', '/plugin-api/wattanam.academic-management/departments', { name: 'Lifecycle Mathematics' });
+  check('the upgraded plugin accepts new writes', postUpgradeWrite.status < 300 && postUpgradeWrite.body?.id, `HTTP ${postUpgradeWrite.status}`);
+  const downgrade = await installFromCatalog('wattanam.academic-management', 'previous');
+  const afterDowngrade = await pluginState('wattanam.academic-management');
+  check('downgrading an active plugin is refused and the new version keeps running', downgrade.status >= 400 && afterDowngrade?.status === 'active' && afterDowngrade?.version === latestAcademic, `HTTP ${downgrade.status}, ${afterDowngrade?.status} ${afterDowngrade?.version}`);
+
+  // 6. Deactivate / reactivate, uninstall / reinstall with data retained
   const off = await school('POST', '/plugins/wattanam.attendance-manager/deactivate', {});
   check('Attendance Manager deactivates', off.status < 300 && (await pluginState('wattanam.attendance-manager'))?.status !== 'active', `HTTP ${off.status}`);
   const on = await school('POST', '/plugins/wattanam.attendance-manager/activate', {});
