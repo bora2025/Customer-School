@@ -112,3 +112,96 @@ suite('per-plugin database roles on real PostgreSQL', () => {
     expect(membership.member).toBe(true);
   });
 });
+
+// The production target: the API and worker connect as the restricted users created by
+// scripts/provision-runtime-database-roles.js instead of the database owner. Runs after the suite
+// above, on the same throwaway database, so it also covers the real cutover situation: plugin tables,
+// functions and wtp_* roles that were created while the application still connected as a superuser.
+suite('hardened runtime database users (provision-runtime-database-roles.js)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { provision } = require('../../scripts/provision-runtime-database-roles');
+  const refused = /permission denied|must be superuser|must be owner|not allowed|insufficient privilege/i;
+  const apiPassword = 'api-'.padEnd(40, 'a');
+  const workerPassword = 'worker-'.padEnd(40, 'w');
+  let admin: PrismaClient;
+  let api: PrismaClient;
+  let worker: PrismaClient;
+  let summary: Record<string, unknown>;
+
+  const as = (user: string, password: string) => {
+    const parsed = new URL(url!);
+    parsed.username = user;
+    parsed.password = password;
+    return new PrismaClient({ datasources: { db: { url: parsed.toString() } } });
+  };
+  const asPluginOn = (client: PrismaClient, pluginId: string, sql: string) => client.$transaction(async (tx) => {
+    await enterPluginDatabaseRole(tx, pluginId);
+    return tx.$queryRawUnsafe(sql);
+  });
+  const databaseName = () => decodeURIComponent(new URL(url!).pathname.slice(1));
+
+  beforeAll(async () => {
+    admin = new PrismaClient({ datasources: { db: { url } } });
+    // A plugin trigger function created by the database owner, as on a school before the cutover.
+    await admin.$executeRawUnsafe('CREATE FUNCTION plugin_wattanam_demo_touch() RETURNS trigger LANGUAGE plpgsql AS $fn$ BEGIN RETURN NEW; END $fn$');
+    summary = await provision({ adminUrl: url, database: databaseName(), execute: true, apiPassword, workerPassword });
+    api = as('wattanam_api', apiPassword);
+    worker = as('wattanam_worker', workerPassword);
+  });
+
+  afterAll(async () => { await Promise.all([admin, api, worker].map((client) => client?.$disconnect())); });
+
+  it('hands plugin tables, functions and existing plugin roles to the runtime users', () => {
+    expect(summary).toMatchObject({ mode: 'executed', pluginFunctionsTransferred: 1 });
+    expect(Number(summary.pluginTablesTransferred)).toBeGreaterThanOrEqual(3);
+    expect(Number(summary.pluginRolesShared)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('runs the API and worker without superuser powers', async () => {
+    for (const client of [api, worker]) {
+      const [me] = await client.$queryRawUnsafe<Array<{ superuser: boolean; bypassrls: boolean }>>('SELECT rolsuper AS superuser, rolbypassrls AS bypassrls FROM pg_roles WHERE rolname = current_user');
+      expect(me).toEqual({ superuser: false, bypassrls: false });
+      await expect(client.$queryRawUnsafe("SELECT pg_read_file('/etc/passwd')")).rejects.toThrow(refused);
+      // Core data stays readable for the application itself.
+      await expect(client.$queryRawUnsafe('SELECT email FROM "User"')).resolves.toHaveLength(1);
+    }
+    await expect(worker.$executeRawUnsafe('CREATE TABLE worker_must_not_create (id int)')).rejects.toThrow(refused);
+    await expect(worker.$executeRawUnsafe('CREATE ROLE worker_made_role')).rejects.toThrow(refused);
+  });
+
+  it('lets the API manage a plugin role that the database owner created before the cutover', async () => {
+    const result = await api.$transaction((tx) => ensurePluginDatabaseRole(tx, 'wattanam.demo'));
+    expect(result).toMatchObject({ role: 'wtp_wattanam_demo', mode: 'manager' });
+    await expect(asPluginOn(api, 'wattanam.demo', 'SELECT body FROM plugin_wattanam_demo_notes')).resolves.toEqual([{ body: 'hello' }]);
+    await expect(asPluginOn(api, 'wattanam.demo', 'SELECT email FROM "User"')).rejects.toThrow(refused);
+    await expect(asPluginOn(api, 'wattanam.demo', 'SELECT value FROM plugin_wattanam_other_secrets')).rejects.toThrow(refused);
+  });
+
+  it('lets the API upgrade a plugin: alter its tables and replace its functions', async () => {
+    await api.$executeRawUnsafe('ALTER TABLE plugin_wattanam_demo_notes ADD COLUMN upgraded_at timestamptz');
+    await api.$executeRawUnsafe('CREATE OR REPLACE FUNCTION plugin_wattanam_demo_touch() RETURNS trigger LANGUAGE plpgsql AS $fn$ BEGIN NEW.upgraded_at := now(); RETURN NEW; END $fn$');
+    await api.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS plugin_wattanam_demo_notes_body_idx ON plugin_wattanam_demo_notes (body)');
+  });
+
+  it('lets the API install a new plugin and makes the worker a member of its role', async () => {
+    await api.$executeRawUnsafe('CREATE TABLE plugin_wattanam_fresh_items (id text PRIMARY KEY, label text)');
+    await api.$executeRawUnsafe("INSERT INTO plugin_wattanam_fresh_items VALUES ('i1', 'new plugin row')");
+    await expect(api.$transaction((tx) => ensurePluginDatabaseRole(tx, 'wattanam.fresh'))).resolves.toEqual({ role: 'wtp_wattanam_fresh', relations: 1, mode: 'manager' });
+    await expect(asPluginOn(api, 'wattanam.fresh', 'SELECT label FROM plugin_wattanam_fresh_items')).resolves.toEqual([{ label: 'new plugin row' }]);
+    // The worker manages nothing, but may use the role the API prepared.
+    await expect(worker.$transaction((tx) => ensurePluginDatabaseRole(tx, 'wattanam.fresh'))).resolves.toEqual({ role: 'wtp_wattanam_fresh', relations: 0, mode: 'member' });
+    await expect(asPluginOn(worker, 'wattanam.fresh', 'SELECT label FROM plugin_wattanam_fresh_items')).resolves.toEqual([{ label: 'new plugin row' }]);
+    await expect(asPluginOn(worker, 'wattanam.fresh', 'SELECT email FROM "User"')).rejects.toThrow(refused);
+    // The application's own access to the new table (backups, read models) still works.
+    await expect(worker.$queryRawUnsafe('SELECT count(*)::int AS n FROM plugin_wattanam_fresh_items')).resolves.toEqual([{ n: 1 }]);
+  });
+
+  it('refuses a plugin on the worker when the API has not prepared its role', async () => {
+    await expect(worker.$transaction((tx) => ensurePluginDatabaseRole(tx, 'wattanam.ghost'))).rejects.toThrow(/does not exist and database user wattanam_worker may not create roles/);
+  });
+
+  it('is safe to run the provisioning again', async () => {
+    await expect(provision({ adminUrl: url, database: databaseName(), execute: true, apiPassword, workerPassword })).resolves.toMatchObject({ mode: 'executed' });
+    await expect(asPluginOn(worker, 'wattanam.fresh', 'SELECT label FROM plugin_wattanam_fresh_items')).resolves.toHaveLength(1);
+  });
+});
