@@ -15,7 +15,10 @@ function ErrorCard({ title, error }: { title?: string; error: string }) { return
 
 export function PluginMetric({ title, value, options, loading, error, formatValue }: any) {
   if (loading) return <LoadingCard />; if (error) return <ErrorCard title={title} error={error} />;
-  const raw = atPath(value, options.valuePath); const trend = atPath(value, options.trendPath);
+  // atPath(value, undefined) returns the whole response, so a metric without trendPath must not
+  // read a trend at all (it used to print "↓ [object Object]"). Only a finite number is a trend.
+  const raw = atPath(value, options.valuePath); const trendValue = options.trendPath ? atPath(value, options.trendPath) : undefined;
+  const trend = typeof trendValue === 'number' || (typeof trendValue === 'string' && trendValue.trim() !== '' && Number.isFinite(Number(trendValue))) ? trendValue : undefined;
   const formatted = options.format === 'percent' && typeof raw === 'number' ? `${formatValue(raw, 'number')}%` : formatValue(raw, options.format || 'text');
   return <section className="card p-5"><p className="text-sm font-medium text-slate-500">{title}</p><p className="mt-2 text-3xl font-bold text-slate-900">{formatted}</p>{trend !== undefined && <p className={`mt-2 text-sm ${Number(trend) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{Number(trend) >= 0 ? '↑' : '↓'} {String(trend)}</p>}</section>;
 }
