@@ -115,6 +115,15 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    # Playwright's own image already contains Chromium and its system packages. Installing them
+    # with apt on the runner failed whenever Ubuntu's mirrors could not be resolved, which blocked
+    # merges on a required check. The tag must match frontend's @playwright/test version (checked
+    # below).
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      options: --ipc=host
+    env:
+      PLAYWRIGHT_IMAGE_VERSION: 1.62.1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -124,9 +133,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend
         run: npm --prefix frontend ci
-      - name: Install Chromium
+      - name: Browser image matches the installed Playwright
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: |
+          installed=$(node -p "require('@playwright/test/package.json').version")
+          if [ "$installed" != "$PLAYWRIGHT_IMAGE_VERSION" ]; then
+            echo "Playwright $installed is installed but the job image is $PLAYWRIGHT_IMAGE_VERSION: update container.image and PLAYWRIGHT_IMAGE_VERSION in pr-validation.yml" >&2
+            exit 1
+          fi
       - name: Plugin UI browser suite (sandbox, sidebar, renderer) on phone, tablet and desktop
         working-directory: frontend
         run: npx playwright test --config playwright.plugin-ui.config.ts
