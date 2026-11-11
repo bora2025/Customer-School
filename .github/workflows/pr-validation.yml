@@ -107,6 +107,30 @@ jobs:
           PLUGIN_ROLES_DATABASE_URL: postgresql://postgres:ci-only-throwaway@localhost:5432/plugin_roles
         run: npx jest --runInBand src/plugins/plugin-database-roles.postgres.spec.ts
 
+  # Plugin-owned screens run in a sandboxed iframe. This proves, in a real browser, that the bridge
+  # works and that the screen cannot reach the network, school cookies, storage or DOM, or another
+  # API path than its own plugin's.
+  plugin-ui-sandbox-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend
+        run: npm --prefix frontend ci
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Sandboxed plugin screen cannot escape
+        working-directory: frontend
+        run: npx playwright test --config playwright.plugin-ui.config.ts plugin-ui-app-sandbox --project=desktop
+
   secret-scan:
     runs-on: ubuntu-latest
     steps:

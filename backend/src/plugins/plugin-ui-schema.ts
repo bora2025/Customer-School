@@ -6,7 +6,7 @@ export const PLUGIN_UI_SCHEMA_VERSION = 2 as const;
 export type PluginUiComponentType =
   | 'heading' | 'text' | 'workflow' | 'status' | 'card' | 'metric' | 'table' | 'form'
   | 'detail' | 'chart' | 'file' | 'print' | 'document' | 'designer' | 'scanner' | 'self-attendance-scanner' | 'filter' | 'actions' | 'study-year-manager' | 'class-manager' | 'officer-manager' | 'session-manager' | 'take-attendance' | 'id-card-manager' | 'attendance-report-manager' | 'attendance-dashboard' | 'attendance-window-manager'
-  | 'profile-manager' | 'organizing-dashboard' | 'organizing-reports' | 'organizing-profiles';
+  | 'profile-manager' | 'organizing-dashboard' | 'organizing-reports' | 'organizing-profiles' | 'app';
 
 export interface PluginUiDataSource {
   id: string;
@@ -57,7 +57,7 @@ const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form', 'detail',
   'chart', 'file', 'print', 'document', 'designer', 'scanner', 'self-attendance-scanner', 'filter', 'actions', 'study-year-manager', 'class-manager', 'officer-manager', 'session-manager', 'take-attendance', 'id-card-manager', 'attendance-report-manager', 'attendance-dashboard', 'attendance-window-manager',
-  'profile-manager', 'organizing-dashboard', 'organizing-reports', 'organizing-profiles',
+  'profile-manager', 'organizing-dashboard', 'organizing-reports', 'organizing-profiles', 'app',
 ]);
 // Universal descriptors are guaranteed to render on an unmodified core host.
 // Specialized legacy workspaces remain accepted only for older packages.
@@ -65,7 +65,12 @@ const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
   'heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form',
   'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner',
   'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager', 'class-manager', 'officer-manager', 'take-attendance',
+  // A plugin-owned screen from the plugin's signed ui/ bundle, shown in a sandboxed iframe that can
+  // reach only the plugin's own API through the host bridge (see docs/plugin-ui-apps.md).
+  'app',
 ]);
+/** ui/<path>.html inside the signed package: lowercase segments, no traversal, no hidden files. */
+export const PLUGIN_UI_APP_ENTRY = /^ui\/(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_.-]*\.html$/;
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
 
@@ -434,6 +439,16 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
             }
           });
         }
+      }
+      if (type === 'app') {
+        if (source) throw new BadRequestException('Plugin UI app loads its data through the bridge, not a source');
+        const options = object(component.options, 'Plugin UI app options');
+        const entry = string(options.entry, 'Plugin UI app entry', 200);
+        if (!PLUGIN_UI_APP_ENTRY.test(entry) || entry.includes('..')) throw new BadRequestException('Plugin UI app entry must be ui/<path>.html');
+        if (options.height !== undefined && !['auto', 'fill'].includes(String(options.height))) throw new BadRequestException('Plugin UI app height must be auto or fill');
+        if (options.minHeight !== undefined && (!Number.isInteger(options.minHeight) || Number(options.minHeight) < 120 || Number(options.minHeight) > 4000)) throw new BadRequestException('Plugin UI app minHeight must be 120-4000');
+        const unsupported = Object.keys(options).filter((key) => !['entry', 'height', 'minHeight'].includes(key));
+        if (unsupported.length) throw new BadRequestException(`Plugin UI app options are not supported: ${unsupported.join(', ')}`);
       }
       if (type === 'filter') {
         if (source) throw new BadRequestException('Plugin UI filter uses options.sources instead of source');

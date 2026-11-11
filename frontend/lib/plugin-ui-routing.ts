@@ -15,6 +15,8 @@ export type PluginUiPageDescriptor = {
   defaultLanguage?: string;
   translations?: Record<string, Record<string, string>>;
   appearance?: PluginUiPageAppearance;
+  /** Installed plugin version; pins URLs of the plugin's own ui/ files (app component). */
+  pluginVersion?: string;
 };
 
 const validators: Record<PluginRouteParameter['type'], (value: string) => boolean> = {

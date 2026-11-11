@@ -156,7 +156,7 @@ export class PluginExtensionsService {
     return () => keys.forEach((key) => this.navigation.delete(key));
   }
 
-  registerPage(pluginId: string, value: unknown, declaredPermissions = new Set<string>()) {
+  registerPage(pluginId: string, value: unknown, declaredPermissions = new Set<string>(), pluginVersion?: string) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('Plugin frontend entry must be an object');
     const page = value as Record<string, unknown>;
     if (page.schemaVersion === 2) {
@@ -165,7 +165,8 @@ export class PluginExtensionsService {
       for (const descriptor of bundle.pages) {
         const key = `${pluginId}:${descriptor.id}`;
         if (this.pages.has(key)) { keys.forEach((registered) => this.pages.delete(registered)); throw new BadRequestException(`Plugin page is already registered: ${descriptor.id}`); }
-        this.pages.set(key, { ...descriptor, pluginId, schemaVersion: 2, kind: 'declarative-ui' });
+        // pluginVersion lets the host build version-pinned URLs for the plugin's own ui/ files.
+        this.pages.set(key, { ...descriptor, pluginId, ...(pluginVersion ? { pluginVersion } : {}), schemaVersion: 2, kind: 'declarative-ui' });
         keys.push(key);
       }
       return () => keys.forEach((key) => this.pages.delete(key));
