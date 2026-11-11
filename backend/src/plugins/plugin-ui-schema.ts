@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { parseComponentAppearance, parsePageAppearance, PluginUiComponentAppearance, PluginUiPageAppearance } from './plugin-ui-appearance';
 
 export const PLUGIN_UI_SCHEMA_VERSION = 2 as const;
 
@@ -23,6 +24,7 @@ export interface PluginUiComponent {
   source?: string;
   fields?: Array<Record<string, unknown>>;
   options?: Record<string, unknown>;
+  appearance?: PluginUiComponentAppearance;
 }
 
 export interface PluginUiPage {
@@ -36,6 +38,7 @@ export interface PluginUiPage {
   realtime?: Array<{ event: string; refreshSources: string[] }>;
   defaultLanguage?: string;
   translations?: Record<string, Record<string, string>>;
+  appearance?: PluginUiPageAppearance;
 }
 
 export interface PluginUiBundle {
@@ -219,6 +222,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       if (source && !sourceIds.has(source)) throw new BadRequestException(`Plugin UI component references unknown data source: ${source}`);
       if (component.fields !== undefined && !Array.isArray(component.fields)) throw new BadRequestException('Plugin UI component fields must be an array');
       if (component.options !== undefined) object(component.options, 'component options');
+      const appearance = parseComponentAppearance(component.appearance, `Plugin UI component ${componentId} appearance`);
       if (type === 'table') {
         if (!source) throw new BadRequestException('Plugin UI table requires a data source');
         if (!Array.isArray(component.fields) || component.fields.length < 1 || component.fields.length > 30) throw new BadRequestException('Plugin UI table requires 1 to 30 column fields');
@@ -534,6 +538,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         ...(source ? { source } : {}),
         ...(component.fields ? { fields: component.fields as Array<Record<string, unknown>> } : {}),
         ...(component.options ? { options: component.options as Record<string, unknown> } : {}),
+        ...(appearance ? { appearance } : {}),
       };
     });
     let realtime: Array<{ event: string; refreshSources: string[] }> | undefined;
@@ -565,7 +570,8 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       defaultLanguage = string(page.defaultLanguage, 'Plugin UI defaultLanguage', 10);
       if (!translations[defaultLanguage]) throw new BadRequestException('Plugin UI defaultLanguage has no translations');
     } else if (page.defaultLanguage !== undefined) throw new BadRequestException('Plugin UI defaultLanguage requires translations');
-    return { id, title: string(page.title, `pages[${pageIndex}].title`, 200), routePath, permission, parameters, dataSources, components, ...(realtime ? { realtime } : {}), ...(translations ? { translations, defaultLanguage } : {}) };
+    const pageAppearance = parsePageAppearance(page.appearance, `Plugin UI page ${id} appearance`);
+    return { id, title: string(page.title, `pages[${pageIndex}].title`, 200), routePath, permission, parameters, dataSources, components, ...(realtime ? { realtime } : {}), ...(translations ? { translations, defaultLanguage } : {}), ...(pageAppearance ? { appearance: pageAppearance } : {}) };
   });
   return { schemaVersion: 2, kind: 'declarative-ui', ...(root.portability === 'universal' ? { portability: 'universal' as const } : {}), pages };
 }

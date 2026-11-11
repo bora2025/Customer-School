@@ -7,6 +7,20 @@ const { sha256 } = require('../util');
 
 const UNIVERSAL_COMPONENTS = new Set(['heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form', 'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner', 'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager']);
 const UI_ID = /^[a-z0-9][a-zA-Z0-9._-]*$/;
+// Same allow-list the school core enforces (backend/src/plugins/plugin-ui-appearance.ts). Plugins
+// style pages with these values only; raw CSS or Tailwind class names are refused.
+const UI_TONES = ['neutral', 'brand', 'info', 'success', 'warning', 'danger'];
+const UI_PAGE_APPEARANCE = { theme: ['standard', 'company'], layout: ['stack', 'grid'], accent: UI_TONES };
+const UI_COMPONENT_APPEARANCE = { width: ['full', 'half', 'third', 'two-thirds'], tone: UI_TONES, surface: ['default', 'plain', 'card', 'tinted'] };
+
+function validateAppearance(value, vocabulary, label) {
+  if (value === undefined) return;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} appearance must be an object`);
+  for (const [key, candidate] of Object.entries(value)) {
+    if (!vocabulary[key]) throw new Error(`${label} appearance.${key} is not supported (allowed: ${Object.keys(vocabulary).join(', ')})`);
+    if (!vocabulary[key].includes(candidate)) throw new Error(`${label} appearance.${key} must be one of: ${vocabulary[key].join(', ')}`);
+  }
+}
 
 function validateUniversalUi(value) {
   if (!value || value.schemaVersion !== 2 || value.kind !== 'declarative-ui') throw new Error('unsupported schemaVersion or kind');
@@ -28,6 +42,7 @@ function validateUniversalUi(value) {
   };
   for (const page of value.pages) {
     if (!page || !UI_ID.test(page.id) || typeof page.title !== 'string' || !page.title.trim()) throw new Error('page id or title is invalid');
+    validateAppearance(page.appearance, UI_PAGE_APPEARANCE, `page ${page.id}`);
     const sources = new Set((page.dataSources || []).map((source) => source?.id));
     const components = expand(page.components);
     if (components.length < 1 || components.length > 100) throw new Error('page must expand to 1 to 100 components');
@@ -37,6 +52,7 @@ function validateUniversalUi(value) {
       ids.add(component.id);
       if (!UNIVERSAL_COMPONENTS.has(component.type)) throw new Error(`component is not universal: ${component.type}`);
       if (component.source && !sources.has(component.source)) throw new Error(`component references unknown source: ${component.source}`);
+      validateAppearance(component.appearance, UI_COMPONENT_APPEARANCE, `component ${component.id}`);
     }
   }
 }
