@@ -19,3 +19,13 @@ test('release workflow has least required publishing and keyless-signing permiss
   assert.match(source, /packages:\s*write/);
   assert.match(source, /id-token:\s*write/);
 });
+
+test('each signed release is tagged core-v<version> by a separate, write-scoped job', () => {
+  const tagJob = source.slice(source.indexOf('  tag-release:'));
+  assert.match(tagJob, /needs: build-sign-blueprint/);
+  assert.match(tagJob, /permissions:\s*\n\s*contents: write/);
+  assert.match(tagJob, /refs\/tags\/core-v\$\{RELEASE_VERSION\}/);
+  assert.doesNotMatch(tagJob.slice(tagJob.indexOf('run: |')), /\$\{\{/, 'workflow inputs reach the shell only through env');
+  const buildJob = source.slice(source.indexOf('  build-sign-blueprint:'), source.indexOf('  tag-release:'));
+  assert.doesNotMatch(buildJob, /contents:\s*write/);
+});
