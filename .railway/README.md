@@ -40,6 +40,20 @@ Apply the planned changes:
 railway config apply
 ```
 
+## Release inputs
+
+Every plan or apply needs five values from the signed core release blueprint
+(`core-release-blueprint.json`, artifact of the `core-release` workflow):
+
+| Variable | Blueprint field |
+|---|---|
+| `API_IMAGE`, `WEB_IMAGE`, `GATEWAY_IMAGE` | digest-pinned images |
+| `CORE_VERSION` | release version, becomes `APP_VERSION` on web, api and worker |
+| `CORE_COMMIT` | release commit, becomes `GIT_COMMIT` |
+
+The version is not a hand-set service variable: it always describes the images being deployed.
+Plugin compatibility (`requiresCore`) is checked against it.
+
 ## Notes
 
 - `railway config plan` is safe and does not change Railway.

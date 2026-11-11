@@ -36,6 +36,12 @@ test('Railway IaC owns the complete production topology without embedding secret
   assert.match(source, /env:\s*\{[^\n]*DATABASE_URL:\s*preserve\(\)[^\n]*PROCESS_ROLE:\s*"api"/);
   assert.match(source, /env:\s*\{[^\n]*DATABASE_URL:\s*preserve\(\)[^\n]*PROCESS_ROLE:\s*"worker"/);
   assert.match(source, /MIGRATION_DATABASE_URL:\s*preserve\(\)/);
+  // The reported version and commit come from the release being deployed, never from a
+  // hand-maintained variable that can drift from the running image.
+  assert.doesNotMatch(source, /(APP_VERSION|GIT_COMMIT):\s*preserve\(\)/);
+  assert.equal((source.match(/APP_VERSION:\s*releaseVersion\(\)/g) || []).length, 2, 'web and the shared api/worker environment');
+  assert.equal((source.match(/GIT_COMMIT:\s*releaseCommit\(\)/g) || []).length, 2);
+  for (const variable of ['CORE_VERSION', 'CORE_COMMIT']) assert.match(source, new RegExp(variable));
   assert.match(source, /PLUGIN_STORAGE_S3_ACCESS_KEY_ID:\s*ref\(pluginArtifacts, "ACCESS_KEY_ID"\)/);
   assert.match(source, /PLUGIN_STORAGE_S3_SECRET_ACCESS_KEY:\s*ref\(pluginArtifacts, "SECRET_ACCESS_KEY"\)/);
   assert.match(source, /PLUGIN_STORAGE_S3_BUCKET:\s*ref\(pluginArtifacts, "BUCKET"\)/);

@@ -8,8 +8,19 @@ function releaseImage(name: string): ReturnType<typeof image> {
   return image(value);
 }
 
+// The version and commit a service reports must describe the images being deployed. They used to be
+// hand-maintained service variables and drifted (a 0.1.31 image reporting 0.1.14), which made the
+// school refuse plugins that need a newer core. Both now come from the signed release blueprint.
+function releaseValue(name: string, pattern: RegExp, meaning: string): string {
+  const value = process.env[name]?.trim();
+  if (!value || !pattern.test(value)) throw new Error(`${name} must be ${meaning} from the signed core release blueprint`);
+  return value;
+}
+const releaseVersion = () => releaseValue("CORE_VERSION", /^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$/, "the SemVer release version");
+const releaseCommit = () => releaseValue("CORE_COMMIT", /^[a-f0-9]{40}$/, "the 40-character release commit");
+
 const sharedBackendEnvironment = {
-  APP_VERSION: preserve(), BACKUP_DIR: preserve(), COOKIE_SECURE: preserve(), CORS_ORIGINS: preserve(),
+  BACKUP_DIR: preserve(), COOKIE_SECURE: preserve(), CORS_ORIGINS: preserve(),
   // Encrypted off-site backups (src/backup/offsite-backup.ts) and the /metrics bearer token. Listed
   // so managed-variable applies keep operator-set values instead of removing them.
   BACKUP_ENCRYPTION_KEY: preserve(), BACKUP_OFFSITE_S3_BUCKET: preserve(), BACKUP_OFFSITE_S3_REGION: preserve(),
@@ -17,7 +28,7 @@ const sharedBackendEnvironment = {
   BACKUP_OFFSITE_S3_PREFIX: preserve(), BACKUP_OFFSITE_S3_FORCE_PATH_STYLE: preserve(), BACKUP_OFFSITE_RETENTION_DAYS: preserve(),
   METRICS_TOKEN: preserve(), METRICS_SECONDARY_TOKENS_JSON: preserve(),
   ENTITLEMENT_KEY_ID: preserve(), ENTITLEMENT_PUBLIC_KEY: preserve(), ENTITLEMENT_SECONDARY_PUBLIC_KEYS_JSON: preserve(),
-  GIT_COMMIT: preserve(), INSTALLATION_KEY_DIR: preserve(), JWT_KEY_ID: preserve(), JWT_SECRET: preserve(), JWT_SECONDARY_SECRETS_JSON: preserve(),
+  INSTALLATION_KEY_DIR: preserve(), JWT_KEY_ID: preserve(), JWT_SECRET: preserve(), JWT_SECONDARY_SECRETS_JSON: preserve(),
   MARKETPLACE_REQUEST_TIMEOUT_MS: preserve(), MARKETPLACE_URL: preserve(), NODE_ENV: preserve(), PLUGIN_DATA_DIR: preserve(), PLUGIN_DIR: preserve(),
   PLUGIN_EVENT_MAX_BYTES: preserve(), PLUGIN_JOB_DRAIN_TIMEOUT_MS: preserve(), PLUGIN_JOB_QUOTA_PER_PLUGIN: preserve(),
   PLUGIN_IN_PROCESS_PUBLISHERS: preserve(),
@@ -49,6 +60,7 @@ export default defineRailway((context) => {
   const recoveryDrillDatabaseUrl = "postgresql://${{recovery-drill.PGUSER}}:${{recovery-drill.PGPASSWORD}}@${{recovery-drill.PGHOST}}:${{recovery-drill.PGPORT}}/recovery_drill";
   const pluginArtifacts = bucket(context.environmentName === "plugin-certification-20261018" ? "plugin-cert-artifacts-20261018" : "plugin-artifacts", { region: "sin" });
   const splitRuntimeEnvironment = {
+    APP_VERSION: releaseVersion(), GIT_COMMIT: releaseCommit(),
     PLUGIN_REQUIRED_RUNTIME_ROLES: "api,worker",
     PLUGIN_STORAGE_PROVIDER: "s3",
     PLUGIN_STORAGE_S3_ACCESS_KEY_ID: ref(pluginArtifacts, "ACCESS_KEY_ID"),
@@ -66,7 +78,7 @@ export default defineRailway((context) => {
   const web = service("web", {
     source: webRelease,
     replicas: { "asia-southeast1-eqsg3a": 1 },
-    env: { API_URL: preserve(), APP_VERSION: preserve(), GIT_COMMIT: preserve(), MARKETPLACE_URL: preserve(), NEXT_PUBLIC_API_URL: preserve(), NEXT_PUBLIC_WATTANAM_DISTRIBUTION: preserve(), NODE_ENV: preserve(), PORT: preserve(), RAILWAY_DOCKERFILE_PATH: preserve(), WATTANAM_DISTRIBUTION: preserve() },
+    env: { API_URL: preserve(), APP_VERSION: releaseVersion(), GIT_COMMIT: releaseCommit(), MARKETPLACE_URL: preserve(), NEXT_PUBLIC_API_URL: preserve(), NEXT_PUBLIC_WATTANAM_DISTRIBUTION: preserve(), NODE_ENV: preserve(), PORT: preserve(), RAILWAY_DOCKERFILE_PATH: preserve(), WATTANAM_DISTRIBUTION: preserve() },
   });
   const api = service("api", {
     source: backendRelease,
