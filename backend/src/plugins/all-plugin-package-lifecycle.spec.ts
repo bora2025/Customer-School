@@ -6,6 +6,11 @@ import semver from 'semver';
 import { PluginPackageVerifier, REVOKED_PLUGIN_KEY, VerifiedPluginPackage } from './plugin-package';
 import { PluginsService } from './plugins.service';
 
+// Packages are verified against the core release under test. CI passes the tagged release it checked
+// out (PLUGIN_HOST_CORE_VERSION, e.g. from vars.CUSTOMER_SCHOOL_CORE_VERSION), so a plugin that needs a
+// newer core than schools run fails here instead of after publication.
+const hostCoreVersion = process.env.PLUGIN_HOST_CORE_VERSION?.trim() || '0.1.0';
+
 const externalCatalog = process.env.PLUGIN_SOURCE_CATALOG
   ? path.resolve(process.env.PLUGIN_SOURCE_CATALOG)
   : '';
@@ -50,7 +55,7 @@ function dependencyOrder(packages: Packed[]) {
       ...originalEnvironment,
       NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://localhost/wattanam_all_plugin_lifecycle_test',
-      APP_VERSION: '0.1.0',
+      APP_VERSION: hostCoreVersion,
       PLUGIN_DIR: path.join(directory, 'installed'),
     };
   });
@@ -76,7 +81,7 @@ function dependencyOrder(packages: Packed[]) {
       const output = path.join(directory, `${sourceManifest.id}-${sourceManifest.version}.wtp`);
       await packPlugin({ source, privateKeyFile, keyId: 'catalog-lifecycle-test', output });
       const artifact = readFileSync(output);
-      const verified = await verifier.verify(artifact, trusted, '0.1.0');
+      const verified = await verifier.verify(artifact, trusted, hostCoreVersion);
       expect(verified.manifest.id).toBe(sourceManifest.id);
       expect(verified.manifest.version).toBe(sourceManifest.version);
       expect(ids.has(verified.manifest.id)).toBe(false);
@@ -103,7 +108,7 @@ function dependencyOrder(packages: Packed[]) {
       const previousOutput = path.join(directory, `${sourceManifest.id}-${previousVersion}.wtp`);
       await packPlugin({ source: previousSource, privateKeyFile, keyId: 'catalog-lifecycle-test', output: previousOutput });
       const previousArtifact = readFileSync(previousOutput);
-      const previousVerified = await verifier.verify(previousArtifact, trusted, '0.1.0');
+      const previousVerified = await verifier.verify(previousArtifact, trusted, hostCoreVersion);
       expect(previousVerified.manifest.version).toBe(previousVersion);
       previousPacked.push({ artifact: previousArtifact, verified: previousVerified });
     }
@@ -111,7 +116,7 @@ function dependencyOrder(packages: Packed[]) {
 
     const revoked = { wattanam: { 'catalog-lifecycle-test': REVOKED_PLUGIN_KEY } };
     for (const item of packed) {
-      await expect(verifier.verify(item.artifact, revoked, '0.1.0'))
+      await expect(verifier.verify(item.artifact, revoked, hostCoreVersion))
         .rejects.toThrow('Publisher key is revoked: wattanam/catalog-lifecycle-test');
     }
 

@@ -5,7 +5,7 @@ const path = require('path');
 const Module = require('module');
 const { sha256 } = require('../util');
 
-const UNIVERSAL_COMPONENTS = new Set(['heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form', 'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner', 'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager']);
+const UNIVERSAL_COMPONENTS = new Set(['heading', 'text', 'workflow', 'status', 'card', 'metric', 'table', 'form', 'detail', 'chart', 'file', 'print', 'document', 'designer', 'scanner', 'filter', 'actions', 'id-card-manager', 'session-manager', 'profile-manager', 'app']);
 const UI_ID = /^[a-z0-9][a-zA-Z0-9._-]*$/;
 // Same allow-list the school core enforces (backend/src/plugins/plugin-ui-appearance.ts). Plugins
 // style pages with these values only; raw CSS or Tailwind class names are refused.

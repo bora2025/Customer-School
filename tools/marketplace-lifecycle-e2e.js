@@ -201,6 +201,25 @@ async function main() {
   const list = Array.isArray(departments.body) ? departments.body : departments.body?.items || departments.body?.data || [];
   check('reinstall reuses retained data: the department is still there', again.status < 300 && list.some((item) => item.id === department.body.id), `${list.length} departments`);
 
+  // 7. Plugin-owned screens (app component, core >= 0.1.29): served from the signed package, sandboxed.
+  const extensions = await school('GET', '/plugin-api/my-extensions');
+  const screenPage = (extensions.body?.pages || []).find((page) => page.pluginId === 'wattanam.academic-management' && (page.components || []).some((component) => component.type === 'app'));
+  if (!screenPage) {
+    process.stdout.write('SKIP  plugin-owned screen checks (installed Academic Management has no app component)\n');
+  } else {
+    const screen = screenPage.components.find((component) => component.type === 'app');
+    check('the page descriptor pins the installed plugin version for its screen', screenPage.pluginVersion === latestAcademic, `${screenPage.pluginVersion}`);
+    const base = `${SCHOOL}/api/plugin-ui/wattanam.academic-management`;
+    const asset = await fetch(`${base}/${latestAcademic}/${screen.options.entry}`);
+    const csp = asset.headers.get('content-security-policy') || '';
+    const assetText = await asset.text();
+    check('the plugin screen is served from the signed package with a sandboxing policy', asset.status === 200 && /<html/i.test(assetText) && /sandbox allow-scripts/.test(csp) && !/allow-same-origin/.test(csp) && /connect-src 'none'/.test(csp), `HTTP ${asset.status}, ${csp.slice(0, 60)}…`);
+    const wrongVersion = await fetch(`${base}/0.0.1/${screen.options.entry}`);
+    const notUi = await fetch(`${base}/${latestAcademic}/plugin.json`);
+    const traversal = await fetch(`${base}/${latestAcademic}/ui/..%2fplugin.json`);
+    check('other versions, non-ui files and path tricks are not served', wrongVersion.status === 404 && notUi.status === 404 && traversal.status === 404, `HTTP ${wrongVersion.status}/${notUi.status}/${traversal.status}`);
+  }
+
   summary();
 }
 
