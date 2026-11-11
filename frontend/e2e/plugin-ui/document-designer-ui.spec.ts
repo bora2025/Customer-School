@@ -60,8 +60,8 @@ catalogTest('renders document-designer list page from plugin descriptor and supp
   await expect(page.getByText('wattanam.document-designer').first()).toBeVisible();
   await expect(page.getByRole('table').first()).toContainText('Student Card');
 
-  await page.getByLabel('Name').fill('Created Template');
-  await page.getByLabel('Document type').fill('student');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Created Template');
+  await page.getByRole('textbox', { name: 'Document type', exact: true }).fill('student');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Template created');
 });
