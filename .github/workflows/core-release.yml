@@ -71,3 +71,22 @@ jobs:
           path: core-release-blueprint.json
           if-no-files-found: error
           retention-days: 90
+
+  # Records which commit each signed release was built from, so the Marketplace repository can test
+  # plugins against exactly the core version schools run (checkout ref `core-v<version>`). Tags are
+  # immutable here: creating an existing tag fails instead of moving it. Only this job can write.
+  tag-release:
+    needs: build-sign-blueprint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the released commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if ! printf '%s' "$RELEASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Release version is not SemVer: $RELEASE_VERSION" >&2; exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f "ref=refs/tags/core-v${RELEASE_VERSION}" -f "sha=${GITHUB_SHA}"
