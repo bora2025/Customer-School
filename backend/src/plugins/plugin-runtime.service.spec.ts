@@ -37,6 +37,10 @@ describe('PluginRuntimeService', () => {
       APP_VERSION: '0.1.0',
       PLUGIN_DIR: directory,
       PLUGIN_TRUSTED_KEYS: '{}',
+      // These fixtures exercise capabilities, not the database boundary; their Prisma doubles do not
+      // model roles. The per-plugin role switching is covered by plugin-database-roles.spec.ts
+      // (mocked ordering) and plugin-database-roles.postgres.spec.ts (real PostgreSQL).
+      PLUGIN_DATABASE_ROLES: 'off',
     };
   });
 
