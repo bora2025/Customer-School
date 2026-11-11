@@ -127,9 +127,9 @@ jobs:
       - name: Install Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
-      - name: Sandboxed plugin screen cannot escape
+      - name: Sandboxed plugin screen cannot escape; sidebar persists across navigation
         working-directory: frontend
-        run: npx playwright test --config playwright.plugin-ui.config.ts plugin-ui-app-sandbox --project=desktop
+        run: npx playwright test --config playwright.plugin-ui.config.ts plugin-ui-app-sandbox sidebar-persistence --project=desktop
 
   secret-scan:
     runs-on: ubuntu-latest

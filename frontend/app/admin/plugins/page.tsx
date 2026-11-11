@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import AuthGuard from '../../../components/AuthGuard';
-import Sidebar from '../../../components/Sidebar';
+import Sidebar, { invalidateSidebarNavigation } from '../../../components/Sidebar';
 import { adminNav } from '../../../lib/admin-nav';
 import { apiFetch } from '../../../lib/api';
 import { formatMoney } from '../../../lib/formatMoney';
@@ -121,6 +121,13 @@ export default function PluginsPage() {
   const [busy, setBusy] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
 
+  // Installing, activating, deactivating, removing or rolling back a plugin changes the menu:
+  // refresh the sidebar right away instead of waiting for its background refresh.
+  async function loadAfterChange() {
+    invalidateSidebarNavigation();
+    await load();
+  }
+
   async function load() {
     const [pluginsResponse, updatesResponse, extensionsResponse, runtimeResponse, diagnosticsResponse] = await Promise.all([apiFetch('/api/plugins'), apiFetch('/api/updates'), apiFetch('/api/plugin-api/extensions'), apiFetch('/api/plugins/runtime-status'), apiFetch('/api/plugins/diagnostics')]);
     if (!pluginsResponse.ok) throw new Error(`Could not load plugins (${pluginsResponse.status})`);
@@ -195,7 +202,7 @@ export default function PluginsPage() {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `Bundle installation failed (${response.status})`);
-      await load();
+      await loadAfterChange();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Bundle installation failed'); }
     finally { setBusy(''); }
   }
@@ -251,7 +258,7 @@ export default function PluginsPage() {
       const response = await apiFetch(`/api/admin/marketplace/plugins/${encodeURIComponent(product.id)}/${encodeURIComponent(version)}/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ consentDigest: release.consentDigest }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `Installation failed (${response.status})`);
-      await load();
+      await loadAfterChange();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Installation failed'); }
     finally { setBusy(''); }
   }
@@ -351,7 +358,7 @@ export default function PluginsPage() {
       const response = await apiFetch(`/api/admin/marketplace/plugins/${encodeURIComponent(pluginId)}/${encodeURIComponent(version)}/install`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ consentDigest: release.consentDigest }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `Update failed (${response.status})`);
-      await load();
+      await loadAfterChange();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Update failed'); }
     finally { setBusy(''); }
   }
@@ -365,7 +372,7 @@ export default function PluginsPage() {
       const response = await apiFetch(`/api/plugins/${encodeURIComponent(plugin.id)}`, { method: 'DELETE' });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `Removal failed (${response.status})`);
-      await load();
+      await loadAfterChange();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Removal failed'); }
     finally { setBusy(''); }
   }
@@ -384,7 +391,7 @@ export default function PluginsPage() {
       const response = await apiFetch(`/api/plugins/${encodeURIComponent(plugin.id)}/${action}`, { method: 'POST' });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `${action} failed (${response.status})`);
-      await load();
+      await loadAfterChange();
     } catch (cause) { setError(cause instanceof Error ? cause.message : `${action} failed`); }
     finally { setBusy(''); }
   }
@@ -396,7 +403,7 @@ export default function PluginsPage() {
       const response = await apiFetch(`/api/plugins/${encodeURIComponent(plugin.id)}/rollback`, { method: 'POST' });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `Rollback failed (${response.status})`);
-      await load();
+      await loadAfterChange();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Rollback failed'); }
     finally { setBusy(''); }
   }

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useLanguage } from '../../lib/i18n';
+import { resetSidebarSession } from '../../components/Sidebar';
 import { getInstallationStatus } from '../../lib/installation';
 import { fetchSchoolAccess, homeForRole, lockDestination } from '../../lib/school-lock';
 
@@ -18,6 +19,9 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useLanguage();
+
+  // A new sign-in must not see the previous user's remembered sidebar (menu, badges).
+  useEffect(() => { resetSidebarSession(); }, []);
 
   useEffect(() => {
     const controller = new AbortController();
