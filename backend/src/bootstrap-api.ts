@@ -7,6 +7,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { DynamicModule } from '@nestjs/common';
 import { readApiStartupConfig } from './config/startup-config';
+import { originGuard } from './security/origin-guard';
 import { readNotificationProviderConfig } from './notification/notification-config';
 import { readUpdateRepositoryConfig } from './updates/update-config';
 
@@ -22,6 +23,11 @@ export async function bootstrapApi(rootModule: Type<unknown> | DynamicModule) {
   app.set('trust proxy', config.trustProxyHops);
   app.use(helmet());
   app.use(cookieParser());
+  const allowedOrigins = config.corsOrigins.length
+    ? config.corsOrigins
+    : ['http://localhost:3000', 'http://localhost:3004'];
+  // CSRF: refuse state-changing requests that browsers mark as cross-site, before any body is parsed.
+  app.use(originGuard(allowedOrigins));
   // Browser CSP reports use their own media types; parse them on that route only, with a small cap.
   app.use('/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '16kb' }));
   app.use(express.json({ limit: '10mb' }));
@@ -37,9 +43,6 @@ export async function bootstrapApi(rootModule: Type<unknown> | DynamicModule) {
     transform: true,
   }));
 
-  const allowedOrigins = config.corsOrigins.length
-    ? config.corsOrigins
-    : ['http://localhost:3000', 'http://localhost:3004'];
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) return callback(null, true);

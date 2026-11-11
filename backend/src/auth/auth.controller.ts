@@ -18,10 +18,14 @@ const isProduction = process.env.NODE_ENV === 'production';
 const secureCookies = process.env.COOKIE_SECURE === undefined
   ? isProduction
   : process.env.COOKIE_SECURE === 'true';
+// SameSite=Lax: the web app and API share one origin behind the gateway, so the session cookie never
+// needs to travel on cross-site requests. It used to be `none` in production, which let any other
+// website trigger authenticated state-changing requests from a signed-in admin's browser (CSRF).
+// The mobile app authenticates with bearer tokens from the response body, not cookies.
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: secureCookies,
-  sameSite: (secureCookies ? 'none' : 'lax') as 'none' | 'lax',
+  sameSite: 'lax' as const,
   path: '/',
 };
 
