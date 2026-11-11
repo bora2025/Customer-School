@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import * as semver from 'semver';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
 import { readRuntimeConfig } from '../config/environment';
@@ -7,8 +8,34 @@ import { InstallDto } from './dto/install.dto';
 export type InstallationState = 'ready' | 'installed' | 'legacy_unadopted';
 
 @Injectable()
-export class InstallationService {
+export class InstallationService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(InstallationService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  async onApplicationBootstrap() {
+    try {
+      await this.recordRunningCoreVersion();
+    } catch (error) {
+      // Never block startup on bookkeeping (e.g. a database user that may only read this table).
+      this.logger.warn('Could not record the running core version: ' + ((error as Error)?.message || error));
+    }
+  }
+
+  /**
+   * The installation record keeps the core version the school is running, not only the one it was
+   * first installed with: after an upgrade (or a rollback) the record follows the running release.
+   * Development builds without a release version leave the record alone.
+   */
+  async recordRunningCoreVersion(): Promise<{ from: string; to: string } | null> {
+    const running = readRuntimeConfig().appVersion;
+    if (!semver.valid(running) || semver.prerelease(running)) return null;
+    const installation = await this.prisma.installation.findUnique({ where: { id: 'singleton' }, select: { coreVersion: true } });
+    if (!installation || installation.coreVersion === running) return null;
+    await this.prisma.installation.updateMany({ where: { id: 'singleton', coreVersion: installation.coreVersion }, data: { coreVersion: running } });
+    this.logger.log('Installation core version ' + installation.coreVersion + ' -> ' + running);
+    return { from: installation.coreVersion, to: running };
+  }
 
   async status() {
     const installation = await this.prisma.installation.findUnique({

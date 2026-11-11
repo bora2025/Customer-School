@@ -16,6 +16,45 @@ describe('InstallationService', () => {
     process.env = originalEnvironment;
   });
 
+  describe('recording the running core version', () => {
+    const prismaWith = (coreVersion: string | null) => ({
+      installation: {
+        findUnique: jest.fn().mockResolvedValue(coreVersion ? { coreVersion } : null),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    } as any);
+
+    it('moves the installation record to the running release after an upgrade or rollback', async () => {
+      for (const [recorded, running] of [['0.1.3', '0.1.32'], ['0.1.32', '0.1.31']]) {
+        process.env.APP_VERSION = running;
+        const prisma = prismaWith(recorded);
+        await expect(new InstallationService(prisma).recordRunningCoreVersion()).resolves.toEqual({ from: recorded, to: running });
+        expect(prisma.installation.updateMany).toHaveBeenCalledWith({ where: { id: 'singleton', coreVersion: recorded }, data: { coreVersion: running } });
+      }
+    });
+
+    it('leaves the record alone when it already matches, nothing is installed, or the build has no release version', async () => {
+      process.env.APP_VERSION = '0.1.32';
+      for (const prisma of [prismaWith('0.1.32'), prismaWith(null)]) {
+        await expect(new InstallationService(prisma).recordRunningCoreVersion()).resolves.toBeNull();
+        expect(prisma.installation.updateMany).not.toHaveBeenCalled();
+      }
+      for (const version of ['0.1.0-dev', '1.0.0-test', 'not-a-version']) {
+        process.env.APP_VERSION = version;
+        const prisma = prismaWith('0.1.3');
+        await expect(new InstallationService(prisma).recordRunningCoreVersion()).resolves.toBeNull();
+        expect(prisma.installation.findUnique).not.toHaveBeenCalled();
+      }
+    });
+
+    it('never blocks startup when the record cannot be written', async () => {
+      process.env.APP_VERSION = '0.1.32';
+      const prisma = prismaWith('0.1.3');
+      prisma.installation.updateMany.mockRejectedValue(new Error('permission denied for table Installation'));
+      await expect(new InstallationService(prisma).onApplicationBootstrap()).resolves.toBeUndefined();
+    });
+  });
+
   it('allows setup only when no installation or user exists', async () => {
     const prisma = {
       installation: { findUnique: jest.fn().mockResolvedValue(null) },
