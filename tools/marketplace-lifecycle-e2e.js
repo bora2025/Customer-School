@@ -37,7 +37,8 @@ async function school(method, path, body, extraHeaders = {}) {
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (jar.size) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
   const response = await fetch(`${SCHOOL}/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
-  for (const line of response.headers.getSetCookie?.() || []) {
+  const setCookies = response.headers.getSetCookie?.() || [];
+  for (const line of setCookies) {
     const [pair] = line.split(';');
     const index = pair.indexOf('=');
     const value = pair.slice(index + 1);
@@ -45,7 +46,7 @@ async function school(method, path, body, extraHeaders = {}) {
   }
   const text = await response.text();
   let json; try { json = text ? JSON.parse(text) : null; } catch { json = text; }
-  return { status: response.status, body: json };
+  return { status: response.status, body: json, setCookies };
 }
 async function market(method, path, body, token) {
   const headers = { 'content-type': 'application/json' };
@@ -102,6 +103,8 @@ async function main() {
   check('sign-in without the MFA code is refused', noCode.status >= 400, `HTTP ${noCode.status}`);
   login = await school('POST', '/auth/login', { ...OWNER, mfaCode: totp(setup.body.secret) });
   check('sign-in with the MFA code succeeds', login.status === 201 || login.status === 200, `HTTP ${login.status}`);
+  const sessionCookie = login.setCookies.find((line) => line.startsWith('access_token='));
+  check('session cookie is HttpOnly and SameSite=Lax (CSRF)', !!sessionCookie && /HttpOnly/i.test(sessionCookie) && /SameSite=Lax/i.test(sessionCookie), sessionCookie ? sessionCookie.replace(/=[^;]+;/, '=<value>;') : 'no cookie');
   const core = await school('GET', '/plugins');
   check('clean core has no business plugins installed', Array.isArray(core.body) && core.body.length === 0, `${(core.body || []).length} installed`);
 
