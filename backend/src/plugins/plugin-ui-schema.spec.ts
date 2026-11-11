@@ -509,3 +509,40 @@ describe('Plugin UI v2 schema', () => {
     expect(parsePluginUiBundle(portable, 'wattanam.test', permissions).pages[0].components[0]).toMatchObject({ type: 'organizing-dashboard' });
   });
 });
+
+describe('Plugin UI appearance vocabulary', () => {
+  it('keeps allow-listed page and component appearance values', () => {
+    const value: any = valid();
+    value.pages[0].appearance = { theme: 'company', layout: 'grid', accent: 'info' };
+    value.pages[0].components[0].appearance = { width: 'half', tone: 'success', surface: 'tinted' };
+    const page = parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0];
+    expect(page.appearance).toEqual({ theme: 'company', layout: 'grid', accent: 'info' });
+    expect(page.components[0].appearance).toEqual({ width: 'half', tone: 'success', surface: 'tinted' });
+    expect(page.components[1].appearance).toBeUndefined();
+  });
+
+  it('refuses raw classes, CSS and unknown values', () => {
+    for (const [target, appearance] of [
+      ['component', { className: 'bg-red-500' }],
+      ['component', { style: 'color:red' }],
+      ['component', { tone: 'pink' }],
+      ['component', { width: 7 }],
+      ['component', 'tinted'],
+      ['page', { theme: 'dark' }],
+      ['page', { css: 'body{display:none}' }],
+    ] as const) {
+      const value: any = valid();
+      if (target === 'page') value.pages[0].appearance = appearance;
+      else value.pages[0].components[0].appearance = appearance;
+      expect(() => parsePluginUiBundle(value, 'wattanam.test', permissions)).toThrow(/appearance/);
+    }
+  });
+
+  it('carries appearance through reusable fragments', () => {
+    const value: any = valid();
+    value.fragments = { banner: [{ id: 'note', type: 'text', title: 'Hello', appearance: { surface: 'tinted', tone: 'warning' } }] };
+    value.pages[0].components.push({ use: 'banner', idPrefix: 'top-' });
+    const page = parsePluginUiBundle(value, 'wattanam.test', permissions).pages[0];
+    expect(page.components.find((component) => component.id === 'top-note')?.appearance).toEqual({ surface: 'tinted', tone: 'warning' });
+  });
+});

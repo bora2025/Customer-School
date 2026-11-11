@@ -35,6 +35,11 @@ import PluginProfileManager from "./PluginProfileManager";
 import PluginFormMenu from "./PluginFormMenu";
 import { usePluginUiPresentation } from "../../lib/plugin-ui-presentation";
 import type { PluginUiPageDescriptor } from "../../lib/plugin-ui-routing";
+import {
+  componentWrapperClass,
+  headingAccentClass,
+  pageContainerClass,
+} from "../../lib/plugin-ui-appearance";
 
 function valueAtPath(value: unknown, path?: string) {
   if (!path) return value;
@@ -71,7 +76,13 @@ export default function PluginUiRenderer({
     values: Record<string, string>,
   ): void | Promise<void>;
 }) {
-  const companyUi = pluginId === "wattanam.organizing-management";
+  // `appearance.theme: "company"` is the plugin-declared way to get the company look. Installed
+  // Organizing Management versions from before the appearance vocabulary keep it by plugin id.
+  const companyUi =
+    page.appearance?.theme === "company" ||
+    (page.appearance?.theme === undefined &&
+      pluginId === "wattanam.organizing-management");
+  const accentBar = headingAccentClass(page.appearance, companyUi);
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [mutationResults, setMutationResults] = useState<
     Record<string, unknown>
@@ -149,15 +160,12 @@ export default function PluginUiRenderer({
       );
   return (
     <div
-      className={
-        companyUi
-          ? "space-y-6 rounded-[2rem] bg-slate-50/70 p-3 sm:p-5"
-          : "space-y-5"
-      }
+      className={pageContainerClass(page.appearance, companyUi)}
       role="region"
       aria-label={page.title}
     >
-      {pageComponents.map((component: any) => {
+      {pageComponents.map((entry: any) => {
+        const element = ((component: any) => {
         const localized = {
           ...component,
           title: presentation.translate(component.titleKey, component.title),
@@ -658,13 +666,9 @@ export default function PluginUiRenderer({
           return (
             <div
               key={component.id}
-              className={companyUi ? "flex items-center gap-3 pt-2" : ""}
+              className={accentBar ? "flex items-center gap-3 pt-2" : ""}
             >
-              <span
-                className={
-                  companyUi ? "h-7 w-1 rounded-full bg-blue-600" : "hidden"
-                }
-              />
+              <span className={accentBar || "hidden"} />
               <h2
                 className={
                   companyUi
@@ -697,6 +701,17 @@ export default function PluginUiRenderer({
             {component.title || component.type} will be rendered by its LC3
             component.
           </section>
+        );
+        })(entry);
+        const wrapper = element
+          ? componentWrapperClass(entry.appearance, page.appearance)
+          : null;
+        return wrapper ? (
+          <div key={entry.id} className={wrapper}>
+            {element}
+          </div>
+        ) : (
+          element
         );
       })}
     </div>

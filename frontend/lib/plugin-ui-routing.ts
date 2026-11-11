@@ -1,3 +1,4 @@
+import type { PluginUiPageAppearance } from './plugin-ui-appearance';
 export type PluginRouteParameter = { name: string; type: 'uuid' | 'integer' | 'slug' | 'string'; maximumLength?: number };
 
 export type PluginUiPageDescriptor = {
@@ -13,6 +14,7 @@ export type PluginUiPageDescriptor = {
   realtime?: Array<{ event: string; refreshSources: string[] }>;
   defaultLanguage?: string;
   translations?: Record<string, Record<string, string>>;
+  appearance?: PluginUiPageAppearance;
 };
 
 const validators: Record<PluginRouteParameter['type'], (value: string) => boolean> = {

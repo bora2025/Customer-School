@@ -70,3 +70,21 @@ describe('wattanam-plugin check', () => {
     expect(logs.join('')).toContain('component is not universal');
   });
 });
+
+describe('wattanam-plugin check: UI appearance', () => {
+  const { validateUniversalUi } = require('./check');
+  const bundle = (page = {}, component = {}) => ({
+    schemaVersion: 2, kind: 'declarative-ui', portability: 'universal',
+    pages: [{ id: 'home', title: 'Home', dataSources: [], components: [{ id: 'title', type: 'heading', title: 'Home', ...component }], ...page }],
+  });
+
+  it('accepts the allow-listed appearance vocabulary', () => {
+    expect(() => validateUniversalUi(bundle({ appearance: { theme: 'company', layout: 'grid', accent: 'info' } }, { appearance: { width: 'half', tone: 'success', surface: 'tinted' } }))).not.toThrow();
+  });
+
+  it('refuses raw classes and unknown values with a helpful message', () => {
+    expect(() => validateUniversalUi(bundle({}, { appearance: { className: 'bg-red-500' } }))).toThrow(/appearance.className is not supported/);
+    expect(() => validateUniversalUi(bundle({}, { appearance: { tone: 'pink' } }))).toThrow(/tone must be one of/);
+    expect(() => validateUniversalUi(bundle({ appearance: { css: 'body{}' } }))).toThrow(/page home appearance/);
+  });
+});
