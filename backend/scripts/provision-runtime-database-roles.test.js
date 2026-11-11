@@ -17,7 +17,12 @@ test('creates bounded non-administrative roles and denies worker schema creation
   const sql = roleStatements(config).join('\n');
   assert.match(sql, /wattanam_api/);
   assert.match(sql, /wattanam_worker/);
-  assert.match(sql, /NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS/);
+  // The API user manages the per-plugin roles, so it alone may create roles; neither is a superuser.
+  assert.match(sql, /ALTER ROLE "wattanam_api" NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS/);
+  assert.match(sql, /ALTER ROLE "wattanam_worker" NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS/);
+  assert.match(sql, /GRANT USAGE ON SCHEMA public TO "wattanam_api" WITH GRANT OPTION/);
+  assert.doesNotMatch(sql, /GRANT USAGE ON SCHEMA public TO "wattanam_worker" WITH GRANT OPTION/);
+  assert.doesNotMatch(sql, /\bSUPERUSER\b(?<!NOSUPERUSER)/);
   assert.match(sql, /REVOKE CREATE ON SCHEMA public FROM "wattanam_worker"/);
   assert.doesNotMatch(sql, /GRANT ALL/);
 });

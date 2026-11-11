@@ -33,11 +33,54 @@ describe('per-plugin database roles', () => {
   });
 
   it('creates the role with no powers and grants only the plugin namespace', async () => {
+    const { client, executed } = roleClient({ self: { name: 'wattanam_api', superuser: false, createrole: true, version: 180000 }, exists: false, access: { admin: true, usable: false }, peers: ['wattanam_worker'] });
+    await expect(ensurePluginDatabaseRole(client as any, 'wattanam.test')).resolves.toEqual({ role: 'wtp_wattanam_test', relations: 2, mode: 'manager' });
+    expect(executed).toEqual([
+      'CREATE ROLE "wtp_wattanam_test" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT',
+      // Non-superuser manager (the API user): attributes are verified (not re-asserted), then it
+      // and the other runtime user (the worker) become members.
+      'GRANT "wtp_wattanam_test" TO CURRENT_USER',
+      'GRANT "wtp_wattanam_test" TO "wattanam_worker"',
+      'GRANT USAGE ON SCHEMA public TO "wtp_wattanam_test"',
+      'REVOKE CREATE ON SCHEMA public FROM "wtp_wattanam_test"',
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public."plugin_wattanam_test_notes" TO "wtp_wattanam_test"',
+      'GRANT USAGE, SELECT, UPDATE ON SEQUENCE public."plugin_wattanam_test_seq" TO "wtp_wattanam_test"',
+    ]);
+  });
+
+  it('lets a plain member (the worker) use the role without managing anything', async () => {
+    const { client, executed } = roleClient({ self: { name: 'wattanam_worker', superuser: false, createrole: false, version: 180000 }, exists: true, access: { admin: false, usable: true } });
+    await expect(ensurePluginDatabaseRole(client as any, 'wattanam.test')).resolves.toEqual({ role: 'wtp_wattanam_test', relations: 0, mode: 'member' });
+    expect(executed).toEqual([]);
+  });
+
+  it('refuses with an explanation when the user can neither create nor use the role', async () => {
+    const worker = { name: 'wattanam_worker', superuser: false, createrole: false, version: 180000 };
+    await expect(ensurePluginDatabaseRole(roleClient({ self: worker, exists: false }).client as any, 'wattanam.test'))
+      .rejects.toThrow(/does not exist and database user wattanam_worker may not create roles/);
+    await expect(ensurePluginDatabaseRole(roleClient({ self: worker, exists: true, access: { admin: false, usable: false } }).client as any, 'wattanam.test'))
+      .rejects.toThrow(/wattanam_worker is not a member of plugin database role wtp_wattanam_test/);
+    await expect(ensurePluginDatabaseRole(roleClient({ self: worker, exists: true, attributes: { rolsuper: true }, access: { admin: false, usable: true } }).client as any, 'wattanam.test'))
+      .rejects.toThrow(/unexpected attributes \(rolsuper\)/);
+  });
+
+  it('asks PostgreSQL 15 and older about plain membership instead of the SET option', async () => {
+    const { client, queries } = roleClient({ self: { name: 'wattanam_worker', superuser: false, createrole: false, version: 150004 }, exists: true, access: { admin: false, usable: true } });
+    await ensurePluginDatabaseRole(client as any, 'wattanam.test');
+    expect(queries.find((sql) => sql.includes('pg_has_role'))).toMatch(/'MEMBER'\) AS usable/);
+  });
+
+  function roleClient(options: { self: Record<string, unknown>; exists: boolean; attributes?: Record<string, boolean>; access?: { admin: boolean; usable: boolean }; peers?: string[] }) {
     const executed: string[] = [];
+    const queries: string[] = [];
     const client = {
       $queryRawUnsafe: jest.fn(async (sql: string, ...params: unknown[]) => {
-        if (sql.includes('FROM pg_roles WHERE rolname = $1')) return [];
-        if (sql.includes('rolsuper')) return [{ superuser: false }];
+        queries.push(sql);
+        if (sql.includes('rolname = current_user') && sql.includes('server_version_num')) return [options.self];
+        if (sql.includes('SELECT rolname FROM pg_roles WHERE rolname = $1')) return options.exists ? [{ rolname: params[0] }] : [];
+        if (sql.includes('rolreplication')) return [options.attributes || {}];
+        if (sql.includes('pg_has_role')) return [options.access || { admin: false, usable: false }];
+        if (sql.includes('ANY($1::text[])')) return (options.peers || []).map((rolname) => ({ rolname }));
         if (sql.includes('FROM pg_class')) {
           expect(params[0]).toBe('plugin\\_wattanam\\_test\\_%');
           return [{ name: 'plugin_wattanam_test_notes', kind: 'r' }, { name: 'plugin_wattanam_test_seq', kind: 'S' }];
@@ -46,17 +89,8 @@ describe('per-plugin database roles', () => {
       }),
       $executeRawUnsafe: jest.fn(async (sql: string) => { executed.push(sql); return 0; }),
     };
-    await expect(ensurePluginDatabaseRole(client as any, 'wattanam.test')).resolves.toEqual({ role: 'wtp_wattanam_test', relations: 2 });
-    expect(executed).toEqual([
-      'CREATE ROLE "wtp_wattanam_test" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT',
-      // Non-superuser host: attributes are verified (not re-asserted), then membership is granted.
-      'GRANT "wtp_wattanam_test" TO CURRENT_USER',
-      'GRANT USAGE ON SCHEMA public TO "wtp_wattanam_test"',
-      'REVOKE CREATE ON SCHEMA public FROM "wtp_wattanam_test"',
-      'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public."plugin_wattanam_test_notes" TO "wtp_wattanam_test"',
-      'GRANT USAGE, SELECT, UPDATE ON SEQUENCE public."plugin_wattanam_test_seq" TO "wtp_wattanam_test"',
-    ]);
-  });
+    return { client, executed, queries };
+  }
 
   describe('runtime', () => {
     const originalEnvironment = process.env;
