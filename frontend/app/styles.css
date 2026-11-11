@@ -42,9 +42,13 @@
     }
   }
 
-  /* Prevent horizontal overflow on mobile */
+  /* Prevent horizontal overflow on mobile. `clip`, not `hidden`: overflow-x: hidden on both html and
+     body turns <body> into a scroll container that never scrolls, so the sticky desktop sidebar
+     stuck to it and scrolled away with long pages. `hidden` stays as the fallback for browsers
+     without `clip`. */
   html, body {
     overflow-x: hidden;
+    overflow-x: clip;
   }
 
   /* Custom scrollbar */

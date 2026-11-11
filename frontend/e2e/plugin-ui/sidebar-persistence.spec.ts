@@ -52,3 +52,23 @@ test('the sidebar keeps its menu, state and scroll position across navigation', 
   expect(versionCalls).toBe(1);
   expect(extensionCalls).toBeGreaterThan(0);
 });
+
+test('the desktop sidebar stays fixed while a long page scrolls', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'the sticky sidebar is a desktop layout');
+  await page.route('**/api/**', async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/api/auth/me') return route.fulfill({ json: { id: 'admin-1', role: 'SUPER_ADMIN', email: 'admin@example.test' } });
+    if (pathname === '/api/plugin-api/my-extensions') return route.fulfill({ json: { navigation: [], pages: [] } });
+    return route.fulfill({ status: 200, json: [] });
+  });
+  await page.goto('/admin/users');
+  const aside = page.locator('aside').first();
+  await expect(aside).toBeVisible({ timeout: 15_000 });
+  // Make the page much taller than the window, as long plugin forms and tables are.
+  await page.evaluate(() => { const spacer = document.createElement('div'); spacer.style.height = '4000px'; document.querySelector('.page-content')?.appendChild(spacer); });
+  await page.mouse.wheel(0, 2500);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+  const box = await aside.boundingBox();
+  expect(box?.y).toBe(0);
+  expect(Math.round(box?.height || 0)).toBe(page.viewportSize()!.height);
+});
