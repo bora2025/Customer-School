@@ -28,6 +28,7 @@ import { PrismaAcademicIdentityProvider } from '../auth/academic-identity.provid
 import { PluginAccountService } from './plugin-account.service';
 import { assertPluginExecutionAllowed } from './plugin-execution-policy';
 import { applyPluginDatabasePolicy, pluginDatabasePolicy } from './plugin-database-policy';
+import { enterPluginDatabaseRole, ensurePluginDatabaseRole, leavePluginDatabaseRole, pluginDatabaseRolesEnforced } from './plugin-database-roles';
 
 @Injectable()
 export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -159,6 +160,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
     if (pluginModule.id !== id || typeof pluginModule.activate !== 'function') throw new Error('Plugin backend entry does not implement the lifecycle contract');
 
     const capabilities = new Set(verified.manifest.capabilities);
+    const usesDatabase = ['database.read', 'database.write', 'database.transaction', 'events.durable'].some((capability) => capabilities.has(capability));
     const declaredPermissions = new Set(verified.manifest.permissions);
     const dataContracts = verified.manifest.contracts;
     const assertContractVersion = (kind: string, declarations: Record<string, number[]> | undefined, name: string, versions: number[]) => {
@@ -234,7 +236,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
           if ((sql.match(/;/g) || []).length > 1) throw new Error(`${label} must contain exactly one SQL statement`);
           assertNoForbiddenSql(sql, label);
           assertPluginNamespace(id, sql, label);
-          return this.withPluginDatabasePolicy((tx) => tx.$queryRawUnsafe(sql, ...params));
+          return this.withPluginDatabasePolicy(id, (tx) => tx.$queryRawUnsafe(sql, ...params));
         },
         execute: async (sql, params = []) => {
           requireCapability('database.write');
@@ -244,7 +246,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
           if ((sql.match(/;/g) || []).length > 1) throw new Error(`${label} must contain exactly one SQL statement`);
           assertNoForbiddenSql(sql, label);
           assertPluginNamespace(id, sql, label);
-          const count = await this.withPluginDatabasePolicy<number>((tx) => tx.$executeRawUnsafe(sql, ...params));
+          const count = await this.withPluginDatabasePolicy<number>(id, (tx) => tx.$executeRawUnsafe(sql, ...params));
           return { count };
         },
         transaction: async (work) => {
@@ -264,21 +266,37 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
               operation.catch(() => undefined); // surfaced below, never as an unhandled rejection
               return operation;
             };
+            // Plugin statements run under the plugin's database role; host work in the same
+            // transaction (durable event publication into core tables) runs as the host. Operations
+            // execute strictly one at a time so a role switch can never overlap another statement on
+            // this connection, even when the plugin fires several queries without awaiting them.
+            const enforceRole = pluginDatabaseRolesEnforced();
+            let chain: Promise<unknown> = Promise.resolve();
+            const serial = <T>(operation: () => Promise<T>): Promise<T> => {
+              const run = chain.then(operation, operation);
+              chain = run.catch(() => undefined);
+              return run;
+            };
+            const asPlugin = <T>(statement: () => Promise<T>): Promise<T> => serial(async () => {
+              if (!enforceRole) return statement();
+              await enterPluginDatabaseRole(tx, id);
+              try { return await statement(); } finally { await leavePluginDatabaseRole(tx).catch(() => undefined); }
+            });
             const result = await work({
             query: (sql, params = []) => {
               this.resourceQuota?.consume(id, 'sql'); const label = `Plugin ${id} transactional query`;
               if (!/^\s*SELECT\b/i.test(sql)) throw new Error(`${label} must be a SELECT statement`);
-              assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return track(tx.$queryRawUnsafe(sql, ...params));
+              assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return track(asPlugin(() => tx.$queryRawUnsafe(sql, ...params)));
             },
             execute: (sql, params = []) => track((async () => {
               this.resourceQuota?.consume(id, 'sql'); const label = `Plugin ${id} transactional execute`;
               if (!/^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql)) throw new Error(`${label} must be an INSERT, UPDATE, or DELETE statement`);
-              assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return { count: await tx.$executeRawUnsafe(sql, ...params) };
+              assertNoForbiddenSql(sql, label); assertPluginNamespace(id, sql, label); return { count: await asPlugin(() => tx.$executeRawUnsafe(sql, ...params)) };
             })()),
             publish: (input) => {
               assertContractVersion('durable event publication', dataContracts?.events.publishes, input.event, [input.version]);
               if (!this.contracts) throw new Error('Durable event runtime is unavailable');
-              return track(this.contracts.publish(tx, id, input));
+              return track(serial(() => this.contracts!.publish(tx, id, input)));
             },
             });
             const failed = (await Promise.allSettled(pending)).find((outcome) => outcome.status === 'rejected') as PromiseRejectedResult | undefined;
@@ -376,6 +394,12 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
         catch { throw new Error('Plugin frontend entry must be valid declarative JSON'); }
         const dispose = this.extensions.registerPage(id, descriptor, declaredPermissions); disposers.push(dispose);
       }
+      // Create/refresh the plugin's database role before any plugin code can run SQL. Done on every
+      // load so tables added by later migrations, and databases restored without ACLs, are covered.
+      if (usesDatabase && pluginDatabaseRolesEnforced()) {
+        const { role, relations } = await this.prisma.$transaction((tx) => ensurePluginDatabaseRole(tx, id));
+        this.logger.log(`Database role ${role} covers ${relations} relation(s) of ${id}`);
+      }
       const cleanup = await pluginModule.activate(context);
       const hostContracts = new Set(verified.manifest.hostContracts || []);
       const principal = { userId: `core:plugin-contract:${id}`, role: 'SUPER_ADMIN' };
@@ -446,10 +470,12 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
     }
   }
 
-  private async withPluginDatabasePolicy<T>(work: (tx: Prisma.TransactionClient) => Promise<T>) {
+  /** One plugin statement in its own short transaction, with limits applied and under its own role. */
+  private async withPluginDatabasePolicy<T>(pluginId: string, work: (tx: Prisma.TransactionClient) => Promise<T>) {
     const policy = pluginDatabasePolicy('runtime');
     return this.prisma.$transaction(async (tx) => {
       await applyPluginDatabasePolicy(tx, 'runtime');
+      if (pluginDatabaseRolesEnforced()) await enterPluginDatabaseRole(tx, pluginId);
       return work(tx);
     }, { timeout: policy.statementTimeoutMs + 1_000, maxWait: 5_000 });
   }

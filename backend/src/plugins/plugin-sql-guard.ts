@@ -25,6 +25,13 @@ export function assertNoForbiddenSql(sql: string, label: string) {
   if (/\b(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|CREATE\s+(?:ROLE|USER|EXTENSION)|ALTER\s+(?:ROLE|USER|SYSTEM)|COPY\b|PROGRAM\b|DO\s*\$|SET\s+ROLE|GRANT\b|REVOKE\b)\b/i.test(executableSql)) {
     throw new BadRequestException(`${label} contains a forbidden database operation`);
   }
+  // Plugin statements run under a per-plugin role (plugin-database-roles.ts). Anything that could
+  // switch back to the connection's own role, or run code with another role's rights, is refused:
+  // RESET / SET [LOCAL|SESSION] ROLE / SET SESSION AUTHORIZATION, set_config('role', ...), and
+  // SECURITY DEFINER functions (they execute as their owner, the host's database user).
+  if (/^\s*RESET\b|\bSET\s+(?:LOCAL\s+|SESSION\s+)?(?:ROLE|SESSION\s+AUTHORIZATION)\b|\bset_config\s*\(|\bSECURITY\s+DEFINER\b/i.test(executableSql)) {
+    throw new BadRequestException(`${label} contains a forbidden database operation`);
+  }
 }
 
 export function assertPluginNamespace(pluginId: string, sql: string, label: string) {
