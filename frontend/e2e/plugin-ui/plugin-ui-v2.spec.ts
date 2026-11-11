@@ -5,7 +5,12 @@ import path from 'node:path';
 
 const template = fs.readFileSync(path.resolve(process.cwd(), '../packages/plugin-cli/templates/default/frontend/page.json'), 'utf8');
 const descriptor = JSON.parse(template.replaceAll('{{publisher}}', 'acme').replaceAll('{{name}}', 'widget').replaceAll('{{displayName}}', 'Acme Widget'));
-const pages = descriptor.pages.map((page: Record<string, unknown>) => ({ pluginId: 'acme.widget', schemaVersion: 2, kind: 'declarative-ui', ...page }));
+// The school backend expands reusable fragments ({ "use": ... }) before pages reach the browser;
+// this fixture is the raw template, so expand them the same way (idPrefix included).
+const expand = (components: any[]): any[] => components.flatMap((component) => component.use
+  ? expand(descriptor.fragments[component.use]).map((item: any) => ({ ...item, id: `${component.idPrefix || ''}${item.id}` }))
+  : [component]);
+const pages = descriptor.pages.map((page: Record<string, any>) => ({ pluginId: 'acme.widget', schemaVersion: 2, kind: 'declarative-ui', ...page, components: expand(page.components) }));
 const records = [
   { id: 'record-1', name: 'First record', status: 'active', createdAt: '2026-09-14T08:00:00.000Z' },
   { id: 'record-2', name: 'Second record', status: 'draft', createdAt: '2026-09-14T09:00:00.000Z' },
@@ -32,7 +37,7 @@ test('list/create/print workflow is keyboard accessible with no serious axe find
   await expect(page.getByRole('button', { name: 'Print' })).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(page.locator(':focus')).toBeVisible();
-  await page.getByLabel('Name').fill('Created record');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Created record');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Record created');
   const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
@@ -48,7 +53,7 @@ test('detail/edit workflow fits the viewport without document overflow', async (
   await expect(page.getByText('First record').first()).toBeVisible();
   const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
-  await page.getByLabel('Name').fill('Updated record');
+  await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Updated record');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('status')).toContainText('Record saved');
 });

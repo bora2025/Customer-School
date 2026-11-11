@@ -161,7 +161,14 @@ export class MetricsService implements OnModuleInit {
     // Restore-drill evidence lives in the off-site bucket, written by the worker.
     new client.Gauge({
       name: 'recovery_drill_configured', help: '1 when the off-site restore drill is configured', registers: [this.registry],
-      collect() { this.set(drillService?.configured() ? 1 : 0); },
+      // The drill runs on the WORKER (it holds RECOVERY_DRILL_*); these metrics are served by the API,
+      // which deliberately has no access to the rehearsal database. So the API also counts the drill
+      // as configured when drill evidence exists in the off-site bucket: only a configured worker
+      // writes it. A drill that stops running is still caught by recovery_drill_success_age_seconds.
+      async collect() {
+        if (drillService?.configured()) { this.set(1); return; }
+        try { this.set((await drillService?.lastAttempt()) ? 1 : 0); } catch { this.set(0); }
+      },
     });
     new client.Gauge({
       name: 'recovery_drill_success_age_seconds', help: 'Seconds since the last successful restore of an off-site set into the rehearsal database; +Inf if never or unreadable', registers: [this.registry],
