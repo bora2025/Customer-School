@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useLanguage } from '../lib/i18n';
 import { iconMap, IconGlobe, IconLogout } from './Icons';
 import InstallAppButton from './InstallAppButton';
@@ -116,23 +116,108 @@ function pickBottomTabs(navItems: NavItem[], bottomTabs?: string[]): NavItem[] {
   return picked;
 }
 
+// ── Sidebar session memory ─────────────────────────────────────────────────
+// Every page renders its own <Sidebar>, so navigating remounts it. Without this memory each
+// navigation reset the sidebar: plugin menu entries vanished until /my-extensions answered again,
+// the collapsed state and scroll position were lost, and badges blinked to zero. Keeping the last
+// known state per browser session makes the new page's sidebar identical on its first paint; data
+// is refreshed in the background when it is older than SIDEBAR_DATA_TTL_MS.
+type UnreadCounts = { messages: number; announcements: number; 'class-registrations': number; 'platform-billing': number };
+const SIDEBAR_DATA_TTL_MS = 60_000;
+const sidebarSession: {
+  sidebarOpen: boolean;
+  scrollTop: number;
+  unread: UnreadCounts;
+  pluginNav: NavigationRegistration[] | null;
+  distribution: FrontendDistribution;
+  loadedAt: number;
+} = {
+  sidebarOpen: true,
+  scrollTop: 0,
+  unread: { messages: 0, announcements: 0, 'class-registrations': 0, 'platform-billing': 0 },
+  pluginNav: null,
+  distribution: 'core',
+  loadedAt: 0,
+};
+const SIDEBAR_NAVIGATION_CHANGED = 'wattanam:navigation-changed';
+
+// One request at a time: sidebars mounting together (React strict mode, fast navigation) share it.
+let sidebarNavigationInflight: Promise<void> | null = null;
+function loadSidebarNavigation(): Promise<void> {
+  if (sidebarNavigationInflight) return sidebarNavigationInflight;
+  sidebarNavigationInflight = (async () => {
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
+      const versionResponse = await fetch(`${apiBase}/api/version`, { credentials: 'include' });
+      if (versionResponse.ok) {
+        const version = await versionResponse.json();
+        sidebarSession.distribution = version?.distribution === 'legacy-full' ? 'legacy-full' : 'core';
+      }
+      const res = await fetch(`${apiBase}/api/plugin-api/my-extensions`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      sidebarSession.pluginNav = pluginNavigation(Array.isArray(data?.navigation) ? data.navigation : []);
+      sidebarSession.loadedAt = Date.now();
+    } catch { /* plugin nav is optional; a fetch failure just means none shown */ }
+    finally { sidebarNavigationInflight = null; }
+  })();
+  return sidebarNavigationInflight;
+}
+
+/** Call after installing, activating, deactivating or removing a plugin: the menu reloads now. */
+export function invalidateSidebarNavigation() {
+  sidebarSession.loadedAt = 0;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SIDEBAR_NAVIGATION_CHANGED));
+}
+
+/** Forget everything (logout / another user signs in). */
+export function resetSidebarSession() {
+  sidebarSession.sidebarOpen = true;
+  sidebarSession.scrollTop = 0;
+  sidebarSession.unread = { messages: 0, announcements: 0, 'class-registrations': 0, 'platform-billing': 0 };
+  sidebarSession.pluginNav = null;
+  sidebarSession.distribution = 'core';
+  sidebarSession.loadedAt = 0;
+}
+
 export default function Sidebar({ title, subtitle, navItems, accentColor = 'indigo', bottomTabs }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpenState] = useState(sidebarSession.sidebarOpen);
+  const setSidebarOpen = (value: boolean | ((current: boolean) => boolean)) => {
+    setSidebarOpenState((current) => {
+      const next = typeof value === 'function' ? value(current) : value;
+      sidebarSession.sidebarOpen = next;
+      return next;
+    });
+  };
   const [showMore, setShowMore] = useState(false);
   const colors = colorMap[accentColor] || colorMap.indigo;
   const { lang, setLang, t } = useLanguage();
   const navRef = useRef<HTMLElement>(null);
 
-  // Scroll the active nav item into view whenever the page changes
+  // Restore the menu's scroll position before the first paint, then remember it as it changes.
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    // The menu uses scroll-smooth; restore instantly so it does not glide on every page change.
+    const behavior = nav.style.scrollBehavior;
+    nav.style.scrollBehavior = 'auto';
+    nav.scrollTop = sidebarSession.scrollTop;
+    nav.style.scrollBehavior = behavior;
+    const remember = () => { sidebarSession.scrollTop = nav.scrollTop; };
+    nav.addEventListener('scroll', remember, { passive: true });
+    return () => nav.removeEventListener('scroll', remember);
+  }, []);
+
+  // Keep the active item visible without animating the menu on every navigation.
   useEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
     const activeEl = nav.querySelector<HTMLElement>('[data-active="true"]');
     if (activeEl) {
-      activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      activeEl.scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }
   }, [pathname]);
 
@@ -141,7 +226,8 @@ export default function Sidebar({ title, subtitle, navItems, accentColor = 'indi
   const needAnnouncements = navItems.some(n => n.badgeKey === 'announcements');
   const needClassRegistrations = navItems.some(n => n.badgeKey === 'class-registrations');
   const needPlatformBilling = navItems.some(n => n.badgeKey === 'platform-billing');
-  const [unread, setUnread] = useState<{ messages: number; announcements: number; 'class-registrations': number; 'platform-billing': number }>({ messages: 0, announcements: 0, 'class-registrations': 0, 'platform-billing': 0 });
+  const [unread, setUnreadState] = useState<UnreadCounts>(sidebarSession.unread);
+  const setUnread = (next: UnreadCounts) => { sidebarSession.unread = next; setUnreadState(next); };
   useEffect(() => {
     let active = true;
     const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -187,31 +273,29 @@ export default function Sidebar({ title, subtitle, navItems, accentColor = 'indi
   // Any role can have plugin nav now, not just admins -- merged into the
   // scrollable nav list and "More" drawer only, never into the curated
   // bottom-tab picks.
-  const [pluginNav, setPluginNav] = useState<NavigationRegistration[]>([]);
+  const [pluginNav, setPluginNav] = useState<NavigationRegistration[]>(sidebarSession.pluginNav || []);
   // Fail closed while runtime distribution is loading. NEXT_PUBLIC_* values are compiled into the
   // browser bundle and therefore cannot safely distinguish core and legacy schools that reuse the
-  // same immutable web image; /api/version is the runtime authority.
-  const [runtimeDistribution, setRuntimeDistribution] = useState<FrontendDistribution>('core');
+  // same immutable web image; /api/version is the runtime authority. The last answer is reused
+  // across navigations (sidebarSession) so the menu does not shrink and regrow on every page.
+  const [runtimeDistribution, setRuntimeDistribution] = useState<FrontendDistribution>(sidebarSession.distribution);
+  const [navigationVersion, setNavigationVersion] = useState(0);
+  useEffect(() => {
+    const changed = () => setNavigationVersion((value) => value + 1);
+    window.addEventListener(SIDEBAR_NAVIGATION_CHANGED, changed);
+    return () => window.removeEventListener(SIDEBAR_NAVIGATION_CHANGED, changed);
+  }, []);
   useEffect(() => {
     let active = true;
-    (async () => {
-      try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-        const versionResponse = await fetch(`${apiBase}/api/version`, { credentials: 'include' });
-        if (versionResponse.ok) {
-          const version = await versionResponse.json();
-          if (active && version?.distribution === 'legacy-full') setRuntimeDistribution('legacy-full');
-        }
-        const res = await fetch(`${apiBase}/api/plugin-api/my-extensions`, { credentials: 'include' });
-        if (!res.ok) return;
-        const data = await res.json();
-        const entries = Array.isArray(data?.navigation) ? data.navigation : [];
-        if (!active) return;
-        setPluginNav(pluginNavigation(entries));
-      } catch { /* plugin nav is optional; a fetch failure just means none shown */ }
-    })();
+    const apply = () => {
+      if (!active) return;
+      setRuntimeDistribution(sidebarSession.distribution);
+      if (sidebarSession.pluginNav) setPluginNav(sidebarSession.pluginNav);
+    };
+    if (sidebarSession.pluginNav && Date.now() - sidebarSession.loadedAt < SIDEBAR_DATA_TTL_MS) return;
+    loadSidebarNavigation().then(apply);
     return () => { active = false; };
-  }, []);
+  }, [navigationVersion]);
   const effectiveNavItems = composeNavigation(
     navItems.map((item) => ({
       ...item,
@@ -230,6 +314,7 @@ export default function Sidebar({ title, subtitle, navItems, accentColor = 'indi
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } catch { /* ignore */ }
     localStorage.removeItem('role');
+    resetSidebarSession();
     router.push('/login');
   };
 

@@ -76,7 +76,11 @@ test('LC2-009: administrator core navigation is the exact approved surface set',
 
 test('LC2-009: Sidebar resolves distribution at runtime and fails closed before it loads', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '..', 'frontend', 'components', 'Sidebar.tsx'), 'utf8');
-  assert.match(source, /useState<FrontendDistribution>\('core'\)/);
+  // Fail closed: the remembered distribution starts as 'core' and is reset to 'core' on logout;
+  // the sidebar's state starts from it until /api/version answers.
+  assert.match(source, /distribution: 'core',/);
+  assert.match(source, /sidebarSession\.distribution = 'core';/);
+  assert.match(source, /useState<FrontendDistribution>\(sidebarSession\.distribution\)/);
   assert.match(source, /api\/version/);
   assert.match(source, /version\?\.distribution === 'legacy-full'/);
   assert.match(source, /isCoreNavigationHref\(item\.href\)/);
