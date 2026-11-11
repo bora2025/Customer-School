@@ -397,8 +397,8 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       // Create/refresh the plugin's database role before any plugin code can run SQL. Done on every
       // load so tables added by later migrations, and databases restored without ACLs, are covered.
       if (usesDatabase && pluginDatabaseRolesEnforced()) {
-        const { role, relations } = await this.prisma.$transaction((tx) => ensurePluginDatabaseRole(tx, id));
-        this.logger.log(`Database role ${role} covers ${relations} relation(s) of ${id}`);
+        const { role, relations, mode } = await this.prisma.$transaction((tx) => ensurePluginDatabaseRole(tx, id));
+        this.logger.log(mode === 'member' ? `Database role ${role} of ${id} is managed by the API user; this process is a member` : `Database role ${role} covers ${relations} relation(s) of ${id} (${mode})`);
       }
       const cleanup = await pluginModule.activate(context);
       const hostContracts = new Set(verified.manifest.hostContracts || []);

@@ -24,7 +24,11 @@ Plugins store their data in tables named `plugin_<id>_*` in the school database.
 | `PLUGIN_DATABASE_ROLES=off` | boundary off. Emergency use only, e.g. a database user without role privileges. |
 
 - **Superuser connection (Railway default):** works as-is.
-- **Hardened non-superuser API user:** the user needs `CREATEROLE`, plus `GRANT ... WITH GRANT OPTION` on the plugin tables. It is made a member of each plugin role so it can switch into it. A plugin role found with widened attributes is refused until a superuser resets it.
+- **Hardened runtime users (recommended):** `backend/scripts/provision-runtime-database-roles.js` creates `wattanam_api` and `wattanam_worker`. The startup log line `Database role ... (manager|member|superuser)` shows which mode a plugin loaded in.
+  - `wattanam_api` (*manager*): non-superuser with `CREATEROLE`. It owns the plugin tables and functions, creates each plugin role, and makes itself and the worker members.
+  - `wattanam_worker` (*member*): no `CREATEROLE`, no schema `CREATE`. It only switches into roles the API prepared, and refuses to load a plugin whose role is missing.
+  - The script also hands over what an earlier superuser connection created: plugin tables, sequences, functions and existing `wtp_*` roles. It is safe to run again.
+  - A plugin role found with widened attributes is refused until a superuser resets it.
 
 Tests:
 - `plugin-database-roles.spec.ts`: ordering and serialisation, with a mocked database.

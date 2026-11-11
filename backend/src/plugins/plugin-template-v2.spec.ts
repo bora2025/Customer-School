@@ -70,7 +70,8 @@ describe('official plugin template UI v2 contract', () => {
       const extensions = new PluginExtensionsService(grants, audit);
       const prisma = {
         pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'acme.widget', version: '0.1.0', installedPath }) },
-        $queryRawUnsafe: jest.fn().mockResolvedValue([]),
+        // The role check first asks the database who it is connected as; answer as the owner.
+        $queryRawUnsafe: jest.fn(async (sql: string) => (/current_user::text AS name/.test(sql) ? [{ name: 'wattanam', superuser: true, createrole: true, version: 180000 }] : [])),
         $executeRawUnsafe: jest.fn().mockResolvedValue(1),
       } as any;
       prisma.$transaction = jest.fn(async (work: any) => work(prisma));

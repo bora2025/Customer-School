@@ -159,6 +159,27 @@ async function main() {
   const removeDependency = await school('DELETE', '/plugins/wattanam.academic-management');
   check('a plugin another active plugin depends on cannot be removed', removeDependency.status >= 400, `HTTP ${removeDependency.status}`);
 
+  // Optional operator rehearsal: E2E_AFTER_PLUGINS_HOOK is a shell command run here, when the school
+  // holds two active plugins and data. It may change the deployment underneath (for example the
+  // runtime database user cutover: provision-runtime-database-roles.js, then restart the API on
+  // the restricted user). Every later stage then proves the school still works afterwards.
+  if (process.env.E2E_AFTER_PLUGINS_HOOK) {
+    const hook = require('node:child_process').spawnSync(process.env.E2E_AFTER_PLUGINS_HOOK, { shell: true, stdio: 'inherit' });
+    check('operator hook completed', hook.status === 0, `exit ${hook.status}`);
+    let health = { status: 0 };
+    for (let attempt = 0; attempt < 90 && health.status !== 200; attempt += 1) {
+      health = await fetch(`${SCHOOL}/api/health`).then((response) => ({ status: response.status })).catch(() => ({ status: 0 }));
+      if (health.status !== 200) await sleep(2000);
+    }
+    check('the school is healthy again after the operator hook', health.status === 200, `HTTP ${health.status}`);
+    const stillSignedIn = await school('GET', '/plugins');
+    const stillActive = (Array.isArray(stillSignedIn.body) ? stillSignedIn.body : []).filter((plugin) => plugin.status === 'active').map((plugin) => plugin.id).sort();
+    check('both plugins are active again after the operator hook', stillActive.join(',') === 'wattanam.academic-management,wattanam.attendance-manager', `HTTP ${stillSignedIn.status}: ${stillActive.join(',') || 'none'}`);
+    const dataAfterHook = await school('GET', '/plugin-api/wattanam.academic-management/departments');
+    const rowsAfterHook = Array.isArray(dataAfterHook.body) ? dataAfterHook.body : dataAfterHook.body?.items || dataAfterHook.body?.data || [];
+    check('plugin data is readable through the plugin API after the operator hook', dataAfterHook.status < 300 && rowsAfterHook.some((item) => item.id === department.body.id), `HTTP ${dataAfterHook.status}, ${rowsAfterHook.length} departments`);
+  }
+
   // 5. In-place upgrade of an active plugin that holds data and has an active dependent.
   // Academic Management 0.3.4 added migration 062, which seeds four default student attendance
   // sessions; upgrading from 0.3.3 must apply it to the populated database.

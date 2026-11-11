@@ -31,9 +31,13 @@ function roleStatements(config) {
   const statements = [];
   for (const [role, password] of [[API_ROLE, config.apiPassword], [WORKER_ROLE, config.workerPassword]]) {
     statements.push(`DO $role$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${literal(role)}) THEN CREATE ROLE ${identifier(role)} LOGIN PASSWORD ${literal(password)}; ELSE ALTER ROLE ${identifier(role)} LOGIN PASSWORD ${literal(password)}; END IF; END $role$`);
-    statements.push(`ALTER ROLE ${identifier(role)} NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`);
+    // The API user creates and manages the per-plugin roles (plugin-database-roles.ts), so it needs
+    // CREATEROLE; on PostgreSQL 16+ that only lets it manage roles it created or was made admin of.
+    // The worker manages nothing.
+    statements.push(`ALTER ROLE ${identifier(role)} NOSUPERUSER NOCREATEDB ${role === API_ROLE ? 'CREATEROLE' : 'NOCREATEROLE'} NOREPLICATION NOBYPASSRLS`);
     statements.push(`GRANT CONNECT ON DATABASE ${database} TO ${identifier(role)}`);
-    statements.push(`GRANT USAGE ON SCHEMA public TO ${identifier(role)}`);
+    // WITH GRANT OPTION for the API user: it passes schema usage on to the plugin roles it manages.
+    statements.push(`GRANT USAGE ON SCHEMA public TO ${identifier(role)}${role === API_ROLE ? ' WITH GRANT OPTION' : ''}`);
     statements.push(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${identifier(role)}`);
     statements.push(`GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${identifier(role)}`);
   }
@@ -52,7 +56,7 @@ function roleStatements(config) {
 
 async function provision(config) {
   if (config.help) return { usage: 'npm run db:runtime-roles:provision -- [--execute --confirm-database <database>]', requiredEnvironment: ['MIGRATION_DATABASE_URL', 'RUNTIME_API_DATABASE_PASSWORD (execute)', 'RUNTIME_WORKER_DATABASE_PASSWORD (execute)'] };
-  if (!config.execute) return { mode: 'dry-run', database: config.database, roles: [API_ROLE, WORKER_ROLE], ownershipTransfer: 'plugin tables and sequences to api', workerCreatePrivilege: false };
+  if (!config.execute) return { mode: 'dry-run', database: config.database, roles: [API_ROLE, WORKER_ROLE], ownershipTransfer: 'plugin tables, sequences and functions to api', pluginRoles: 'existing wtp_* roles shared with api (admin) and worker', apiCreateRole: true, workerCreatePrivilege: false };
   const prisma = new PrismaClient({ datasources: { db: { url: config.adminUrl } } });
   try {
     return await prisma.$transaction(async (tx) => {
@@ -61,9 +65,19 @@ async function provision(config) {
       for (const row of relations) await tx.$executeRawUnsafe(`ALTER TABLE ${row.name} OWNER TO ${identifier(API_ROLE)}`);
       const sequences = await tx.$queryRawUnsafe(`SELECT format('%I.%I', sequence_schema, sequence_name) AS name FROM information_schema.sequences WHERE sequence_schema='public' AND sequence_name LIKE 'plugin\\_%' ESCAPE '\\' ORDER BY sequence_name`);
       for (const row of sequences) await tx.$executeRawUnsafe(`ALTER SEQUENCE ${row.name} OWNER TO ${identifier(API_ROLE)}`);
+      // Plugin functions (trigger bodies) move with the tables, so plugin upgrades can replace them.
+      const functions = await tx.$queryRawUnsafe(`SELECT p.oid::regprocedure::text AS name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname LIKE 'plugin\\_%' ESCAPE '\\' ORDER BY 1`);
+      for (const row of functions) await tx.$executeRawUnsafe(`ALTER FUNCTION ${row.name} OWNER TO ${identifier(API_ROLE)}`);
+      // Per-plugin roles created while the application still connected as the database owner: the API
+      // user becomes their manager (ADMIN OPTION) and both runtime users may SET ROLE into them.
+      const pluginRoles = await tx.$queryRawUnsafe(`SELECT rolname AS name FROM pg_roles WHERE rolname LIKE 'wtp\\_%' ESCAPE '\\' ORDER BY rolname`);
+      for (const row of pluginRoles) {
+        await tx.$executeRawUnsafe(`GRANT ${identifier(row.name)} TO ${identifier(API_ROLE)} WITH ADMIN OPTION`);
+        await tx.$executeRawUnsafe(`GRANT ${identifier(row.name)} TO ${identifier(WORKER_ROLE)}`);
+      }
       await tx.$executeRawUnsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${identifier(WORKER_ROLE)}`);
       await tx.$executeRawUnsafe(`GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${identifier(WORKER_ROLE)}`);
-      return { mode: 'executed', database: config.database, roles: [API_ROLE, WORKER_ROLE], pluginTablesTransferred: relations.length, pluginSequencesTransferred: sequences.length, workerCreatePrivilege: false };
+      return { mode: 'executed', database: config.database, roles: [API_ROLE, WORKER_ROLE], pluginTablesTransferred: relations.length, pluginSequencesTransferred: sequences.length, pluginFunctionsTransferred: functions.length, pluginRolesShared: pluginRoles.length, workerCreatePrivilege: false };
     }, { timeout: 5 * 60_000, maxWait: 10_000 });
   } finally {
     await prisma.$disconnect();
