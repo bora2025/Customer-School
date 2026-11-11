@@ -87,7 +87,7 @@ catalogTest('administrator manages registration settings and custom fields acces
   await expect(page.getByRole('table')).toContainText('Learning support');
 
   page.once('dialog', (dialog) => dialog.accept());
-  await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Delete record', exact: true }).first().click();
   await expect(page.getByText('Delete completed.', { exact: true })).toBeVisible();
   await expect(page.getByRole('table')).not.toContainText('Medical note');
 
