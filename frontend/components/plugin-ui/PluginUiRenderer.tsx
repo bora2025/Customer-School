@@ -33,6 +33,7 @@ import PluginAttendanceWindowManager from "./PluginAttendanceWindowManager";
 import PluginWorkflowHeader from "./PluginWorkflowHeader";
 import PluginProfileManager from "./PluginProfileManager";
 import PluginFormMenu from "./PluginFormMenu";
+import PluginAppFrame from "./PluginAppFrame";
 import { usePluginUiPresentation } from "../../lib/plugin-ui-presentation";
 import type { PluginUiPageDescriptor } from "../../lib/plugin-ui-routing";
 import {
@@ -662,6 +663,19 @@ export default function PluginUiRenderer({
           return <PluginOrganizingReports key={component.id} />;
         if (component.type === "organizing-profiles")
           return <PluginOrganizingProfiles key={component.id} />;
+        if (component.type === "app")
+          return (
+            <PluginAppFrame
+              key={component.id}
+              pluginId={pluginId}
+              pluginVersion={page.pluginVersion}
+              title={component.title || page.title}
+              entry={String(component.options?.entry || "")}
+              params={params}
+              height={component.options?.height === "fill" ? "fill" : "auto"}
+              minHeight={Number(component.options?.minHeight) || 320}
+            />
+          );
         if (component.type === "heading")
           return (
             <div

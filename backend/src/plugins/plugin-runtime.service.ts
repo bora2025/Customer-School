@@ -392,7 +392,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
         let descriptor: unknown;
         try { descriptor = JSON.parse(verified.files.get(verified.manifest.frontendEntry)!.toString('utf8')); }
         catch { throw new Error('Plugin frontend entry must be valid declarative JSON'); }
-        const dispose = this.extensions.registerPage(id, descriptor, declaredPermissions); disposers.push(dispose);
+        const dispose = this.extensions.registerPage(id, descriptor, declaredPermissions, record.version); disposers.push(dispose);
       }
       // Create/refresh the plugin's database role before any plugin code can run SQL. Done on every
       // load so tables added by later migrations, and databases restored without ACLs, are covered.

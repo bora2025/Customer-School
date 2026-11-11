@@ -127,6 +127,12 @@ export class PluginsService {
       return { present: true, portability: 'legacy-json-settings', pageCount: 1, componentTypes: ['json-settings'] };
     }
     const bundle = parsePluginUiBundle(descriptor, verified.manifest.id, new Set(verified.manifest.permissions));
+    // A plugin-owned screen must ship its entry document inside the same signed package.
+    for (const page of bundle.pages) for (const component of page.components) {
+      if (component.type === 'app' && !verified.files.has(String(component.options?.entry))) {
+        throw new BadRequestException(`Plugin UI app entry ${component.options?.entry} is missing from the signed package`);
+      }
+    }
     return {
       present: true,
       portability: bundle.portability || 'legacy-host-components',

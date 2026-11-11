@@ -9,6 +9,7 @@ import { PluginEventBus } from './plugin-events';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginExtensionsService } from './plugin-extensions.service';
 import { PluginApiController } from './plugin-api.controller';
+import { PluginUiAssetsController } from './plugin-ui-assets.controller';
 import { PluginJobsService } from './plugin-jobs.service';
 import { PluginSettingsService } from './plugin-settings.service';
 import { PluginStorageService } from './plugin-storage.service';
@@ -28,7 +29,7 @@ import { PluginEntitlementPolicyService } from './plugin-entitlement-policy.serv
 
 @Module({
   imports: [DatabaseModule, NotificationModule, AuthModule, DirectoryModule, StorageModule],
-  controllers: [PluginsController, PluginApiController],
+  controllers: [PluginsController, PluginApiController, PluginUiAssetsController],
   providers: [PluginPackageVerifier, PluginArtifactCacheService, PluginResourceQuotaService, PluginContractRuntimeService, PluginRolloutService, PluginAccountService, PluginEntitlementPolicyService, PluginEventBus, PluginPermissionsService, PluginExtensionsService, PluginJobsService, PluginSettingsService, PluginStorageService, PluginMigrationsService, PluginRealtimeGateway, PluginRealtimeService, PluginNotificationQuotaService, PluginRuntimeService, PluginsService],
   exports: [PluginsService, PluginEventBus, PluginExtensionsService, PluginPermissionsService, PluginEntitlementPolicyService],
 })
