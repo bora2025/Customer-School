@@ -28,7 +28,7 @@ export type PluginUiMessage =
   | { type: 'ready' }
   | PluginUiRequest
   | { type: 'resize'; height: number }
-  | { type: 'navigate'; routePath: string }
+  | { type: 'navigate'; routePath: string; query?: Record<string, string> }
   | { type: 'scan-start' }
   | { type: 'scan-stop' }
   | { type: 'location'; id: string };
@@ -50,6 +50,24 @@ export function safePluginApiPath(value: unknown): string | null {
   return segments.join('/');
 }
 
+/** Plain query values (at most 30 short keys); null when the shape is not acceptable. */
+export function safePluginUiQuery(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 30 || entries.some(([key, item]) => !/^[A-Za-z0-9_.-]{1,60}$/.test(key) || !['string', 'number', 'boolean'].includes(typeof item) || String(item).length > 500)) return null;
+  return Object.fromEntries(entries.map(([key, item]) => [key, String(item)]));
+}
+
+/** The page's own query string as the screen may see it: well-formed keys only, first value each. */
+export function pluginUiPageQuery(search: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(search)) {
+    if (Object.keys(result).length >= 30) break;
+    if (/^[A-Za-z0-9_.-]{1,60}$/.test(key) && value.length <= 500 && !(key in result)) result[key] = value;
+  }
+  return result;
+}
+
 /** Turns an untrusted message into a validated bridge message, or null to ignore it. */
 export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (!data || typeof data !== 'object' || (data as any).protocol !== PLUGIN_UI_PROTOCOL) return null;
@@ -61,7 +79,10 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   }
   if (message.type === 'navigate') {
     const routePath = typeof message.routePath === 'string' ? message.routePath : '';
-    return routePath.length <= 200 && routePath.split('/').every((segment) => ROUTE_SEGMENT.test(segment)) ? { type: 'navigate', routePath } : null;
+    if (routePath.length > 200 || !routePath.split('/').every((segment) => ROUTE_SEGMENT.test(segment))) return null;
+    if (message.query === undefined) return { type: 'navigate', routePath };
+    const query = safePluginUiQuery(message.query);
+    return query ? { type: 'navigate', routePath, query } : null;
   }
   if (message.type === 'scan-start') return { type: 'scan-start' };
   if (message.type === 'scan-stop') return { type: 'scan-stop' };
@@ -75,10 +96,9 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
     if (!id || !path || !PLUGIN_UI_METHODS.includes(method)) return null;
     let query: Record<string, string> | undefined;
     if (message.query !== undefined) {
-      if (!message.query || typeof message.query !== 'object' || Array.isArray(message.query)) return null;
-      const entries = Object.entries(message.query as Record<string, unknown>);
-      if (entries.length > 30 || entries.some(([key, value]) => !/^[A-Za-z0-9_.-]{1,60}$/.test(key) || !['string', 'number', 'boolean'].includes(typeof value))) return null;
-      query = Object.fromEntries(entries.map(([key, value]) => [key, String(value)]));
+      const safe = safePluginUiQuery(message.query);
+      if (!safe) return null;
+      query = safe;
     }
     if (message.body !== undefined && (method === 'GET' || new TextEncoder().encode(JSON.stringify(message.body)).length > PLUGIN_UI_MAX_BODY_BYTES)) return null;
     return { type: 'request', id, method, path, ...(query ? { query } : {}), ...(message.body !== undefined ? { body: message.body } : {}) };

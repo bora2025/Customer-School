@@ -45,10 +45,10 @@ The Wattanam plugin SDK ships a ready-made client, `wattanam-plugin-ui.js`. Copy
 
 | From the screen | Host reply |
 |---|---|
-| `{ type: 'ready' }` | `{ type: 'init', pluginId, pluginVersion, params, language, theme }` |
+| `{ type: 'ready' }` | `{ type: 'init', pluginId, pluginVersion, params, language, theme, devices, query }`. `query` is the page's own query string (plain keys only). |
 | `{ type: 'request', id, method, path, query?, body? }` | `{ type: 'response', id, status, body }`. `path` is relative to the plugin's API, e.g. `classes/42`. Unsafe paths (`..`, encoded slashes) get no reply. |
 | `{ type: 'resize', height }` | (none) |
-| `{ type: 'navigate', routePath }` | (none). Opens `/plugins/<pluginId>/<routePath>`. |
+| `{ type: 'navigate', routePath, query? }` | (none). Opens `/plugins/<pluginId>/<routePath>`, with an optional query string (core 0.1.34). The opened screen reads it from `init.query`. |
 
 | `{ type: 'scan-start' }` | The school page opens its camera scanner above the screen and sends `{ type: 'scan-result', text }` for each code. `{ type: 'scan-error', message }` if the camera cannot start or the page did not declare `scanner`. |
 | `{ type: 'scan-stop' }` | Closes the scanner. `{ type: 'scan-closed' }` is sent whenever it closes, including when the person closes it. |
