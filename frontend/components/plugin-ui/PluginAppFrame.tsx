@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import {
   createRateLimiter,
   parsePluginUiMessage,
   pluginUiAssetUrl,
+  pluginUiPageQuery,
   PLUGIN_UI_MAX_SCAN_TEXT,
   PLUGIN_UI_PROTOCOL,
   type PluginUiDevice,
@@ -44,6 +45,8 @@ export default function PluginAppFrame({
   const frame = useRef<HTMLIFrameElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const router = useRouter();
+  // The screen reads the page's query once, at start-up; a different query restarts the screen.
+  const search = useSearchParams()?.toString() || "";
   const [frameHeight, setFrameHeight] = useState(minHeight);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
@@ -76,7 +79,7 @@ export default function PluginAppFrame({
       const message = parsePluginUiMessage(event.data);
       if (!message) return;
       if (message.type === "ready") {
-        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme(), devices: deviceKey ? deviceKey.split(",") : [] });
+        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme(), devices: deviceKey ? deviceKey.split(",") : [], query: pluginUiPageQuery(window.location.search) });
         return;
       }
       if (message.type === "resize") {
@@ -84,7 +87,8 @@ export default function PluginAppFrame({
         return;
       }
       if (message.type === "navigate") {
-        router.push(`/plugins/${encodeURIComponent(pluginId)}/${message.routePath}`);
+        const search = message.query && Object.keys(message.query).length ? `?${new URLSearchParams(message.query).toString()}` : "";
+        router.push(`/plugins/${encodeURIComponent(pluginId)}/${message.routePath}${search}`);
         return;
       }
       if (message.type === "scan-start") {
@@ -185,6 +189,7 @@ export default function PluginAppFrame({
         </div>
       )}
       <iframe
+        key={search}
         ref={frame}
         title={title || `${pluginId} screen`}
         src={src}

@@ -9,7 +9,7 @@ const version = '1.0.0';
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; media-src 'none'; object-src 'none'; worker-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-modals allow-downloads";
 const CODE = 'wattanam:student:s1-7f3a';
 
-const html = '<!doctype html><html><body><h1>Scan</h1><button id="start">Start</button><button id="stop">Stop</button><ul id="out"></ul><script src="app.js"></script></body></html>';
+const html = '<!doctype html><html><body><h1>Scan</h1><button id="start">Start</button><button id="stop">Stop</button><button id="go">Go</button><ul id="out"></ul><script src="app.js"></script></body></html>';
 const app = `
 const out = (key, value) => { let li = document.getElementById(key); if (!li) { li = document.createElement('li'); li.id = key; document.getElementById('out').appendChild(li); } li.textContent = key + '=' + value; };
 const post = (message) => parent.postMessage(Object.assign({ protocol: 'wattanam.plugin-ui/1' }, message), '*');
@@ -17,7 +17,7 @@ let scans = 0;
 window.addEventListener('message', (event) => {
   if (event.source !== parent || !event.data || event.data.protocol !== 'wattanam.plugin-ui/1') return;
   const data = event.data;
-  if (data.type === 'init') { out('devices', (data.devices || []).join('+') || 'none'); post({ type: 'location', id: 'loc1' }); }
+  if (data.type === 'init') { out('devices', (data.devices || []).join('+') || 'none'); out('query', JSON.stringify(data.query || {})); post({ type: 'location', id: 'loc1' }); }
   if (data.type === 'response' && data.id === 'loc1') out('location', data.status + ':' + (data.body && data.body.latitude !== undefined ? data.body.latitude + ',' + data.body.longitude : data.body && data.body.message));
   if (data.type === 'scan-result') { scans += 1; out('scan', data.text); out('scans', scans); }
   if (data.type === 'scan-error') out('scan-error', data.message);
@@ -25,6 +25,7 @@ window.addEventListener('message', (event) => {
 });
 document.getElementById('start').addEventListener('click', () => post({ type: 'scan-start' }));
 document.getElementById('stop').addEventListener('click', () => post({ type: 'scan-stop' }));
+document.getElementById('go').addEventListener('click', () => { post({ type: 'navigate', routePath: 'scan', query: { 'bad key': 'x' } }); post({ type: 'navigate', routePath: 'scan', query: { classId: 'c9', session: 2 } }); });
 // A screen has no camera or location API of its own inside the sandbox.
 navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia({ video: true }).then(() => out('own-camera', 'allowed'), () => out('own-camera', 'blocked')) : out('own-camera', 'blocked');
 navigator.geolocation ? navigator.geolocation.getCurrentPosition(() => out('own-location', 'allowed'), () => out('own-location', 'blocked')) : out('own-location', 'blocked');
@@ -112,7 +113,9 @@ test('a screen that declared no devices gets no scanner and no location', async 
   await context.setGeolocation({ latitude: 11.5564, longitude: 104.9282 });
   await fakeCamera(page);
   await host(page);
-  await page.goto(`/plugins/${pluginId}/scan`);
+  // The page's own query string reaches the screen (plain keys only), and a screen can open
+  // another page of its plugin with a query; a malformed query is ignored.
+  await page.goto(`/plugins/${pluginId}/scan?classId=c1&bad%20key=1`);
   const frame = page.frameLocator('iframe[title="Scan"]');
   await expect(frame.locator('#devices')).toHaveText('devices=none', { timeout: 15_000 });
   await expect(frame.locator('#location')).toHaveText('location=403:This screen has not declared location.');
@@ -120,4 +123,8 @@ test('a screen that declared no devices gets no scanner and no location', async 
   await expect(frame.locator('#scan-error')).toHaveText('scan-error=This screen has not declared the scanner.');
   await expect(page.locator('[data-plugin-scanner]')).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).__cameraRequests)).toBe(0);
+  await expect(frame.locator('#query')).toHaveText('query={"classId":"c1"}');
+  await frame.getByRole('button', { name: 'Go' }).click();
+  await expect(page).toHaveURL(new RegExp('/plugins/wattanam[.]demo/scan[?]classId=c9&session=2$'));
+  await expect(page.frameLocator('iframe[title="Scan"]').locator('#query')).toHaveText('query={"classId":"c9","session":"2"}');
 });
