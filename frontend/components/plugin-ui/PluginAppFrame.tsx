@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import {
   createRateLimiter,
   parsePluginUiMessage,
   pluginUiAssetUrl,
+  PLUGIN_UI_MAX_SCAN_TEXT,
   PLUGIN_UI_PROTOCOL,
+  type PluginUiDevice,
 } from "../../lib/plugin-ui-bridge";
 
 /**
@@ -15,6 +17,10 @@ import {
  * iframe WITHOUT allow-same-origin: an opaque origin with no access to school cookies, storage or
  * DOM, and (by its CSP) no network. Everything goes through this bridge, which only forwards calls
  * to the plugin's own API as the signed-in user. See lib/plugin-ui-bridge.ts and docs/plugin-ui-apps.md.
+ *
+ * Devices (`devices` = the page's declared `options.devices`): the screen never gets the camera or
+ * the Geolocation API. This component runs the scanner on the school page and passes on only the
+ * decoded text; a location fix is returned once per request.
  */
 export default function PluginAppFrame({
   pluginId,
@@ -24,6 +30,7 @@ export default function PluginAppFrame({
   params,
   height = "auto",
   minHeight = 320,
+  devices = [],
 }: {
   pluginId: string;
   pluginVersion?: string;
@@ -32,19 +39,27 @@ export default function PluginAppFrame({
   params: Record<string, string>;
   height?: "auto" | "fill";
   minHeight?: number;
+  devices?: PluginUiDevice[];
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const video = useRef<HTMLVideoElement>(null);
   const router = useRouter();
   const [frameHeight, setFrameHeight] = useState(minHeight);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
   const allow = useMemo(() => createRateLimiter(), []);
   const src = pluginVersion ? pluginUiAssetUrl(pluginId, pluginVersion, entry) : null;
+  const deviceKey = devices.join(",");
+  const mayScan = devices.includes("scanner");
+  const mayLocate = devices.includes("location");
+
+  const send = useCallback((message: Record<string, unknown>) => {
+    // The sandboxed document has an opaque origin, so "*" is the only possible target origin.
+    // The message goes to this specific iframe's window object only.
+    frame.current?.contentWindow?.postMessage({ protocol: PLUGIN_UI_PROTOCOL, ...message }, "*");
+  }, []);
 
   useEffect(() => {
-    const send = (message: Record<string, unknown>) => {
-      // The sandboxed document has an opaque origin, so "*" is the only possible target origin.
-      // The message goes to this specific iframe's window object only.
-      frame.current?.contentWindow?.postMessage({ protocol: PLUGIN_UI_PROTOCOL, ...message }, "*");
-    };
     const theme = () => {
       const style = getComputedStyle(document.documentElement);
       const token = (name: string) => style.getPropertyValue(name).trim();
@@ -61,7 +76,7 @@ export default function PluginAppFrame({
       const message = parsePluginUiMessage(event.data);
       if (!message) return;
       if (message.type === "ready") {
-        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme() });
+        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme(), devices: deviceKey ? deviceKey.split(",") : [] });
         return;
       }
       if (message.type === "resize") {
@@ -70,6 +85,26 @@ export default function PluginAppFrame({
       }
       if (message.type === "navigate") {
         router.push(`/plugins/${encodeURIComponent(pluginId)}/${message.routePath}`);
+        return;
+      }
+      if (message.type === "scan-start") {
+        if (!mayScan) { send({ type: "scan-error", message: "This screen has not declared the scanner." }); return; }
+        setScanError("");
+        setScanning(true);
+        return;
+      }
+      if (message.type === "scan-stop") {
+        setScanning(false);
+        return;
+      }
+      if (message.type === "location") {
+        if (!mayLocate) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared location." } }); return; }
+        if (!navigator.geolocation) { send({ type: "response", id: message.id, status: 503, body: { message: "Location is unavailable on this device." } }); return; }
+        navigator.geolocation.getCurrentPosition(
+          (position) => send({ type: "response", id: message.id, status: 200, body: { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy } }),
+          () => send({ type: "response", id: message.id, status: 403, body: { message: "Location permission was not granted." } }),
+          { enableHighAccuracy: true, timeout: 10000 },
+        );
         return;
       }
       if (!allow()) {
@@ -93,13 +128,62 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, height, minHeight, params, pluginId, pluginVersion, router]);
+  }, [allow, deviceKey, height, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
+
+  // The scanner runs here, on the school page. The camera stream stays in this document; the
+  // screen is told only the text of each decoded code.
+  useEffect(() => {
+    if (!scanning) return;
+    let stopped = false;
+    let reader: { reset(): void } | null = null;
+    let last = { text: "", at: 0 };
+    (async () => {
+      try {
+        const { BrowserMultiFormatReader } = await import("@zxing/library");
+        if (stopped || !video.current) return;
+        const instance = new BrowserMultiFormatReader();
+        reader = instance;
+        await instance.decodeFromVideoDevice(null, video.current, (result) => {
+          if (stopped || !result) return;
+          const text = result.getText().slice(0, PLUGIN_UI_MAX_SCAN_TEXT);
+          const now = Date.now();
+          // The camera reports the same code many times a second while it stays in view.
+          if (text === last.text && now - last.at < 1500) return;
+          last = { text, at: now };
+          send({ type: "scan-result", text });
+        });
+      } catch (cause) {
+        if (stopped) return;
+        const message = cause instanceof Error && cause.message ? cause.message : "Camera permission was not granted.";
+        setScanError(message);
+        send({ type: "scan-error", message });
+      }
+    })();
+    return () => {
+      stopped = true;
+      reader?.reset();
+      send({ type: "scan-closed" });
+    };
+  }, [scanning, send]);
 
   if (!src) {
     return <section className="card p-5 text-sm text-slate-500">This screen needs a newer school core to show {title || "this plugin screen"}.</section>;
   }
   return (
     <section className="card overflow-hidden p-0">
+      {scanning && (
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-950 p-3 text-white" data-plugin-scanner>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold">Camera scanner <span className="font-normal text-slate-300">· point the camera at a QR code</span></p>
+            <button type="button" onClick={() => setScanning(false)} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900">Close camera</button>
+          </div>
+          {scanError ? (
+            <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{scanError}</p>
+          ) : (
+            <video ref={video} muted playsInline className="mx-auto max-h-[45vh] w-full max-w-xl rounded-lg bg-black object-cover" />
+          )}
+        </div>
+      )}
       <iframe
         ref={frame}
         title={title || `${pluginId} screen`}

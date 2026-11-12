@@ -70,6 +70,8 @@ const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
   'app',
 ]);
 /** ui/<path>.html inside the signed package: lowercase segments, no traversal, no hidden files. */
+/** Device services an `app` screen may declare; the host runs them and hands over results only. */
+export const PLUGIN_UI_APP_DEVICES = ['scanner', 'location'] as const;
 export const PLUGIN_UI_APP_ENTRY = /^ui\/(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_.-]*\.html$/;
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
@@ -447,7 +449,15 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
         if (!PLUGIN_UI_APP_ENTRY.test(entry) || entry.includes('..')) throw new BadRequestException('Plugin UI app entry must be ui/<path>.html');
         if (options.height !== undefined && !['auto', 'fill'].includes(String(options.height))) throw new BadRequestException('Plugin UI app height must be auto or fill');
         if (options.minHeight !== undefined && (!Number.isInteger(options.minHeight) || Number(options.minHeight) < 120 || Number(options.minHeight) > 4000)) throw new BadRequestException('Plugin UI app minHeight must be 120-4000');
-        const unsupported = Object.keys(options).filter((key) => !['entry', 'height', 'minHeight'].includes(key));
+        // Device services the host runs for the screen (it never gets the camera or location API itself).
+        if (options.devices !== undefined) {
+          const devices = options.devices;
+          if (!Array.isArray(devices) || devices.length > PLUGIN_UI_APP_DEVICES.length || new Set(devices).size !== devices.length
+            || devices.some((device) => !PLUGIN_UI_APP_DEVICES.includes(device as (typeof PLUGIN_UI_APP_DEVICES)[number]))) {
+            throw new BadRequestException(`Plugin UI app devices must be a list of: ${PLUGIN_UI_APP_DEVICES.join(', ')}`);
+          }
+        }
+        const unsupported = Object.keys(options).filter((key) => !['entry', 'height', 'minHeight', 'devices'].includes(key));
         if (unsupported.length) throw new BadRequestException(`Plugin UI app options are not supported: ${unsupported.join(', ')}`);
       }
       if (type === 'filter') {

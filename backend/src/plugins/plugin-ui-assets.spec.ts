@@ -90,5 +90,18 @@ describe('plugin UI assets (sandboxed plugin-owned screens)', () => {
     ])('refuses unsafe options %j', (options) => {
       expect(() => parsePluginUiBundle(bundle(options), 'wattanam.demo', permissions)).toThrow();
     });
+
+    it('accepts the device services a screen declares', () => {
+      for (const devices of [['scanner'], ['location'], ['scanner', 'location'], []]) {
+        const page = parsePluginUiBundle(bundle({ entry: 'ui/scan/index.html', devices }), 'wattanam.demo', permissions).pages[0];
+        expect(page.components[0].options).toMatchObject({ devices });
+      }
+    });
+
+    it.each([
+      [['camera']], [['microphone']], [['scanner', 'scanner']], ['scanner'], [[1]], [{ scanner: true }], [['scanner', 'location', 'hid']],
+    ])('refuses device declarations the host does not provide: %j', (devices) => {
+      expect(() => parsePluginUiBundle(bundle({ entry: 'ui/scan/index.html', devices }), 'wattanam.demo', permissions)).toThrow(/devices must be a list of: scanner, location/);
+    });
   });
 });
