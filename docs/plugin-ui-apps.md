@@ -18,6 +18,7 @@ Requires school core **0.1.29** or newer. Set `requiresCore` to `>=0.1.29` in an
 | `entry` | Required. Must be `ui/<path>.html` with lowercase segments, and the file must be in the signed package. |
 | `height` | `auto` (the screen reports its height) or `fill` (fills the viewport). |
 | `minHeight` | 120–4000 px. |
+| `devices` | Optional list of device services the screen uses: `scanner`, `location`. See [Devices](#devices-scanner-and-location). Requires core 0.1.33. |
 
 Files go under `ui/` in the plugin folder. `wattanam-plugin pack` signs them like every other file. Allowed types are `.html .js .mjs .css .json .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2`. Inline `<script>` blocks are blocked, so put scripts in separate files and load them with `<script src="...">`.
 
@@ -49,7 +50,32 @@ The Wattanam plugin SDK ships a ready-made client, `wattanam-plugin-ui.js`. Copy
 | `{ type: 'resize', height }` | (none) |
 | `{ type: 'navigate', routePath }` | (none). Opens `/plugins/<pluginId>/<routePath>`. |
 
-Every message carries `protocol: 'wattanam.plugin-ui/1'`.
+| `{ type: 'scan-start' }` | The school page opens its camera scanner above the screen and sends `{ type: 'scan-result', text }` for each code. `{ type: 'scan-error', message }` if the camera cannot start or the page did not declare `scanner`. |
+| `{ type: 'scan-stop' }` | Closes the scanner. `{ type: 'scan-closed' }` is sent whenever it closes, including when the person closes it. |
+| `{ type: 'location', id }` | `{ type: 'response', id, status, body }` with `{ latitude, longitude, accuracy }`, or status 403/503 with a `message`. |
+
+Every message carries `protocol: 'wattanam.plugin-ui/1'`. The `init` message also lists the granted `devices`.
+
+## Devices: scanner and location
+
+**A screen never gets the camera or the browser's location API.** The sandbox and the school's device policy block both inside the frame. Instead the school page runs the device and hands the screen only the result:
+
+- **`scanner`**: the school page shows its own camera panel above the screen, decodes QR codes and barcodes itself, and sends the screen the decoded text. The screen never receives video. The person can close the camera at any time with the school page's own button. A code that stays in view is reported at most once every 1.5 seconds; text is capped at 2,000 characters.
+- **`location`**: one position per request, with the browser's normal permission prompt shown for the school.
+
+Declare what the screen uses in the page definition, so it is visible in the signed package and to reviewers:
+
+```json
+{ "id": "scan-app", "type": "app", "options": { "entry": "ui/scan/index.html", "devices": ["scanner", "location"] } }
+```
+
+A screen that asks for a device its page did not declare gets `scan-error` or status 403. With the SDK client:
+
+```js
+WattanamPluginUI.scanner.start({ onResult: (text) => record(text), onClose: () => showIdle(), onError: (message) => show(message) });
+WattanamPluginUI.scanner.stop();
+const position = await WattanamPluginUI.location(); // { latitude, longitude, accuracy }
+```
 
 Limits:
 - 20 requests per second per frame; extra requests get status 429.
@@ -59,4 +85,5 @@ Limits:
 ## Tests
 
 - `backend/src/plugins/plugin-ui-assets.spec.ts`: paths, headers, checksum verification, version and activity checks, and schema rules.
+- `frontend/e2e/plugin-ui/plugin-ui-app-devices.spec.ts`: a real browser with a simulated camera. The host decodes a QR code and the screen receives only its text; a screen that declared nothing gets no scanner and no location.
 - `frontend/e2e/plugin-ui/plugin-ui-app-sandbox.spec.ts`: a real browser. The bridge works, and network, cookie, DOM, storage and path-trick escapes are all refused. Runs in the CI job `plugin-ui-sandbox-browser`.

@@ -34,6 +34,7 @@ import PluginWorkflowHeader from "./PluginWorkflowHeader";
 import PluginProfileManager from "./PluginProfileManager";
 import PluginFormMenu from "./PluginFormMenu";
 import PluginAppFrame from "./PluginAppFrame";
+import { pluginUiDevices } from "../../lib/plugin-ui-bridge";
 import { usePluginUiPresentation } from "../../lib/plugin-ui-presentation";
 import type { PluginUiPageDescriptor } from "../../lib/plugin-ui-routing";
 import {
@@ -674,6 +675,7 @@ export default function PluginUiRenderer({
               params={params}
               height={component.options?.height === "fill" ? "fill" : "auto"}
               minHeight={Number(component.options?.minHeight) || 320}
+              devices={pluginUiDevices(component.options?.devices)}
             />
           );
         if (component.type === "heading")

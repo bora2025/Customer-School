@@ -14,12 +14,29 @@ export const PLUGIN_UI_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as co
 export const PLUGIN_UI_MAX_BODY_BYTES = 256 * 1024;
 export const PLUGIN_UI_MAX_REQUESTS_PER_SECOND = 20;
 
+/**
+ * Device services a screen may use, and only when its page declares them (`options.devices`).
+ * The HOST runs the device: a sandboxed screen never receives camera frames or a media stream,
+ * only the text of each code the school page decoded, or one location fix per request.
+ */
+export const PLUGIN_UI_DEVICES = ['scanner', 'location'] as const;
+export type PluginUiDevice = (typeof PLUGIN_UI_DEVICES)[number];
+export const PLUGIN_UI_MAX_SCAN_TEXT = 2000;
+
 export type PluginUiRequest = { type: 'request'; id: string; method: (typeof PLUGIN_UI_METHODS)[number]; path: string; query?: Record<string, string>; body?: unknown };
 export type PluginUiMessage =
   | { type: 'ready' }
   | PluginUiRequest
   | { type: 'resize'; height: number }
-  | { type: 'navigate'; routePath: string };
+  | { type: 'navigate'; routePath: string }
+  | { type: 'scan-start' }
+  | { type: 'scan-stop' }
+  | { type: 'location'; id: string };
+
+/** The declared devices of an `app` component, reduced to the ones the host knows. */
+export function pluginUiDevices(value: unknown): PluginUiDevice[] {
+  return Array.isArray(value) ? PLUGIN_UI_DEVICES.filter((device) => value.includes(device)) : [];
+}
 
 const SEGMENT = /^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+$/;
 const ROUTE_SEGMENT = /^[a-z0-9][a-z0-9_-]*$/;
@@ -45,6 +62,11 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (message.type === 'navigate') {
     const routePath = typeof message.routePath === 'string' ? message.routePath : '';
     return routePath.length <= 200 && routePath.split('/').every((segment) => ROUTE_SEGMENT.test(segment)) ? { type: 'navigate', routePath } : null;
+  }
+  if (message.type === 'scan-start') return { type: 'scan-start' };
+  if (message.type === 'scan-stop') return { type: 'scan-stop' };
+  if (message.type === 'location') {
+    return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'location', id: message.id } : null;
   }
   if (message.type === 'request') {
     const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
