@@ -18,7 +18,7 @@ Requires school core **0.1.29** or newer. Set `requiresCore` to `>=0.1.29` in an
 | `entry` | Required. Must be `ui/<path>.html` with lowercase segments, and the file must be in the signed package. |
 | `height` | `auto` (the screen reports its height) or `fill` (fills the viewport). |
 | `minHeight` | 120–4000 px. |
-| `devices` | Optional list of device services the screen uses: `scanner`, `location`. See [Devices](#devices-scanner-and-location). Requires core 0.1.33. |
+| `devices` | Optional list of device services the screen uses: `scanner`, `location`, `device-id` (core 0.1.35). See [Devices](#devices-scanner-and-location). Requires core 0.1.33. |
 
 Files go under `ui/` in the plugin folder. `wattanam-plugin pack` signs them like every other file. Allowed types are `.html .js .mjs .css .json .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2`. Inline `<script>` blocks are blocked, so put scripts in separate files and load them with `<script src="...">`.
 
@@ -52,6 +52,7 @@ The Wattanam plugin SDK ships a ready-made client, `wattanam-plugin-ui.js`. Copy
 
 | `{ type: 'scan-start' }` | The school page opens its camera scanner above the screen and sends `{ type: 'scan-result', text }` for each code. `{ type: 'scan-error', message }` if the camera cannot start or the page did not declare `scanner`. |
 | `{ type: 'scan-stop' }` | Closes the scanner. `{ type: 'scan-closed' }` is sent whenever it closes, including when the person closes it. |
+| `{ type: 'device-id', id }` | `{ type: 'response', id, status, body: { deviceId } }`, or 403/503 with a `message` (core 0.1.35). |
 | `{ type: 'location', id }` | `{ type: 'response', id, status, body }` with `{ latitude, longitude, accuracy }`, or status 403/503 with a `message`. |
 
 Every message carries `protocol: 'wattanam.plugin-ui/1'`. The `init` message also lists the granted `devices`.
@@ -62,6 +63,7 @@ Every message carries `protocol: 'wattanam.plugin-ui/1'`. The `init` message als
 
 - **`scanner`**: the school page shows its own camera panel above the screen, decodes QR codes and barcodes itself, and sends the screen the decoded text. The screen never receives video. The person can close the camera at any time with the school page's own button. A code that stays in view is reported at most once every 1.5 seconds; text is capped at 2,000 characters.
 - **`location`**: one position per request, with the browser's normal permission prompt shown for the school.
+- **`device-id`** (core 0.1.35): a random identifier this browser keeps for your plugin, for example to recognise a registered device. It is different for every plugin and is lost when the person clears the site's data. Private browsing may refuse it (status 503).
 
 Declare what the screen uses in the page definition, so it is visible in the signed package and to reviewers:
 
@@ -75,6 +77,7 @@ A screen that asks for a device its page did not declare gets `scan-error` or st
 WattanamPluginUI.scanner.start({ onResult: (text) => record(text), onClose: () => showIdle(), onError: (message) => show(message) });
 WattanamPluginUI.scanner.stop();
 const position = await WattanamPluginUI.location(); // { latitude, longitude, accuracy }
+const deviceId = await WattanamPluginUI.deviceId();  // core 0.1.35+
 ```
 
 Limits:

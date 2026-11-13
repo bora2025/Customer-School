@@ -71,7 +71,7 @@ const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
 ]);
 /** ui/<path>.html inside the signed package: lowercase segments, no traversal, no hidden files. */
 /** Device services an `app` screen may declare; the host runs them and hands over results only. */
-export const PLUGIN_UI_APP_DEVICES = ['scanner', 'location'] as const;
+export const PLUGIN_UI_APP_DEVICES = ['scanner', 'location', 'device-id'] as const;
 export const PLUGIN_UI_APP_ENTRY = /^ui\/(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_.-]*\.html$/;
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;

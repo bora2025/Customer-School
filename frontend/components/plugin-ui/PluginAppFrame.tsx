@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api";
 import {
   createRateLimiter,
   parsePluginUiMessage,
+  pluginDeviceId,
   pluginUiAssetUrl,
   pluginUiPageQuery,
   PLUGIN_UI_MAX_SCAN_TEXT,
@@ -55,6 +56,7 @@ export default function PluginAppFrame({
   const deviceKey = devices.join(",");
   const mayScan = devices.includes("scanner");
   const mayLocate = devices.includes("location");
+  const mayIdentify = devices.includes("device-id");
 
   const send = useCallback((message: Record<string, unknown>) => {
     // The sandboxed document has an opaque origin, so "*" is the only possible target origin.
@@ -101,6 +103,14 @@ export default function PluginAppFrame({
         setScanning(false);
         return;
       }
+      if (message.type === "device-id") {
+        if (!mayIdentify) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared device-id." } }); return; }
+        let storage: Storage | null = null;
+        try { storage = window.localStorage; } catch { storage = null; }
+        const deviceId = pluginDeviceId(pluginId, storage, () => crypto.randomUUID());
+        send(deviceId ? { type: "response", id: message.id, status: 200, body: { deviceId } } : { type: "response", id: message.id, status: 503, body: { message: "This browser does not keep a device identifier (private browsing?)." } });
+        return;
+      }
       if (message.type === "location") {
         if (!mayLocate) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared location." } }); return; }
         if (!navigator.geolocation) { send({ type: "response", id: message.id, status: 503, body: { message: "Location is unavailable on this device." } }); return; }
@@ -132,7 +142,7 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, deviceKey, height, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
+  }, [allow, deviceKey, height, mayIdentify, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
 
   // The scanner runs here, on the school page. The camera stream stays in this document; the
   // screen is told only the text of each decoded code.

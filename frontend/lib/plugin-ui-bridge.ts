@@ -18,8 +18,10 @@ export const PLUGIN_UI_MAX_REQUESTS_PER_SECOND = 20;
  * Device services a screen may use, and only when its page declares them (`options.devices`).
  * The HOST runs the device: a sandboxed screen never receives camera frames or a media stream,
  * only the text of each code the school page decoded, or one location fix per request.
+ * `device-id` is a random identifier this browser keeps for ONE plugin (so a plugin can recognise a
+ * registered device); it is different for every plugin and reveals nothing about the school page.
  */
-export const PLUGIN_UI_DEVICES = ['scanner', 'location'] as const;
+export const PLUGIN_UI_DEVICES = ['scanner', 'location', 'device-id'] as const;
 export type PluginUiDevice = (typeof PLUGIN_UI_DEVICES)[number];
 export const PLUGIN_UI_MAX_SCAN_TEXT = 2000;
 
@@ -31,7 +33,8 @@ export type PluginUiMessage =
   | { type: 'navigate'; routePath: string; query?: Record<string, string> }
   | { type: 'scan-start' }
   | { type: 'scan-stop' }
-  | { type: 'location'; id: string };
+  | { type: 'location'; id: string }
+  | { type: 'device-id'; id: string };
 
 /** The declared devices of an `app` component, reduced to the ones the host knows. */
 export function pluginUiDevices(value: unknown): PluginUiDevice[] {
@@ -89,6 +92,9 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (message.type === 'location') {
     return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'location', id: message.id } : null;
   }
+  if (message.type === 'device-id') {
+    return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'device-id', id: message.id } : null;
+  }
   if (message.type === 'request') {
     const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
     const method = String(message.method || 'GET').toUpperCase() as PluginUiRequest['method'];
@@ -104,6 +110,24 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
     return { type: 'request', id, method, path, ...(query ? { query } : {}), ...(message.body !== undefined ? { body: message.body } : {}) };
   }
   return null;
+}
+
+/**
+ * This browser's identifier for one plugin: random, created on first use and kept in the school
+ * page's storage under a per-plugin key. Returns null when storage is unavailable (private mode).
+ */
+export function pluginDeviceId(pluginId: string, storage: Pick<Storage, 'getItem' | 'setItem'> | null, random: () => string): string | null {
+  if (!storage) return null;
+  const key = `wattanam-plugin-device:${pluginId}`;
+  try {
+    const existing = storage.getItem(key);
+    if (existing && /^[A-Za-z0-9-]{16,64}$/.test(existing)) return existing;
+    const created = random();
+    storage.setItem(key, created);
+    return storage.getItem(key) === created ? created : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Sliding one-second window; returns false when the frame is over its budget. */
