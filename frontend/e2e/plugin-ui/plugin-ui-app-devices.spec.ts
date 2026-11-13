@@ -17,7 +17,8 @@ let scans = 0;
 window.addEventListener('message', (event) => {
   if (event.source !== parent || !event.data || event.data.protocol !== 'wattanam.plugin-ui/1') return;
   const data = event.data;
-  if (data.type === 'init') { out('devices', (data.devices || []).join('+') || 'none'); out('query', JSON.stringify(data.query || {})); post({ type: 'location', id: 'loc1' }); }
+  if (data.type === 'init') { out('devices', (data.devices || []).join('+') || 'none'); out('query', JSON.stringify(data.query || {})); post({ type: 'location', id: 'loc1' }); post({ type: 'device-id', id: 'dev1' }); }
+  if (data.type === 'response' && data.id === 'dev1') out('device', data.status + ':' + (data.body && data.body.deviceId ? data.body.deviceId : data.body && data.body.message));
   if (data.type === 'response' && data.id === 'loc1') out('location', data.status + ':' + (data.body && data.body.latitude !== undefined ? data.body.latitude + ',' + data.body.longitude : data.body && data.body.message));
   if (data.type === 'scan-result') { scans += 1; out('scan', data.text); out('scans', scans); }
   if (data.type === 'scan-error') out('scan-error', data.message);
@@ -83,14 +84,20 @@ test('the host scans for a screen that declared the scanner and location', async
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 11.5564, longitude: 104.9282 });
   await fakeCamera(page);
-  await host(page, ['scanner', 'location']);
+  await host(page, ['scanner', 'location', 'device-id']);
   await page.goto(`/plugins/${pluginId}/scan`);
   const frame = page.frameLocator('iframe[title="Scan"]');
-  await expect(frame.locator('#devices')).toHaveText('devices=scanner+location', { timeout: 15_000 });
+  await expect(frame.locator('#devices')).toHaveText('devices=scanner+location+device-id', { timeout: 15_000 });
   // The screen's own device APIs stay blocked; the host answers the location request instead.
   await expect(frame.locator('#own-camera')).toHaveText('own-camera=blocked');
   await expect(frame.locator('#own-location')).toHaveText('own-location=blocked');
   await expect(frame.locator('#location')).toHaveText('location=200:11.5564,104.9282');
+  // A random identifier kept by the school page for this plugin only; the same after a reload.
+  await expect(frame.locator('#device')).toHaveText(/^device=200:[0-9a-f-]{36}$/);
+  const firstDevice = await frame.locator('#device').textContent();
+  expect(await page.evaluate(() => localStorage.getItem('wattanam-plugin-device:wattanam.demo'))).toBe(firstDevice!.split(':')[1]);
+  await page.reload();
+  await expect(page.frameLocator('iframe[title="Scan"]').locator('#device')).toHaveText(firstDevice!, { timeout: 15_000 });
 
   // Nothing touches the camera until the screen asks.
   expect(await page.evaluate(() => (window as any).__cameraRequests)).toBe(0);
@@ -119,6 +126,8 @@ test('a screen that declared no devices gets no scanner and no location', async 
   const frame = page.frameLocator('iframe[title="Scan"]');
   await expect(frame.locator('#devices')).toHaveText('devices=none', { timeout: 15_000 });
   await expect(frame.locator('#location')).toHaveText('location=403:This screen has not declared location.');
+  await expect(frame.locator('#device')).toHaveText('device=403:This screen has not declared device-id.');
+  expect(await page.evaluate(() => localStorage.getItem('wattanam-plugin-device:wattanam.demo'))).toBeNull();
   await frame.getByRole('button', { name: 'Start' }).click();
   await expect(frame.locator('#scan-error')).toHaveText('scan-error=This screen has not declared the scanner.');
   await expect(page.locator('[data-plugin-scanner]')).toHaveCount(0);
