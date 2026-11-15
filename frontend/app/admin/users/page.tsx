@@ -7,6 +7,7 @@ import { adminNav } from '../../../lib/admin-nav'
 import { apiFetch } from '../../../lib/api'
 import { useLanguage } from '../../../lib/i18n'
 import { frontendDistribution } from '../../../lib/navigation-registry'
+import { ROLE_INFO } from '../../../lib/workspace-nav'
 
 interface User {
   id: string
@@ -70,19 +71,22 @@ const roleBadge: Record<string, string> = {
   WATTAMAN: 'badge-teal',
   WATTAMAN_REPORTER: 'badge-teal',
   ACCOUNTER: 'badge-purple',
+  RECEPTIONIST: 'badge-purple',
 }
 
 // Roles considered admin-level for the Manage Users screen filter.
-const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SCHOOL_ADMIN', 'DEPARTMENT_ADMIN', 'OFFICE_ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER']
+const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SCHOOL_ADMIN', 'DEPARTMENT_ADMIN', 'OFFICE_ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER', ...(frontendDistribution() === 'core' ? ['RECEPTIONIST'] : [])]
 
 const coreDistribution = frontendDistribution() === 'core'
-const allRoles = coreDistribution ? ['SUPER_ADMIN', 'ADMIN'] : Object.keys(roleLabels).filter(r => r !== 'STUDENT')
+// Core: the administrators and the two staff roles whose work comes from plugins (Roles & access).
+const allRoles = coreDistribution ? ['SUPER_ADMIN', 'ADMIN', 'WATTAMAN', 'RECEPTIONIST'] : Object.keys(roleLabels).filter(r => r !== 'STUDENT')
 
 function getRoleBadgeClass(role: string) {
   return roleBadge[role] || 'badge-gray'
 }
 
 function getRoleLabel(role: string) {
+  if (coreDistribution && ROLE_INFO[role]) return `${ROLE_INFO[role].label} · ${ROLE_INFO[role].kh}`
   return roleLabels[role] || role
 }
 

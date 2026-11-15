@@ -25,6 +25,7 @@ const legacyAdminItems = [
 
   // ── People ──
   { label: 'nav.manageUsers', href: '/admin/users', icon: 'users', section: 'nav.section.people' },
+  { label: 'Roles & access', href: '/admin/roles', icon: 'settings' },
   { label: 'Teacher Portal', href: '/admin/teachers', icon: 'graduation' },
   { label: 'Student Portal', href: '/admin/students', icon: 'users' },
   { label: 'Parent Portal', href: '/admin/parents', icon: 'users' },

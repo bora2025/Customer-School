@@ -11,7 +11,9 @@ import {
   pluginUiPageQuery,
   PLUGIN_UI_MAX_SCAN_TEXT,
   PLUGIN_UI_PROTOCOL,
+  type PluginUiActivity,
   type PluginUiDevice,
+  type PluginUiTone,
 } from "../../lib/plugin-ui-bridge";
 
 /**
@@ -51,6 +53,17 @@ export default function PluginAppFrame({
   const [frameHeight, setFrameHeight] = useState(minHeight);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
+  // Station layout (full screen, like the staff attendance station). Its texts come from the
+  // plugin as plain strings; the camera itself never leaves this page.
+  const [station, setStation] = useState<{ title: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: PluginUiTone; message: string } | null>(null);
+  const [activity, setActivity] = useState<{ title: string; items: PluginUiActivity[] }>({ title: "Scanned Today", items: [] });
+  const [cameraReady, setCameraReady] = useState(false);
+  const [clock, setClock] = useState(() => new Date());
+  const [stationLocation, setStationLocation] = useState("");
+  // Latest fix from the station's location watch; location requests are answered from it while
+  // it is fresh (a second, parallel lookup can fail on some browsers while a watch is running).
+  const lastFix = useRef<{ latitude: number; longitude: number; accuracy: number; at: number } | null>(null);
   const allow = useMemo(() => createRateLimiter(), []);
   const src = pluginVersion ? pluginUiAssetUrl(pluginId, pluginVersion, entry) : null;
   const deviceKey = devices.join(",");
@@ -96,11 +109,21 @@ export default function PluginAppFrame({
       if (message.type === "scan-start") {
         if (!mayScan) { send({ type: "scan-error", message: "This screen has not declared the scanner." }); return; }
         setScanError("");
+        setFeedback(null);
+        setStation(message.layout === "station" ? { title: message.title || "Scan" } : null);
         setScanning(true);
         return;
       }
       if (message.type === "scan-stop") {
         setScanning(false);
+        return;
+      }
+      if (message.type === "scan-feedback") {
+        setFeedback(message.message ? { tone: message.tone, message: message.message } : null);
+        return;
+      }
+      if (message.type === "scan-activity") {
+        setActivity({ title: message.title || "Scanned Today", items: message.items });
         return;
       }
       if (message.type === "device-id") {
@@ -114,6 +137,8 @@ export default function PluginAppFrame({
       if (message.type === "location") {
         if (!mayLocate) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared location." } }); return; }
         if (!navigator.geolocation) { send({ type: "response", id: message.id, status: 503, body: { message: "Location is unavailable on this device." } }); return; }
+        const fix = lastFix.current;
+        if (fix && Date.now() - fix.at < 30000) { send({ type: "response", id: message.id, status: 200, body: { latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy } }); return; }
         navigator.geolocation.getCurrentPosition(
           (position) => send({ type: "response", id: message.id, status: 200, body: { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy } }),
           () => send({ type: "response", id: message.id, status: 403, body: { message: "Location permission was not granted." } }),
@@ -144,6 +169,24 @@ export default function PluginAppFrame({
     return () => window.removeEventListener("message", onMessage);
   }, [allow, deviceKey, height, mayIdentify, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
 
+  useEffect(() => {
+    if (!scanning || !station) return;
+    const timer = window.setInterval(() => setClock(new Date()), 1000);
+    let watch: number | null = null;
+    if (mayLocate && navigator.geolocation) {
+      setStationLocation("Requesting location…");
+      watch = navigator.geolocation.watchPosition(
+        (position) => {
+          lastFix.current = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, at: Date.now() };
+          setStationLocation(`Location active · ±${Math.round(position.coords.accuracy)} m`);
+        },
+        () => setStationLocation("Location permission not granted"),
+        { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 },
+      );
+    }
+    return () => { window.clearInterval(timer); if (watch !== null) navigator.geolocation.clearWatch(watch); lastFix.current = null; };
+  }, [scanning, station, mayLocate]);
+
   // The scanner runs here, on the school page. The camera stream stays in this document; the
   // screen is told only the text of each decoded code.
   useEffect(() => {
@@ -157,7 +200,9 @@ export default function PluginAppFrame({
         if (stopped || !video.current) return;
         const instance = new BrowserMultiFormatReader();
         reader = instance;
+        setCameraReady(false);
         await instance.decodeFromVideoDevice(null, video.current, (result) => {
+          if (!stopped) setCameraReady(true);
           if (stopped || !result) return;
           const text = result.getText().slice(0, PLUGIN_UI_MAX_SCAN_TEXT);
           const now = Date.now();
@@ -176,6 +221,7 @@ export default function PluginAppFrame({
     return () => {
       stopped = true;
       reader?.reset();
+      setCameraReady(false);
       send({ type: "scan-closed" });
     };
   }, [scanning, send]);
@@ -183,9 +229,57 @@ export default function PluginAppFrame({
   if (!src) {
     return <section className="card p-5 text-sm text-slate-500">This screen needs a newer school core to show {title || "this plugin screen"}.</section>;
   }
+  const toneClass = (tone: PluginUiTone) => tone === "success" ? "bg-emerald-600 text-white" : tone === "error" ? "bg-rose-700 text-white" : tone === "warning" ? "bg-amber-500 text-slate-950" : "bg-sky-700 text-white";
+  const markClass = (tone: PluginUiTone) => tone === "success" ? "bg-emerald-600" : tone === "error" ? "bg-rose-700" : tone === "warning" ? "bg-amber-500 text-slate-950" : "bg-sky-700";
+  const lineClass = (tone: PluginUiTone) => tone === "success" ? "text-emerald-300" : tone === "error" ? "text-rose-300" : tone === "warning" ? "text-amber-300" : "text-sky-300";
   return (
     <section className="card overflow-hidden p-0">
-      {scanning && (
+      {scanning && station && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white" data-plugin-scanner data-plugin-station>
+          <header className="flex items-center gap-5 border-b border-slate-700 bg-slate-800 px-5 py-4">
+            <button type="button" onClick={() => setScanning(false)} className="font-bold">‹ Back</button>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate font-extrabold">📷 {station.title}</h2>
+              {stationLocation && <p className="text-xs text-slate-400">{stationLocation}</p>}
+            </div>
+            <strong className="font-mono text-xl">{clock.toLocaleTimeString()}</strong>
+          </header>
+          <div className="flex min-h-0 flex-1">
+            <main className="relative flex min-w-0 flex-1 flex-col items-center justify-center">
+              {scanError ? (
+                <p role="alert" className="mx-6 rounded-xl bg-rose-700 px-5 py-3 font-semibold">{scanError}</p>
+              ) : (
+                <>
+                  <video ref={video} className="absolute inset-0 h-full w-full object-cover" muted playsInline />
+                  <div className="pointer-events-none relative h-64 w-64 rounded-3xl border-4 border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,.55)]" />
+                  <p className={`relative mt-6 max-w-[90%] rounded-full px-6 py-3 text-center font-bold shadow-lg ${feedback ? toneClass(feedback.tone) : "bg-emerald-600/90"}`} role="status" aria-live="polite">
+                    {feedback ? feedback.message : cameraReady ? "Camera ready — scan the QR code" : "Starting camera…"}
+                  </p>
+                </>
+              )}
+            </main>
+            <aside className="hidden w-80 overflow-y-auto border-l border-slate-700 bg-slate-800 p-5 md:block">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold">{activity.title}</h3>
+                <span className="rounded-full bg-slate-700 px-2.5 py-1 text-xs font-bold text-slate-300">{activity.items.length}</span>
+              </div>
+              <div className="mt-5 space-y-3">
+                {activity.items.map((item, index) => (
+                  <div key={index} className="flex items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
+                    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-extrabold ${markClass(item.tone)}`}>{item.initials || (item.tone === "success" ? "✓" : item.tone === "error" ? "✕" : "!")}</span>
+                    <div className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm">{item.title}</strong>
+                      {item.detail && <span className={`mt-1 block text-xs font-medium ${lineClass(item.tone)}`}>{item.detail}</span>}
+                    </div>
+                  </div>
+                ))}
+                {!activity.items.length && <p className="pt-32 text-center text-sm text-slate-500">📋<br />No scans yet</p>}
+              </div>
+            </aside>
+          </div>
+        </div>
+      )}
+      {scanning && !station && (
         <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-950 p-3 text-white" data-plugin-scanner>
           <div className="mb-2 flex items-center justify-between gap-3">
             <p className="text-sm font-semibold">Camera scanner <span className="font-normal text-slate-300">· point the camera at a QR code</span></p>

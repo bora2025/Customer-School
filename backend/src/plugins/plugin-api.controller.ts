@@ -32,6 +32,27 @@ export class PluginApiController {
     });
   }
 
+  // Key figures from active plugins for the school dashboard (each plugin's GET dashboard/summary,
+  // filtered by the caller's grants). Must stay above the catch-all dispatch route.
+  @Get('dashboard')
+  dashboard(@Req() request: Request & { user?: any }) {
+    return this.extensions.dashboardForPrincipal({
+      userId: request.user?.userId,
+      role: request.user?.role,
+      email: request.user?.email,
+    });
+  }
+
+  // What active plugins hold about the signed-in person (each plugin's GET me/profile), for My Profile.
+  @Get('profile')
+  profile(@Req() request: Request & { user?: any }) {
+    return this.extensions.profileForPrincipal({
+      userId: request.user?.userId,
+      role: request.user?.role,
+      email: request.user?.email,
+    });
+  }
+
   // No @Roles() here: any authenticated user may reach dispatch. Authorization
   // for the specific plugin route happens inside PluginExtensionsService.dispatch(),
   // which checks the route's declared permission against PluginPermissionsService grants.

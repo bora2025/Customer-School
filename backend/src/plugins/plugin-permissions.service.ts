@@ -7,7 +7,7 @@ import { roleSatisfies } from '../auth/roles.guard';
  * excluded: it already satisfies every plugin permission implicitly, the
  * same way it satisfies every core @Roles() check.
  */
-export const GRANTABLE_PLUGIN_ROLES = ['ADMIN', 'SCHOOL_ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER', 'CLASS_ADMIN', 'ACCOUNTER', 'TEACHER', 'STUDENT', 'PARENT'] as const;
+export const GRANTABLE_PLUGIN_ROLES = ['ADMIN', 'SCHOOL_ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER', 'RECEPTIONIST', 'CLASS_ADMIN', 'ACCOUNTER', 'TEACHER', 'STUDENT', 'PARENT'] as const;
 export type GrantablePluginRole = (typeof GRANTABLE_PLUGIN_ROLES)[number];
 
 /**

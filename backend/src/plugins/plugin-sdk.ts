@@ -30,7 +30,12 @@ export interface PluginRouteContract {
   version: `${number}.${number}`;
   request?: { params?: PluginValueSchema<Record<string, string>>; query?: PluginValueSchema<Record<string, string | string[]>>; body?: PluginValueSchema };
   response: PluginValueSchema;
-  errors: Record<string, { status: number; message: string }>;
+  /**
+   * Declared business errors. `detail: true` lets the error's own (one-line, at most 300 characters)
+   * message reach the caller instead of `message` — for messages that carry a value, such as a field or
+   * a subject name. Without it, callers see `message`.
+   */
+  errors: Record<string, { status: number; message: string; detail?: boolean }>;
 }
 
 export class PluginContractError extends Error {
@@ -62,7 +67,8 @@ export interface PluginRuntimeContext {
     delete(name: string): Promise<void>;
     list(prefix?: string): Promise<string[]>;
   };
-  permissions: { register(definitions: Array<{ id: string; label: string; description?: string }>): () => void };
+  /** `roles` (optional): roles the plugin suggests for the permission; offered to administrators, never granted automatically. */
+  permissions: { register(definitions: Array<{ id: string; label: string; description?: string; roles?: string[] }>): () => void };
   navigation: { register(entries: Array<{
     id: string;
     label: string;
