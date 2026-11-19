@@ -312,6 +312,19 @@ export class PluginsService {
   async install(packageBuffer: Buffer, confirmedPackageSha256?: string, trustedKeys?: TrustedPluginKeys) {
     const coreVersion = readRuntimeConfig().appVersion;
     const verified = await this.verifier.verify(packageBuffer, trustedKeys ?? await trustedPluginKeys(this.prisma), coreVersion);
+    // While this plugin is being replaced, the runtime's background reconciler must not reload the
+    // previous version: the registry still says "active" while the update has unloaded it, and a
+    // reload re-grants the plugin role on its tables in the middle of the migration transaction
+    // ("tuple concurrently updated", and old plugin code running against tables being migrated).
+    const release = this.runtime.holdReconcile(verified.manifest.id);
+    try {
+      return await this.installVerified(verified, packageBuffer, confirmedPackageSha256);
+    } finally {
+      release();
+    }
+  }
+
+  private async installVerified(verified: VerifiedPluginPackage, packageBuffer: Buffer, confirmedPackageSha256?: string) {
     assertPluginExecutionAllowed(verified.manifest);
     this.inspectUi(verified);
     await this.artifactCache?.seed(packageBuffer, verified.packageSha256);

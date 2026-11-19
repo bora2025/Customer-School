@@ -6,6 +6,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { isValidEmail, looksLikeEmail, normalizePhone } from '../common/identity';
 import { getDistribution } from '../config/environment';
+import { CORE_ACCOUNT_ROLES, CoreAccountRole } from './roles.guard';
 import { ACADEMIC_IDENTITY_PROVIDER, AcademicIdentityProvider } from './academic-identity.contract';
 
 const CORE_AUTH_USER_SELECT = {
@@ -682,8 +683,8 @@ export class AuthService {
   }
 
   private assertCoreAdministrativeRole(role: string): void {
-    if (getDistribution() === 'core' && !['SUPER_ADMIN', 'ADMIN'].includes(role)) {
-      throw new BadRequestException('Core installations can create only SUPER_ADMIN or ADMIN accounts; install the owning business plugin before creating another role');
+    if (getDistribution() === 'core' && !CORE_ACCOUNT_ROLES.includes(role as CoreAccountRole)) {
+      throw new BadRequestException(`Core installations can create only ${CORE_ACCOUNT_ROLES.join(', ')} accounts; install the owning business plugin before creating another role`);
     }
   }
 }

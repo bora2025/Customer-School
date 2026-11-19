@@ -670,6 +670,7 @@ export default function PluginUiRenderer({
               key={component.id}
               pluginId={pluginId}
               pluginVersion={page.pluginVersion}
+              permissions={page.grantedPermissions}
               title={component.title || page.title}
               entry={String(component.options?.entry || "")}
               params={params}

@@ -82,6 +82,12 @@ const CORE_ADMIN_NAVIGATION_HREFS = new Set([
   '/admin',
   '/admin/search',
   '/admin/users',
+  '/admin/roles',
+  // the staff roles' workspace (Wattaman, Receptionist) and the Teacher Portal's home
+  '/teacher',
+  '/workspace',
+  '/workspace/search',
+  '/workspace/profile',
   '/admin/plugins',
   '/admin/settings',
   '/admin/backup',

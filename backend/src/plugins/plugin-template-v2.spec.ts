@@ -73,6 +73,7 @@ describe('official plugin template UI v2 contract', () => {
         // The role check first asks the database who it is connected as; answer as the owner.
         $queryRawUnsafe: jest.fn(async (sql: string) => (/current_user::text AS name/.test(sql) ? [{ name: 'wattanam', superuser: true, createrole: true, version: 180000 }] : [])),
         $executeRawUnsafe: jest.fn().mockResolvedValue(1),
+        $executeRaw: jest.fn().mockResolvedValue(1),
       } as any;
       prisma.$transaction = jest.fn(async (work: any) => work(prisma));
       const runtime = new PluginRuntimeService(

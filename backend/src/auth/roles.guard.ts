@@ -21,10 +21,20 @@ import { ROLES_KEY } from './roles.decorator';
  * This avoids having to list every higher-tier role on every endpoint.
  */
 export const ROLE_INHERITS: Record<string, string[]> = {
-  SUPER_ADMIN: ['ADMIN', 'SCHOOL_ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER', 'CLASS_ADMIN', 'ACCOUNTER'],
-  SCHOOL_ADMIN: ['ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER', 'CLASS_ADMIN', 'ACCOUNTER'],
-  ADMIN: ['WATTAMAN', 'WATTAMAN_REPORTER', 'CLASS_ADMIN', 'ACCOUNTER'],
+  SUPER_ADMIN: ['ADMIN', 'SCHOOL_ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER', 'CLASS_ADMIN', 'ACCOUNTER', 'RECEPTIONIST'],
+  SCHOOL_ADMIN: ['ADMIN', 'WATTAMAN', 'WATTAMAN_REPORTER', 'CLASS_ADMIN', 'ACCOUNTER', 'RECEPTIONIST'],
+  ADMIN: ['WATTAMAN', 'WATTAMAN_REPORTER', 'CLASS_ADMIN', 'ACCOUNTER', 'RECEPTIONIST'],
 };
+
+/**
+ * Accounts a core (plugin-only) installation may create: the administrators, plus the two staff
+ * roles whose work is supplied by plugins and granted per permission on Roles & access —
+ *   WATTAMAN      scans student and staff attendance;
+ *   RECEPTIONIST  the front office: search, register and update students and staff, print books,
+ *                 report cards and ID cards.
+ */
+export const CORE_ACCOUNT_ROLES = ['SUPER_ADMIN', 'ADMIN', 'WATTAMAN', 'RECEPTIONIST'] as const;
+export type CoreAccountRole = (typeof CORE_ACCOUNT_ROLES)[number];
 
 /**
  * True if `userRole` satisfies at least one of `requiredRoles`, either by

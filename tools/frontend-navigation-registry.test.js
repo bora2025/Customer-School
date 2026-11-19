@@ -143,7 +143,8 @@ test('LC2-011: core dashboard does not mount the legacy business dashboard', () 
 test('LC2-012: core search mounts only the plugin-provider search surface', () => {
   const page = fs.readFileSync(path.resolve(__dirname, '..', 'frontend', 'app', 'admin', 'search', 'page.tsx'), 'utf8');
   assert.match(page, /frontendDistribution\(\) === 'core' \? <CorePluginSearch \/> : <LegacySearchPage \/>/);
-  const core = fs.readFileSync(path.resolve(__dirname, '..', 'frontend', 'components', 'CorePluginSearch.tsx'), 'utf8');
+  // The page and its search helper (lib/plugin-search.ts) together: the plugin providers only.
+  const core = ['components/CorePluginSearch.tsx', 'lib/plugin-search.ts'].map((file) => fs.readFileSync(path.resolve(__dirname, '..', 'frontend', file), 'utf8')).join('\n');
   assert.match(core, /plugin-api\/search/);
   assert.doesNotMatch(core, /auth\/users\/search|full-profile|dashboard-summary|feeRecords|scoreEntries/);
 });

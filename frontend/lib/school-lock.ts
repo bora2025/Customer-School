@@ -21,6 +21,9 @@ export function storedRole(): string | null {
   }
 }
 
+import { frontendDistribution } from './navigation-registry';
+import { isWorkspaceRole, workspaceHome } from './workspace-nav';
+
 /** Each role's home page after signing in, and after the lock lifts. */
 export function homeForRole(role: string | null | undefined): string {
   const adminRoles = ['ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN', 'DEPARTMENT_ADMIN', 'OFFICE_ADMIN'];
@@ -29,6 +32,8 @@ export function homeForRole(role: string | null | undefined): string {
   if (role === 'TEACHER') return '/teacher';
   if (role === 'STUDENT') return '/student';
   if (role === 'PARENT') return '/parent';
+  // A core installation has no /wattaman app: the staff roles work in the plugin workspace.
+  if (isWorkspaceRole(role) && frontendDistribution() === 'core') return workspaceHome(role);
   if (role === 'WATTAMAN') return '/wattaman';
   if (role === 'WATTAMAN_REPORTER') return '/reporter';
   if (role === 'ACCOUNTER') return '/accounter';

@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import AuthGuard from '../../../../components/AuthGuard';
 import Sidebar from '../../../../components/Sidebar';
 import { adminNav } from '../../../../lib/admin-nav';
+import { storedRole } from '../../../../lib/school-lock';
+import { isWorkspaceRole, ROLE_INFO, workspaceNav, workspaceTitle } from '../../../../lib/workspace-nav';
 import { apiFetch } from '../../../../lib/api';
 import { matchPluginPage, PluginUiPageDescriptor, resolvePluginSourcePath } from '../../../../lib/plugin-ui-routing';
 import PluginUiRenderer from '../../../../components/plugin-ui/PluginUiRenderer';
@@ -23,6 +25,9 @@ export default function PluginPageHost() {
   const [sourceErrors, setSourceErrors] = useState<Record<string, string>>({});
   const [routeParams, setRouteParams] = useState<Record<string, string>>({});
   const [sourceQueries, setSourceQueries] = useState<Record<string, Record<string, string>>>({});
+  // Staff roles (Wattaman, Receptionist) see their workspace menu, not the administrator's.
+  const [workspaceRole, setWorkspaceRole] = useState<string | null>(null);
+  useEffect(() => { const role = storedRole(); setWorkspaceRole(isWorkspaceRole(role) ? role : null); }, []);
 
   async function load(queries = sourceQueries) {
     setError(''); setSourceErrors({}); setValue(null);
@@ -76,7 +81,9 @@ export default function PluginPageHost() {
   return (
     <AuthGuard>
       <div className="page-shell">
-        <Sidebar title="Admin Panel" subtitle="Wattanam" navItems={adminNav} accentColor="indigo" />
+        {workspaceRole
+          ? <Sidebar title={workspaceTitle(workspaceRole)} subtitle={ROLE_INFO[workspaceRole]?.label || 'Wattanam'} navItems={workspaceNav(workspaceRole)} accentColor={workspaceRole === 'TEACHER' ? 'emerald' : 'indigo'} />
+          : <Sidebar title="Admin Panel" subtitle="Wattanam" navItems={adminNav} accentColor="indigo" />}
         <div className="page-content">
           <div className="h-14 lg:hidden" />
           <div className="page-header"><h1 className="text-2xl font-bold text-slate-800">{label}</h1><p className="mt-1 font-mono text-xs text-slate-500">{pluginId} · {routePath}</p></div>

@@ -63,10 +63,10 @@ const CODE = 'wattanam:student:s2-91bc';
       const apiPath = pathname.slice(apiPrefix.length);
       if (request.method() === 'GET') {
         gets.push(apiPath + url.search);
-        if (apiPath === 'classes') return route.fulfill({ json: classes });
+        if (apiPath === 'classes' || apiPath === 'my/classes') return route.fulfill({ json: classes });
         if (apiPath === 'sessions') return route.fulfill({ json: sessions });
         if (apiPath === 'records') return route.fulfill({ json: url.searchParams.get('classId') === 'c2' ? records : [] });
-        if (apiPath === 'classes/c2/students') return route.fulfill({ json: students });
+        if (apiPath === 'classes/c2/students' || apiPath === 'my/classes/c2/students') return route.fulfill({ json: students });
         return route.fulfill({ json: [] });
       }
       const body = request.postDataJSON();

@@ -31,10 +31,17 @@ export type PluginUiMessage =
   | PluginUiRequest
   | { type: 'resize'; height: number }
   | { type: 'navigate'; routePath: string; query?: Record<string, string> }
-  | { type: 'scan-start' }
+  | { type: 'scan-start'; layout?: 'panel' | 'station'; title?: string }
+  | { type: 'scan-feedback'; tone: PluginUiTone; message: string }
+  | { type: 'scan-activity'; title?: string; items: PluginUiActivity[] }
   | { type: 'scan-stop' }
   | { type: 'location'; id: string }
   | { type: 'device-id'; id: string };
+
+export type PluginUiTone = 'info' | 'success' | 'warning' | 'error';
+export type PluginUiActivity = { title: string; detail?: string; tone: PluginUiTone; initials?: string };
+const TONES: PluginUiTone[] = ['info', 'success', 'warning', 'error'];
+const plain = (value: unknown, max: number) => (typeof value === 'string' ? value.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max) : '');
 
 /** The declared devices of an `app` component, reduced to the ones the host knows. */
 export function pluginUiDevices(value: unknown): PluginUiDevice[] {
@@ -87,7 +94,23 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
     const query = safePluginUiQuery(message.query);
     return query ? { type: 'navigate', routePath, query } : null;
   }
-  if (message.type === 'scan-start') return { type: 'scan-start' };
+  if (message.type === 'scan-start') {
+    const title = plain(message.title, 80);
+    return { type: 'scan-start', layout: message.layout === 'station' ? 'station' : 'panel', ...(title ? { title } : {}) };
+  }
+  if (message.type === 'scan-feedback') {
+    const tone = TONES.includes(message.tone as PluginUiTone) ? (message.tone as PluginUiTone) : 'info';
+    return { type: 'scan-feedback', tone, message: plain(message.message, 200) };
+  }
+  if (message.type === 'scan-activity') {
+    if (!Array.isArray(message.items)) return null;
+    const items = message.items.slice(0, 50).map((item: any) => ({
+      title: plain(item?.title, 80), detail: plain(item?.detail, 140) || undefined,
+      tone: TONES.includes(item?.tone) ? item.tone : 'info', initials: plain(item?.initials, 3) || undefined,
+    })).filter((item) => item.title);
+    const title = plain(message.title, 60);
+    return { type: 'scan-activity', items, ...(title ? { title } : {}) };
+  }
   if (message.type === 'scan-stop') return { type: 'scan-stop' };
   if (message.type === 'location') {
     return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'location', id: message.id } : null;

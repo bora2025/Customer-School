@@ -19,6 +19,10 @@
     "/admin/notifications",
     "/admin/licensing",
     "/admin/appearance",
+    "/admin/roles",
+    "/workspace",
+    "/workspace/search",
+    "/workspace/profile",
     "/teacher",
     "/student",
     "/settings/notifications"

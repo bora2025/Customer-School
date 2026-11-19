@@ -11,7 +11,26 @@ if (process.argv.includes('--help')) {
 
 const environment = postgresEnvironment();
 const directory = backupDirectory();
-const base = `wattanam-${timestamp()}`;
+// Names are to the second, and two backups can start in the same second (the nightly backup and a plugin
+// update's pre-migration backup both ran at 02:00:00 and fought over one .partial file). Each backup claims
+// its name by creating the .partial file exclusively; a taken name gets -2, -3, ...
+function claimBase() {
+  const stamp = timestamp();
+  for (let n = 1; n <= 99; n += 1) {
+    const candidate = n === 1 ? `wattanam-${stamp}` : `wattanam-${stamp}-${n}`;
+    const partial = path.join(directory, `${candidate}.dump.partial`);
+    try {
+      fs.closeSync(fs.openSync(partial, 'wx'));
+    } catch (error) {
+      if (error && error.code === 'EEXIST') continue;
+      throw error;
+    }
+    if (fs.existsSync(path.join(directory, `${candidate}.dump`))) { fs.unlinkSync(partial); continue; }
+    return candidate;
+  }
+  throw new Error('No free backup file name for this second');
+}
+const base = claimBase();
 const temporary = path.join(directory, `${base}.dump.partial`);
 const archive = path.join(directory, `${base}.dump`);
 const manifestPath = path.join(directory, `${base}.manifest.json`);
@@ -43,7 +62,7 @@ try {
   if (Number.isFinite(retentionDays) && retentionDays > 0) {
     const cutoff = Date.now() - retentionDays * 86400000;
     for (const name of fs.readdirSync(directory)) {
-      if (!/^wattanam-\d{8}T\d{6}Z\.(dump|manifest\.json)$/.test(name)) continue;
+      if (!/^wattanam-\d{8}T\d{6}Z(-\d+)?\.(dump|manifest\.json)$/.test(name)) continue;
       const target = path.join(directory, name);
       if (fs.statSync(target).mtimeMs < cutoff) fs.unlinkSync(target);
     }
