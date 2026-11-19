@@ -132,7 +132,7 @@ function dependencyOrder(packages: Packed[]) {
     };
     const tx = { $executeRaw: jest.fn(async () => 0), pluginInstallation };
     const prisma = { pluginInstallation, $transaction: jest.fn(async (work: (client: any) => unknown) => work(tx)) } as any;
-    const runtime = { load: jest.fn(async () => undefined), unload: jest.fn(async () => undefined), status: jest.fn(() => ({ safeMode: false, loaded: [] })) } as any;
+    const runtime = { load: jest.fn(async () => undefined), unload: jest.fn(async () => undefined), holdReconcile: jest.fn(() => () => undefined), status: jest.fn(() => ({ safeMode: false, loaded: [] })) } as any;
     const migrations = { createRecoveryPoint: jest.fn(async () => undefined), apply: jest.fn(async () => undefined) } as any;
     const activeGenerations = new Map<string, any>();
     const previousGenerations = new Map<string, any>();

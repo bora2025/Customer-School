@@ -34,11 +34,12 @@ function harness() {
     $transaction: jest.fn((work: (tx: any) => unknown, _options?: unknown) => work(tx)),
   } as any;
   const verifier = { verify: jest.fn(), verifyInstalledDirectory: jest.fn() } as any;
-  const runtime = { load: jest.fn().mockResolvedValue(undefined), unload: jest.fn().mockResolvedValue(undefined), status: jest.fn().mockReturnValue({ safeMode: false, loaded: [] }) } as any;
+  const releaseReconcile = jest.fn();
+  const runtime = { load: jest.fn().mockResolvedValue(undefined), unload: jest.fn().mockResolvedValue(undefined), holdReconcile: jest.fn(() => releaseReconcile), status: jest.fn().mockReturnValue({ safeMode: false, loaded: [] }) } as any;
   const migrations = { apply: jest.fn().mockResolvedValue(undefined), createRecoveryPoint: jest.fn().mockResolvedValue(undefined) } as any;
   const entitlements = { assertCanActivate: jest.fn().mockResolvedValue({ mode: 'active' }), decision: jest.fn().mockResolvedValue({ mode: 'active', reason: 'Licensed' }) } as any;
   const service = new PluginsService(prisma, verifier, runtime, migrations, undefined, undefined, undefined, entitlements);
-  return { service, prisma, tx, verifier, runtime, migrations, entitlements };
+  return { service, prisma, tx, verifier, runtime, migrations, entitlements, releaseReconcile };
 }
 
 describe('PluginsService lifecycle locking, timeout, progress, and crash recovery', () => {
@@ -209,16 +210,23 @@ describe('PluginsService lifecycle locking, timeout, progress, and crash recover
     });
 
     it('upgrades an active plugin and restores its active state without deactivating dependents', async () => {
-      const { service, verifier, prisma, tx, runtime } = harness();
+      const { service, verifier, prisma, tx, runtime, releaseReconcile } = harness();
       const verified = verifiedPackage({ version: '1.1.0' });
       verifier.verify.mockResolvedValue(verified);
       prisma.pluginInstallation.findUnique.mockResolvedValue({ id: 'wattanam.test', status: 'active', version: '1.0.0' });
       tx.pluginInstallation.upsert.mockResolvedValue({ id: 'wattanam.test', status: 'installed' });
       const activate = jest.spyOn(service, 'activate').mockResolvedValue({ id: 'wattanam.test', version: '1.1.0', status: 'active' } as any);
+      const releasesBefore = releaseReconcile.mock.calls.length;
+      // the background reconciler stays away from the plugin while the update unloads and migrates it
+      runtime.unload.mockImplementationOnce(async () => {
+        expect(runtime.holdReconcile).toHaveBeenLastCalledWith('wattanam.test');
+        expect(releaseReconcile.mock.calls.length).toBe(releasesBefore);
+      });
 
       await expect(service.install(Buffer.from('package'))).resolves.toMatchObject({ version: '1.1.0', status: 'active' });
       expect(runtime.unload).toHaveBeenCalledWith('wattanam.test');
       expect(activate).toHaveBeenCalledWith('wattanam.test');
+      expect(releaseReconcile.mock.calls.length).toBe(releasesBefore + 1);
     });
 
     it('automatically restores the previous active registry and runtime when the new version cannot activate', async () => {

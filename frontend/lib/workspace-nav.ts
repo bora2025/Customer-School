@@ -34,6 +34,7 @@ export function workspaceNav(role: string | null | undefined) {
     { label: 'Home', href: workspaceHome(role), icon: 'dashboard', section: 'nav.section.overview' },
   ];
   if (role === 'RECEPTIONIST') items.push({ label: 'Search', href: '/workspace/search', icon: 'search' });
-  items.push({ label: 'My Profile', href: '/workspace/profile', icon: 'users' });
+  // Teachers have their profile on the portal's home.
+  if (role !== 'TEACHER') items.push({ label: 'My Profile', href: '/workspace/profile', icon: 'users' });
   return items;
 }

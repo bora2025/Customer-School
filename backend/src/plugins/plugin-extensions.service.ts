@@ -264,7 +264,15 @@ export class PluginExtensionsService {
   async listForPrincipal(role: string | undefined) {
     const allowed = async (permission: string | undefined, pluginId: string) => !permission || this.grants.isGranted(pluginId, permission, role);
     const navigation = await this.filterAsync([...this.navigation.values()], (entry) => allowed(entry.permission, entry.pluginId));
-    const pages = await this.filterAsync([...this.pages.values()], async (page) => page.schemaVersion === 1 || allowed(page.permission, page.pluginId));
+    const visible = await this.filterAsync([...this.pages.values()], async (page) => page.schemaVersion === 1 || allowed(page.permission, page.pluginId));
+    // A plugin screen may show or hide actions by what this user may do: each page carries the
+    // plugin's permissions granted to this role (the routes still check them on every call).
+    const grantedByPlugin = new Map<string, string[]>();
+    for (const pluginId of new Set(visible.map((page) => page.pluginId))) {
+      const own = [...this.permissions.values()].filter((permission) => permission.pluginId === pluginId);
+      grantedByPlugin.set(pluginId, (await this.filterAsync(own, (permission) => allowed(permission.id, pluginId))).map((permission) => permission.id));
+    }
+    const pages = visible.map((page) => ({ ...page, grantedPermissions: grantedByPlugin.get(page.pluginId) || [] }));
     return { navigation, pages };
   }
 

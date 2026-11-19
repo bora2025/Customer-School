@@ -17,6 +17,8 @@ export type PluginUiPageDescriptor = {
   appearance?: PluginUiPageAppearance;
   /** Installed plugin version; pins URLs of the plugin's own ui/ files (app component). */
   pluginVersion?: string;
+  /** The plugin's permissions granted to the signed-in user (an app screen hides what it may not do). */
+  grantedPermissions?: string[];
 };
 
 const validators: Record<PluginRouteParameter['type'], (value: string) => boolean> = {

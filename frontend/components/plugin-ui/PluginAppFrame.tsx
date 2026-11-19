@@ -35,9 +35,12 @@ export default function PluginAppFrame({
   height = "auto",
   minHeight = 320,
   devices = [],
+  permissions,
 }: {
   pluginId: string;
   pluginVersion?: string;
+  /** The user's granted permissions of this plugin; the screen reads them as context.permissions. */
+  permissions?: string[];
   title?: string;
   entry: string;
   params: Record<string, string>;
@@ -67,6 +70,7 @@ export default function PluginAppFrame({
   const allow = useMemo(() => createRateLimiter(), []);
   const src = pluginVersion ? pluginUiAssetUrl(pluginId, pluginVersion, entry) : null;
   const deviceKey = devices.join(",");
+  const permissionKey = permissions ? permissions.join(",") : null;
   const mayScan = devices.includes("scanner");
   const mayLocate = devices.includes("location");
   const mayIdentify = devices.includes("device-id");
@@ -94,7 +98,7 @@ export default function PluginAppFrame({
       const message = parsePluginUiMessage(event.data);
       if (!message) return;
       if (message.type === "ready") {
-        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme(), devices: deviceKey ? deviceKey.split(",") : [], query: pluginUiPageQuery(window.location.search) });
+        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme(), devices: deviceKey ? deviceKey.split(",") : [], query: pluginUiPageQuery(window.location.search), ...(permissionKey === null ? {} : { permissions: permissionKey ? permissionKey.split(",") : [] }) });
         return;
       }
       if (message.type === "resize") {
@@ -167,7 +171,7 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, deviceKey, height, mayIdentify, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
+  }, [allow, deviceKey, permissionKey, height, mayIdentify, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
 
   useEffect(() => {
     if (!scanning || !station) return;

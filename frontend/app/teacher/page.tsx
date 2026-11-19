@@ -12,7 +12,7 @@ import { apiFetch, getCurrentUser } from '../../lib/api'
 import { useLanguage } from '../../lib/i18n'
 import { todayCambodia } from '../../lib/dateUtils'
 import { frontendDistribution } from '../../lib/navigation-registry'
-import StaffWorkspace from '../../components/StaffWorkspace'
+import TeacherHome from '../../components/TeacherHome'
 
 interface Class {
   id: string
@@ -38,7 +38,7 @@ interface ClassSummary {
 
 /** Core installations: the Teacher Portal is the teacher's workspace (their classes come from plugins). */
 export default function TeacherPage() {
-  if (frontendDistribution() === 'core') return <AuthGuard requiredRole="TEACHER"><StaffWorkspace /></AuthGuard>
+  if (frontendDistribution() === 'core') return <AuthGuard requiredRole="TEACHER"><TeacherHome /></AuthGuard>
   return <TeacherDashboard />
 }
 

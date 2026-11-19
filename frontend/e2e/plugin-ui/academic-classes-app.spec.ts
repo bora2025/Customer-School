@@ -65,7 +65,8 @@ async function sheetRows(file: string) {
       saved.push({ method: request.method(), path: apiPath, body });
       if (apiPath === 'classes' && request.method() === 'POST') classes.push({ id: 'c3', ...body, teacher: teachers.find((item) => item.id === body.teacherId), studyYear: years.find((item) => item.id === body.studyYearId), studentCount: 0 });
       if (apiPath === 'classes/c1' && request.method() === 'PUT') Object.assign(classes[0], body);
-      if (apiPath === 'classes/c1/students/bulk-csv') return route.fulfill({ status: 201, json: { success: 2, errors: 1, skipped: 0, details: [{ row: 2, id: '0101', name: 'Neang Sreyleak', status: 'SUCCESS' }, { row: 3, id: '0102', name: 'Bad Row', status: 'FAILED', error: 'Email is invalid' }] } });
+      if (apiPath === 'classes/c1/students/create') return route.fulfill({ status: 201, json: { id: 's7', studentNumber: '0007', password: 'Made1234' } });
+      if (apiPath === 'classes/c1/students/bulk-csv') return route.fulfill({ status: 201, json: { success: 2, errors: 1, skipped: 0, details: [{ row: 2, id: '0101', name: 'Neang Sreyleak', status: 'SUCCESS', password: 'Abcd2345' }, { row: 3, id: '0102', name: 'Bad Row', status: 'FAILED', error: 'Email is invalid' }] } });
       return route.fulfill({ status: 200, json: { ok: true } });
     }
     return route.fulfill({ status: 200, json: [] });
@@ -101,9 +102,15 @@ async function sheetRows(file: string) {
   await frame.getByRole('button', { name: /Full Day/ }).click();
   await frame.getByRole('button', { name: 'Mon–Sat' }).click();
   await frame.locator('#c-price').fill('39.5');
+  // the level decides which score sheets the class can use; a new class must have one
+  await frame.getByRole('button', { name: 'Create Class' }).click();
+  await expect(frame.locator('#class-error')).toContainText('Choose the class level: primary school');
+  await expect(frame.locator('#c-levels [data-level]')).toHaveCount(5);
+  await expect(frame.locator('#c-levels [data-level="PRIMARY"]')).toContainText('Primary school');
+  await frame.locator('#c-levels [data-level="SECONDARY"]').click();
   await frame.getByRole('button', { name: 'Create Class' }).click();
   await expect(frame.getByRole('status')).toHaveText('Class created successfully.');
-  expect(saved[0]).toMatchObject({ method: 'POST', path: 'classes', body: { name: 'Grade 8C', teacherId: 't2', classAdminId: null, studyYearId: 'y1', registrationStatus: 'HIDDEN', price: 39.5, showPrice: false } });
+  expect(saved[0]).toMatchObject({ method: 'POST', path: 'classes', body: { name: 'Grade 8C', level: 'SECONDARY', teacherId: 't2', classAdminId: null, studyYearId: 'y1', registrationStatus: 'HIDDEN', price: 39.5, showPrice: false } });
   expect(JSON.parse(saved[0].body.schedule)).toEqual({ attendanceFormat: 'FULL', week: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] });
   await expect(frame.locator('.class')).toHaveCount(3);
 
@@ -127,14 +134,19 @@ async function sheetRows(file: string) {
   const templateSheet = await sheetRows(await template.path());
   expect(templateSheet.name).toBe('Student Import');
   expect(templateSheet.headerBold).toBe(true);
-  expect(templateSheet.rows[0]).toEqual(['ID', 'Name', 'Sex', 'Email', 'Phone', 'Password', 'Photo', 'Date of Birth', 'Address', 'Generation', 'Khmer Name']);
+  // the student, then place of birth, current address and parents (one Address column in older files still imports)
+  expect(templateSheet.rows[0]).toEqual(['ID', 'Name', 'Sex', 'Email', 'Phone', 'Photo', 'Date of Birth', 'Generation', 'Khmer Name',
+    'Birth Village (ភូមិកំណើត)', 'Birth Commune (ឃុំ/សង្កាត់កំណើត)', 'Birth District (ស្រុក/ខណ្ឌកំណើត)', 'Birth Province (ខេត្ត/រាជធានីកំណើត)',
+    'House No (ផ្ទះលេខ)', 'Street (ផ្លូវ)', 'Village (ភូមិ/ក្រុម)', 'Commune (ឃុំ/សង្កាត់)', 'District (ស្រុក/ខណ្ឌ)', 'Province (ខេត្ត/រាជធានី)',
+    'Father Name (ឈ្មោះឪពុក)', 'Father Job (មុខរបរឪពុក)', 'Father Phone (ទូរស័ព្ទឪពុក)', 'Mother Name (ឈ្មោះម្ដាយ)', 'Mother Job (មុខរបរម្ដាយ)', 'Mother Phone (ទូរស័ព្ទម្ដាយ)']);
   expect(templateSheet.rows[1][0]).toBe('0001');
-  expect(templateSheet.rows[1][10]).toBe('ឈ្មោះសិស្ស');
+  expect(templateSheet.rows[1][8]).toBe('ឈ្មោះសិស្ស');
+  expect(templateSheet.rows[1][19]).toBe('សុខ ចាន់');
   const [exported] = await Promise.all([page.waitForEvent('download'), frame.getByRole('button', { name: '↓ Export Students Excel' }).click()]);
   expect(exported.suggestedFilename()).toBe('Grade 7A-students.xlsx');
   const exportedSheet = await sheetRows(await exported.path());
   expect(exportedSheet.rows[1].slice(0, 5)).toEqual(['0001', 'Sok Dara', 'MALE', 'dara@example.test', '012 000 111']);
-  expect(exportedSheet.rows[1][7]).toBe('2013-04-09');
+  expect(exportedSheet.rows[1][6]).toBe('2013-04-09');
 
   // A workbook written by ExcelJS (compressed, shared strings, a real date cell, a number) is read
   // by the screen and sent as CSV.
@@ -147,7 +159,7 @@ async function sheetRows(file: string) {
   const upload = testInfo.outputPath('students.xlsx');
   await workbook.xlsx.writeFile(upload);
   await frame.locator('#upload-file').setInputFiles(upload);
-  await expect(frame.locator('#students-message')).toHaveText('Import complete: 2 succeeded, 1 failed, 0 skipped.');
+  await expect(frame.locator('#students-message')).toContainText('Import complete: 2 succeeded, 1 failed, 0 skipped.');
   const csv = String(saved.find((entry) => entry.path === 'classes/c1/students/bulk-csv')!.body.csv).split('\n');
   expect(csv).toHaveLength(3);
   expect(csv[0]).toBe('ID,Name,Sex,Email,Phone,Password,Photo,Date of Birth,Address,Generation,Khmer Name');
@@ -155,15 +167,26 @@ async function sheetRows(file: string) {
   expect(csv[2]).toBe('0102,Bad Row,MALE,not-an-email,,change-me-123,,,Phnom Penh,2026,');
   await expect(frame.locator('#import-rows tr')).toHaveCount(2);
   await expect(frame.locator('#import-rows')).toContainText('Email is invalid');
+  await expect(frame.locator('#import-rows')).toContainText('Abcd2345');
+  await expect(frame.locator('#students-message')).toContainText('Sign-in passwords were made for 1 new student');
 
   // Register a student, then remove one (native confirmation works inside the sandbox).
   await frame.getByRole('button', { name: '＋ Register New Student' }).click();
   await frame.locator('#s-name').fill('Vann Dy');
-  await frame.locator('#s-password').fill('secret1');
+  // no password field: one is made by the server and shown once
+  await expect(frame.locator('#s-password')).toHaveCount(0);
+  // place of birth, current address and parents
+  await expect(frame.locator('#s-details legend')).toHaveText(['Place of birth · ទីកន្លែងកំណើត', 'Current address · អាសយដ្ឋានបច្ចុប្បន្ន', 'Parents · ឪពុកម្ដាយ']);
+  await frame.locator('[data-detail="birthProvince"]').fill('ខេត្តតាកែវ');
+  await frame.locator('[data-detail="street"]').fill('271');
+  await frame.locator('[data-detail="fatherName"]').fill('សុខ ចាន់');
+  await frame.locator('[data-detail="motherPhone"]').fill('012333444');
   await frame.getByRole('button', { name: 'Create Student' }).click();
   await expect(frame.locator('#students-message')).toContainText('ID card were created');
+  await expect(frame.locator('#students-message')).toContainText('Sign-in password for Vann Dy: Made1234');
   const created = saved.find((entry) => entry.path === 'classes/c1/students/create')!;
-  expect(created.body).toMatchObject({ name: 'Vann Dy', password: 'secret1', studentNumber: null, email: null });
+  expect(created.body.password).toBeUndefined();
+  expect(created.body).toMatchObject({ name: 'Vann Dy', studentNumber: null, email: null, birthProvince: 'ខេត្តតាកែវ', street: '271', fatherName: 'សុខ ចាន់', motherPhone: '012333444', motherName: '' });
   expect(String(created.body.commandKey)).toMatch(/^class-student:/);
   page.once('dialog', (dialog) => dialog.accept());
   await frame.locator('#students').getByRole('button', { name: 'Delete' }).click();
