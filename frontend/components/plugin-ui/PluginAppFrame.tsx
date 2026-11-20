@@ -90,7 +90,7 @@ export default function PluginAppFrame({
   const mayNfc = devices.includes("nfc");
   const mayStore = devices.includes("storage");
   // The face station: open while the screen asked for it (its texts come from the plugin as plain strings).
-  const [face, setFace] = useState<{ mode: "identify" | "enroll"; title: string; liveness: boolean; samples: number } | null>(null);
+  const [face, setFace] = useState<{ mode: "identify" | "enroll"; title: string; liveness: boolean; samples: number; codes: boolean; faces: boolean } | null>(null);
   // Web NFC (Chrome on Android): reading while on; the serial number of each card goes to the screen.
   const [nfcOn, setNfcOn] = useState(false);
   const nfcAbort = useRef<AbortController | null>(null);
@@ -176,9 +176,10 @@ export default function PluginAppFrame({
       }
       if (message.type === "face-start") {
         if (!mayFace) { send({ type: "face-error", message: "This screen has not declared the face device." }); return; }
+        if (message.codes && !mayScan) { send({ type: "face-error", message: "This screen has not declared the scanner." }); return; }
         setFeedback(null);
         setActivity({ title: "Today", items: [] });
-        setFace({ mode: message.mode, title: message.title || (message.mode === "enroll" ? "Face enrolment" : "Face attendance"), liveness: message.liveness, samples: message.samples });
+        setFace({ mode: message.mode, title: message.title || (message.mode === "enroll" ? "Face enrolment" : "Face attendance"), liveness: message.liveness, samples: message.samples, codes: message.codes, faces: message.faces });
         return;
       }
       if (message.type === "face-stop") {
@@ -317,9 +318,10 @@ export default function PluginAppFrame({
     <section className="card overflow-hidden p-0">
       {face && (
         <PluginFaceStation
-          title={face.title} mode={face.mode} liveness={face.liveness} samples={face.samples}
+          title={face.title} mode={face.mode} liveness={face.liveness} samples={face.samples} codes={face.codes} faces={face.faces}
           feedback={feedback} activity={activity}
           onResult={(result: FaceResult) => send({ type: "face-result", result })}
+          onCode={(text, source) => send({ type: "face-code", text, source })}
           onError={(message) => { setFace(null); send({ type: "face-error", message }); }}
           onClose={() => { setFace(null); send({ type: "face-closed" }); }}
         />
