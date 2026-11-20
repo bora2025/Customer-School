@@ -677,6 +677,7 @@ export default function PluginUiRenderer({
               height={component.options?.height === "fill" ? "fill" : "auto"}
               minHeight={Number(component.options?.minHeight) || 320}
               devices={pluginUiDevices(component.options?.devices)}
+              apis={Array.isArray(component.options?.apis) ? (component.options.apis as unknown[]).filter((item): item is string => typeof item === "string") : []}
             />
           );
         if (component.type === "heading")

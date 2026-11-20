@@ -59,6 +59,12 @@ export class PluginApiController {
   @All(':pluginId/*splat')
   dispatch(@Param('pluginId') pluginId: string, @Req() request: Request & { user?: any }) {
     const splat = (request.params as Record<string, unknown>).splat;
+    // The plugin whose screen made this call (the school page's bridge sets it); another plugin's
+    // screen reaches only the routes that list it as a caller.
+    const screen = request.headers['x-wattanam-plugin-screen'];
+    // A malformed value matches no plugin, so it reaches no route of another plugin.
+    const screenPluginId = screen === undefined ? undefined
+      : typeof screen === 'string' && screen.length <= 120 && /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(screen) ? screen : 'invalid.screen';
     return this.extensions.dispatch(pluginId, {
       method: request.method as any,
       path: Array.isArray(splat) ? splat.join('/') : String(splat || ''),
@@ -66,6 +72,6 @@ export class PluginApiController {
       query: request.query as any,
       body: request.body,
       principal: { userId: request.user?.userId, role: request.user?.role, email: request.user?.email },
-    });
+    }, screenPluginId);
   }
 }

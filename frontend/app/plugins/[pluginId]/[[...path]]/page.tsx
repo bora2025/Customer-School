@@ -8,7 +8,7 @@ import { adminNav } from '../../../../lib/admin-nav';
 import { storedRole } from '../../../../lib/school-lock';
 import { isWorkspaceRole, ROLE_INFO, workspaceNav, workspaceTitle } from '../../../../lib/workspace-nav';
 import { apiFetch } from '../../../../lib/api';
-import { matchPluginPage, PluginUiPageDescriptor, resolvePluginSourcePath } from '../../../../lib/plugin-ui-routing';
+import { matchPluginPage, pluginScreenHeaders, pluginSourceUrl, PluginUiPageDescriptor, resolvePluginSourcePath } from '../../../../lib/plugin-ui-routing';
 import PluginUiRenderer from '../../../../components/plugin-ui/PluginUiRenderer';
 
 export default function PluginPageHost() {
@@ -47,9 +47,9 @@ export default function PluginPageHost() {
       const errors: Record<string, string> = {};
       await Promise.all(page.dataSources.filter((entry: any) => entry.method === 'GET' && entry.autoload !== false).map(async (source: any) => {
         const query = new URLSearchParams(queries[source.id] || {}).toString();
-        const endpoint = `/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(source.path, matched?.params || {})}${query ? `?${query}` : ''}`;
+        const endpoint = `${pluginSourceUrl(pluginId, source, resolvePluginSourcePath(source.path, matched?.params || {}))}${query ? `?${query}` : ''}`;
         try {
-          const response = await apiFetch(endpoint);
+          const response = await apiFetch(endpoint, { headers: pluginScreenHeaders(pluginId) });
           const result = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(result.message || `Data request failed (${response.status})`);
           data[source.id] = result;

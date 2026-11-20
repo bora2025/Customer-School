@@ -126,7 +126,8 @@ export class PluginsService {
     if ((descriptor as any)?.schemaVersion === 1 && (descriptor as any)?.kind === 'json-settings') {
       return { present: true, portability: 'legacy-json-settings', pageCount: 1, componentTypes: ['json-settings'] };
     }
-    const bundle = parsePluginUiBundle(descriptor, verified.manifest.id, new Set(verified.manifest.permissions));
+    const partners = new Set([...Object.keys(verified.manifest.dependencies || {}), ...Object.keys(verified.manifest.optionalDependencies || {})]);
+    const bundle = parsePluginUiBundle(descriptor, verified.manifest.id, new Set(verified.manifest.permissions), partners);
     // A screen that reads faces handles biometric data: the plugin must say so (install consent, marketplace).
     const readsFaces = bundle.pages.some((page) => page.components.some((component) => component.type === 'app' && Array.isArray(component.options?.devices) && (component.options.devices as unknown[]).includes('face')));
     if (readsFaces && !(verified.manifest.operational?.dataClassification || []).includes('biometric-data')) {

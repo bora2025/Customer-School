@@ -3,7 +3,8 @@
 // A plugin-owned screen runs in <iframe sandbox="allow-scripts ..."> (opaque origin, no cookies, no
 // network: its CSP has connect-src 'none'). It asks the host page for everything through postMessage.
 // This module holds the pure validation so it can be reasoned about and tested on its own:
-//   - requests may only target the plugin's OWN API (/api/plugin-api/<pluginId>/<path>);
+//   - requests target the plugin's OWN API (/api/plugin-api/<pluginId>/<path>), or a partner plugin the
+//     screen declared (options.apis) whose route lists the plugin as a caller;
 //   - paths are plain relative segments (no "..", no scheme, no other plugin);
 //   - only JSON bodies up to 256 KiB, a fixed method set, and a rate limit per frame.
 // The plugin's API still authorizes every call with the signed-in user's permissions, so the bridge
@@ -30,18 +31,18 @@ export const PLUGIN_UI_STORAGE_MAX_TOTAL_BYTES = 1024 * 1024;
 export type PluginUiDevice = (typeof PLUGIN_UI_DEVICES)[number];
 export const PLUGIN_UI_MAX_SCAN_TEXT = 2000;
 
-export type PluginUiRequest = { type: 'request'; id: string; method: (typeof PLUGIN_UI_METHODS)[number]; path: string; query?: Record<string, string>; body?: unknown };
+export type PluginUiRequest = { type: 'request'; id: string; method: (typeof PLUGIN_UI_METHODS)[number]; path: string; query?: Record<string, string>; body?: unknown; plugin?: string };
 export type PluginUiMessage =
   | { type: 'ready' }
   | PluginUiRequest
   | { type: 'resize'; height: number }
-  | { type: 'navigate'; routePath: string; query?: Record<string, string> }
+  | { type: 'navigate'; routePath: string; query?: Record<string, string>; plugin?: string }
   | { type: 'scan-start'; layout?: 'panel' | 'station'; title?: string }
   | { type: 'scan-feedback'; tone: PluginUiTone; message: string }
   | { type: 'scan-activity'; title?: string; items: PluginUiActivity[] }
   | { type: 'scan-stop' }
   | { type: 'location'; id: string }
-  | { type: 'device-id'; id: string }
+  | { type: 'device-id'; id: string; plugin?: string }
   | { type: 'face-start'; mode: 'identify' | 'enroll'; title?: string; liveness: boolean; samples: number }
   | { type: 'face-stop' }
   | { type: 'nfc-start' }
@@ -59,6 +60,9 @@ export function pluginUiDevices(value: unknown): PluginUiDevice[] {
 }
 
 const SEGMENT = /^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+$/;
+const PLUGIN_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+/** A partner plugin id named by the screen, or undefined; null when malformed. */
+const partnerOf = (value: unknown): string | null | undefined => value === undefined ? undefined : typeof value === 'string' && value.length <= 120 && PLUGIN_ID.test(value) ? value : null;
 const ROUTE_SEGMENT = /^[a-z0-9][a-z0-9_-]*$/;
 
 /** Plugin-relative API path such as "classes/42/students"; null when unsafe. */
@@ -100,9 +104,12 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (message.type === 'navigate') {
     const routePath = typeof message.routePath === 'string' ? message.routePath : '';
     if (routePath.length > 200 || !routePath.split('/').every((segment) => ROUTE_SEGMENT.test(segment))) return null;
-    if (message.query === undefined) return { type: 'navigate', routePath };
+    const plugin = partnerOf(message.plugin);
+    if (plugin === null) return null;
+    const target = plugin ? { plugin } : {};
+    if (message.query === undefined) return { type: 'navigate', routePath, ...target };
     const query = safePluginUiQuery(message.query);
-    return query ? { type: 'navigate', routePath, query } : null;
+    return query ? { type: 'navigate', routePath, query, ...target } : null;
   }
   if (message.type === 'scan-start') {
     const title = plain(message.title, 80);
@@ -126,7 +133,10 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
     return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'location', id: message.id } : null;
   }
   if (message.type === 'device-id') {
-    return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'device-id', id: message.id } : null;
+    // plugin: a partner's identifier for this browser (a screen that moved from that plugin keeps its devices)
+    const plugin = partnerOf(message.plugin);
+    if (plugin === null) return null;
+    return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'device-id', id: message.id, ...(plugin ? { plugin } : {}) } : null;
   }
   if (message.type === 'face-start') {
     const title = plain(message.title, 80);
@@ -153,7 +163,8 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
     const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
     const method = String(message.method || 'GET').toUpperCase() as PluginUiRequest['method'];
     const path = safePluginApiPath(message.path);
-    if (!id || !path || !PLUGIN_UI_METHODS.includes(method)) return null;
+    const plugin = partnerOf(message.plugin);
+    if (!id || !path || !PLUGIN_UI_METHODS.includes(method) || plugin === null) return null;
     let query: Record<string, string> | undefined;
     if (message.query !== undefined) {
       const safe = safePluginUiQuery(message.query);
@@ -161,7 +172,7 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
       query = safe;
     }
     if (message.body !== undefined && (method === 'GET' || new TextEncoder().encode(JSON.stringify(message.body)).length > PLUGIN_UI_MAX_BODY_BYTES)) return null;
-    return { type: 'request', id, method, path, ...(query ? { query } : {}), ...(message.body !== undefined ? { body: message.body } : {}) };
+    return { type: 'request', id, method, path, ...(query ? { query } : {}), ...(message.body !== undefined ? { body: message.body } : {}), ...(plugin ? { plugin } : {}) };
   }
   return null;
 }
