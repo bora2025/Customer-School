@@ -127,6 +127,11 @@ export class PluginsService {
       return { present: true, portability: 'legacy-json-settings', pageCount: 1, componentTypes: ['json-settings'] };
     }
     const bundle = parsePluginUiBundle(descriptor, verified.manifest.id, new Set(verified.manifest.permissions));
+    // A screen that reads faces handles biometric data: the plugin must say so (install consent, marketplace).
+    const readsFaces = bundle.pages.some((page) => page.components.some((component) => component.type === 'app' && Array.isArray(component.options?.devices) && (component.options.devices as unknown[]).includes('face')));
+    if (readsFaces && !(verified.manifest.operational?.dataClassification || []).includes('biometric-data')) {
+      throw new BadRequestException('A plugin screen using the face device must declare biometric-data in operational.dataClassification');
+    }
     // A plugin-owned screen must ship its entry document inside the same signed package.
     for (const page of bundle.pages) for (const component of page.components) {
       if (component.type === 'app' && !verified.files.has(String(component.options?.entry))) {

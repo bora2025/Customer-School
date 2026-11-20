@@ -29,6 +29,7 @@ import { PluginAccountService } from './plugin-account.service';
 import { assertPluginExecutionAllowed } from './plugin-execution-policy';
 import { applyPluginDatabasePolicy, pluginDatabasePolicy } from './plugin-database-policy';
 import { enterPluginDatabaseRole, ensurePluginDatabaseRole, leavePluginDatabaseRole, pluginDatabaseRolesEnforced } from './plugin-database-roles';
+import { PluginDeviceCredentialsService } from './plugin-device-credentials.service';
 
 @Injectable()
 export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -70,6 +71,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
     @Optional() private readonly rollout?: PluginRolloutService,
     @Optional() private readonly academicIdentity?: PrismaAcademicIdentityProvider,
     @Optional() private readonly pluginAccounts?: PluginAccountService,
+    @Optional() private readonly deviceCredentials?: PluginDeviceCredentialsService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -340,6 +342,11 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       },
       crypto: {
         hashBcrypt: (plaintext, rounds = 12) => { requireCapability('crypto.hash'); return bcrypt.hash(plaintext, rounds); },
+      },
+      devices: {
+        issue: (input) => { requireCapability('devices.credentials'); if (!this.deviceCredentials) throw new Error('Device credentials are unavailable'); return this.deviceCredentials.issue(id, input); },
+        list: () => { requireCapability('devices.credentials'); if (!this.deviceCredentials) throw new Error('Device credentials are unavailable'); return this.deviceCredentials.list(id); },
+        revoke: (credentialId) => { requireCapability('devices.credentials'); if (!this.deviceCredentials) throw new Error('Device credentials are unavailable'); return this.deviceCredentials.revoke(id, credentialId); },
       },
       accounts: {
         createStaff: async (input) => {
