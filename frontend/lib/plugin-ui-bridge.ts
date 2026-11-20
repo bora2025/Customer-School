@@ -20,8 +20,13 @@ export const PLUGIN_UI_MAX_REQUESTS_PER_SECOND = 20;
  * only the text of each code the school page decoded, or one location fix per request.
  * `device-id` is a random identifier this browser keeps for ONE plugin (so a plugin can recognise a
  * registered device); it is different for every plugin and reveals nothing about the school page.
+ * `face`: the school page runs the camera and a face model and returns face VECTORS (128 numbers per
+ * capture) and quality / liveness scores — never an image. `nfc`: Web NFC card serial numbers (Chrome
+ * on Android). `storage`: small JSON values kept on this device under a per-plugin key.
  */
-export const PLUGIN_UI_DEVICES = ['scanner', 'location', 'device-id'] as const;
+export const PLUGIN_UI_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage'] as const;
+export const PLUGIN_UI_STORAGE_MAX_VALUE_BYTES = 256 * 1024;
+export const PLUGIN_UI_STORAGE_MAX_TOTAL_BYTES = 1024 * 1024;
 export type PluginUiDevice = (typeof PLUGIN_UI_DEVICES)[number];
 export const PLUGIN_UI_MAX_SCAN_TEXT = 2000;
 
@@ -36,7 +41,12 @@ export type PluginUiMessage =
   | { type: 'scan-activity'; title?: string; items: PluginUiActivity[] }
   | { type: 'scan-stop' }
   | { type: 'location'; id: string }
-  | { type: 'device-id'; id: string };
+  | { type: 'device-id'; id: string }
+  | { type: 'face-start'; mode: 'identify' | 'enroll'; title?: string; liveness: boolean; samples: number }
+  | { type: 'face-stop' }
+  | { type: 'nfc-start' }
+  | { type: 'nfc-stop' }
+  | { type: 'storage'; id: string; op: 'get' | 'set' | 'remove' | 'keys'; key?: string; value?: unknown };
 
 export type PluginUiTone = 'info' | 'success' | 'warning' | 'error';
 export type PluginUiActivity = { title: string; detail?: string; tone: PluginUiTone; initials?: string };
@@ -118,6 +128,27 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (message.type === 'device-id') {
     return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'device-id', id: message.id } : null;
   }
+  if (message.type === 'face-start') {
+    const title = plain(message.title, 80);
+    const samples = Math.min(5, Math.max(1, Math.round(Number(message.samples) || 3)));
+    return { type: 'face-start', mode: message.mode === 'enroll' ? 'enroll' : 'identify', liveness: message.liveness !== false, samples, ...(title ? { title } : {}) };
+  }
+  if (message.type === 'face-stop') return { type: 'face-stop' };
+  if (message.type === 'nfc-start') return { type: 'nfc-start' };
+  if (message.type === 'nfc-stop') return { type: 'nfc-stop' };
+  if (message.type === 'storage') {
+    const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
+    const op = ['get', 'set', 'remove', 'keys'].includes(message.op as string) ? (message.op as 'get' | 'set' | 'remove' | 'keys') : null;
+    if (!id || !op) return null;
+    if (op === 'keys') return { type: 'storage', id, op };
+    const key = typeof message.key === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(message.key) ? message.key : null;
+    if (!key) return null;
+    if (op !== 'set') return { type: 'storage', id, op, key };
+    if (message.value === undefined) return null;
+    let size = 0;
+    try { size = new TextEncoder().encode(JSON.stringify(message.value)).length; } catch { return null; }
+    return size <= PLUGIN_UI_STORAGE_MAX_VALUE_BYTES ? { type: 'storage', id, op, key, value: message.value } : null;
+  }
   if (message.type === 'request') {
     const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
     const method = String(message.method || 'GET').toUpperCase() as PluginUiRequest['method'];
@@ -150,6 +181,29 @@ export function pluginDeviceId(pluginId: string, storage: Pick<Storage, 'getItem
     return storage.getItem(key) === created ? created : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * The device store of one plugin (the "storage" device): JSON values under
+ * `wattanam-plugin-storage:<pluginId>:<key>`, at most 1 MiB per plugin. Returns the HTTP-like answer.
+ */
+export function pluginStorage(pluginId: string, storage: Storage | null, op: 'get' | 'set' | 'remove' | 'keys', key?: string, value?: unknown): { status: number; body: unknown } {
+  if (!storage) return { status: 503, body: { message: 'This browser does not keep data for this screen (private browsing?).' } };
+  const prefix = `wattanam-plugin-storage:${pluginId}:`;
+  try {
+    const own = () => { const keys: string[] = []; for (let i = 0; i < storage.length; i += 1) { const k = storage.key(i); if (k && k.startsWith(prefix)) keys.push(k); } return keys; };
+    if (op === 'keys') return { status: 200, body: { value: own().map((k) => k.slice(prefix.length)).sort() } };
+    const full = prefix + key;
+    if (op === 'get') { const raw = storage.getItem(full); return { status: 200, body: { value: raw === null ? null : JSON.parse(raw) } }; }
+    if (op === 'remove') { storage.removeItem(full); return { status: 200, body: { value: null } }; }
+    const text = JSON.stringify(value);
+    const used = own().filter((k) => k !== full).reduce((sum, k) => sum + (storage.getItem(k) || '').length, 0);
+    if (used + text.length > PLUGIN_UI_STORAGE_MAX_TOTAL_BYTES) return { status: 413, body: { message: 'This screen has used all of its storage on this device.' } };
+    storage.setItem(full, text);
+    return { status: 200, body: { value: null } };
+  } catch {
+    return { status: 503, body: { message: 'Storage on this device is unavailable.' } };
   }
 }
 

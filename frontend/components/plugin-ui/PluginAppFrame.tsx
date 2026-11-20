@@ -7,6 +7,7 @@ import {
   createRateLimiter,
   parsePluginUiMessage,
   pluginDeviceId,
+  pluginStorage,
   pluginUiAssetUrl,
   pluginUiPageQuery,
   PLUGIN_UI_MAX_SCAN_TEXT,
@@ -15,6 +16,7 @@ import {
   type PluginUiDevice,
   type PluginUiTone,
 } from "../../lib/plugin-ui-bridge";
+import PluginFaceStation, { type FaceResult } from "./PluginFaceStation";
 
 /**
  * A plugin-owned screen (`app` component). The plugin's signed ui/ document runs in a sandboxed
@@ -24,7 +26,9 @@ import {
  *
  * Devices (`devices` = the page's declared `options.devices`): the screen never gets the camera or
  * the Geolocation API. This component runs the scanner on the school page and passes on only the
- * decoded text; a location fix is returned once per request.
+ * decoded text; a location fix is returned once per request. The face station (PluginFaceStation)
+ * hands over face vectors only; Web NFC hands over card serial numbers; storage keeps small JSON values
+ * on this device under a per-plugin key.
  */
 export default function PluginAppFrame({
   pluginId,
@@ -74,6 +78,15 @@ export default function PluginAppFrame({
   const mayScan = devices.includes("scanner");
   const mayLocate = devices.includes("location");
   const mayIdentify = devices.includes("device-id");
+  const mayFace = devices.includes("face");
+  const mayNfc = devices.includes("nfc");
+  const mayStore = devices.includes("storage");
+  // The face station: open while the screen asked for it (its texts come from the plugin as plain strings).
+  const [face, setFace] = useState<{ mode: "identify" | "enroll"; title: string; liveness: boolean; samples: number } | null>(null);
+  // Web NFC (Chrome on Android): reading while on; the serial number of each card goes to the screen.
+  const [nfcOn, setNfcOn] = useState(false);
+  const nfcAbort = useRef<AbortController | null>(null);
+  const stopNfc = useCallback(() => { nfcAbort.current?.abort(); nfcAbort.current = null; setNfcOn(false); }, []);
 
   const send = useCallback((message: Record<string, unknown>) => {
     // The sandboxed document has an opaque origin, so "*" is the only possible target origin.
@@ -150,6 +163,52 @@ export default function PluginAppFrame({
         );
         return;
       }
+      if (message.type === "face-start") {
+        if (!mayFace) { send({ type: "face-error", message: "This screen has not declared the face device." }); return; }
+        setFeedback(null);
+        setActivity({ title: "Today", items: [] });
+        setFace({ mode: message.mode, title: message.title || (message.mode === "enroll" ? "Face enrolment" : "Face attendance"), liveness: message.liveness, samples: message.samples });
+        return;
+      }
+      if (message.type === "face-stop") {
+        setFace(null);
+        send({ type: "face-closed" });
+        return;
+      }
+      if (message.type === "nfc-start") {
+        if (!mayNfc) { send({ type: "nfc-error", message: "This screen has not declared the nfc device." }); return; }
+        const Reader = (window as any).NDEFReader;
+        if (!Reader) { send({ type: "nfc-error", message: "This browser cannot read NFC cards: use Chrome on an Android phone, or a USB card reader." }); return; }
+        nfcAbort.current?.abort();
+        const controller = new AbortController();
+        nfcAbort.current = controller;
+        try {
+          const reader = new Reader();
+          reader.onreading = (event: { serialNumber?: string }) => {
+            const serialNumber = String(event.serialNumber || "").slice(0, 100);
+            if (serialNumber) send({ type: "nfc-result", serialNumber });
+          };
+          await reader.scan({ signal: controller.signal });
+          setNfcOn(true);
+        } catch (cause) {
+          nfcAbort.current = null;
+          send({ type: "nfc-error", message: cause instanceof Error && cause.message ? cause.message : "NFC permission was not granted." });
+        }
+        return;
+      }
+      if (message.type === "nfc-stop") {
+        stopNfc();
+        send({ type: "nfc-closed" });
+        return;
+      }
+      if (message.type === "storage") {
+        if (!mayStore) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared storage." } }); return; }
+        let storage: Storage | null = null;
+        try { storage = window.localStorage; } catch { storage = null; }
+        const answer = pluginStorage(pluginId, storage, message.op, message.key, message.value);
+        send({ type: "response", id: message.id, status: answer.status, body: answer.body });
+        return;
+      }
       if (!allow()) {
         send({ type: "response", id: message.id, status: 429, body: { message: "Too many requests from this screen" } });
         return;
@@ -171,7 +230,10 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, deviceKey, permissionKey, height, mayIdentify, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
+  }, [allow, deviceKey, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+
+  // NFC stops when the screen goes away.
+  useEffect(() => () => { nfcAbort.current?.abort(); }, []);
 
   useEffect(() => {
     if (!scanning || !station) return;
@@ -238,6 +300,21 @@ export default function PluginAppFrame({
   const lineClass = (tone: PluginUiTone) => tone === "success" ? "text-emerald-300" : tone === "error" ? "text-rose-300" : tone === "warning" ? "text-amber-300" : "text-sky-300";
   return (
     <section className="card overflow-hidden p-0">
+      {face && (
+        <PluginFaceStation
+          title={face.title} mode={face.mode} liveness={face.liveness} samples={face.samples}
+          feedback={feedback} activity={activity}
+          onResult={(result: FaceResult) => send({ type: "face-result", result })}
+          onError={(message) => { setFace(null); send({ type: "face-error", message }); }}
+          onClose={() => { setFace(null); send({ type: "face-closed" }); }}
+        />
+      )}
+      {nfcOn && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-indigo-950 p-3 text-white" data-plugin-nfc>
+          <p className="text-sm font-semibold">📶 NFC on <span className="font-normal text-indigo-200">· hold a card to the back of this phone</span></p>
+          <button type="button" onClick={() => { stopNfc(); send({ type: "nfc-closed" }); }} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900">Stop NFC</button>
+        </div>
+      )}
       {scanning && station && (
         <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white" data-plugin-scanner data-plugin-station>
           <header className="flex items-center gap-5 border-b border-slate-700 bg-slate-800 px-5 py-4">

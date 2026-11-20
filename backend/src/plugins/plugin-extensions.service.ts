@@ -61,6 +61,7 @@ export class PluginExtensionsService {
     if (new Set(parameterNames).size !== parameterNames.length) throw new BadRequestException('Plugin route parameter names must be unique');
     if (!declaredPermissions.has(definition.permission)) throw new BadRequestException('Plugin route permission is not declared in the manifest');
     if (typeof definition.handler !== 'function') throw new BadRequestException('Plugin route handler is required');
+    if (definition.access !== undefined && definition.access !== 'user' && definition.access !== 'device') throw new BadRequestException('Plugin route access must be user or device');
     if (definition.contract) {
       if (!/^\d+\.\d+$/.test(definition.contract.version) || !definition.contract.response?.parse || !definition.contract.errors || Object.entries(definition.contract.errors).some(([code, value]) => !/^[A-Z][A-Z0-9_]{2,63}$/.test(code) || !Number.isInteger(value.status) || value.status < 400 || value.status > 599 || !value.message?.trim() || (value.detail !== undefined && typeof value.detail !== 'boolean'))) throw new BadRequestException('Plugin route contract is invalid');
     }
@@ -112,7 +113,10 @@ export class PluginExtensionsService {
       method: request.method, path: `${pluginId}/${request.path}`,
       metadata: { permission: definition.permission },
     };
-    const granted = await this.grants.isGranted(pluginId, definition.permission, request.principal.role);
+    // Device routes answer only device credentials (PluginDeviceController), user routes only users.
+    const fromDevice = request.principal.role === 'DEVICE';
+    if (fromDevice !== (definition.access === 'device')) throw new NotFoundException('Plugin route not found');
+    const granted = fromDevice || await this.grants.isGranted(pluginId, definition.permission, request.principal.role);
     if (!granted) {
       void this.audit.log({ ...auditBase, success: false, errorMessage: `Permission denied: ${definition.permission}` });
       throw new ForbiddenException(`Missing plugin permission: ${definition.permission}`);

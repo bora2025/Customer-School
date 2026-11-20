@@ -132,7 +132,7 @@ describe('C-007 malicious-fixture suite: SSRF and secret access', () => {
     // proof behind both the SSRF and secret-access claims: there is no sanctioned surface
     // for either, only the explicitly capability-gated SDK methods below.
     expect((global as any).__wattanamContextKeys).toEqual([
-      'accounts', 'crypto', 'database', 'dependencies', 'directory', 'durableEvents', 'errors', 'events', 'jobs', 'logger', 'navigation', 'notifications',
+      'accounts', 'crypto', 'database', 'dependencies', 'devices', 'directory', 'durableEvents', 'errors', 'events', 'jobs', 'logger', 'navigation', 'notifications',
       'permissions', 'pluginId', 'readModels', 'realtime', 'routes', 'sdkVersion', 'settings', 'storage',
     ]);
     delete (global as any).__wattanamContextKeys;

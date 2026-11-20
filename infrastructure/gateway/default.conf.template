@@ -36,7 +36,8 @@ server {
     # "CSP report violation"). report-uri only: Chromium sends nothing when report-to is also set.
     # Next.js inline scripts are expected to report until phase 2 adds
     # per-request nonces; any other reported origin must be reviewed before enforcing.
-    add_header Content-Security-Policy-Report-Only "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self'; manifest-src 'self'; report-uri /api/csp-report" always;
+    # wasm-unsafe-eval: WebAssembly only (the face device runs MediaPipe), not JavaScript eval.
+    add_header Content-Security-Policy-Report-Only "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self'; manifest-src 'self'; report-uri /api/csp-report" always;
     # Drop upstream copies (helmet on the API sets some) so each header is sent exactly once;
     # a duplicated X-Frame-Options can make browsers ignore it.
     proxy_hide_header Strict-Transport-Security;
