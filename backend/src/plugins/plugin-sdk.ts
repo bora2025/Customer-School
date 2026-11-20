@@ -27,6 +27,12 @@ export interface PluginRouteDefinition {
    * (/api/plugin-device with one of the plugin's device credentials; principal role 'DEVICE').
    */
   access?: 'user' | 'device';
+  /**
+   * Other plugins whose screens may call this route ("partner screens", for example Smart Attendance
+   * calling Academic Management). Calls the school page makes for another plugin's screen carry that
+   * plugin's id and are refused unless it is listed here. The user's own grants still apply.
+   */
+  callers?: string[];
   handler(request: PluginRouteRequest): unknown | Promise<unknown>;
 }
 

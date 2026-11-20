@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
-import { resolvePluginSourcePath } from "../../lib/plugin-ui-routing";
+import { pluginScreenHeaders, pluginSourceUrl, resolvePluginSourcePath } from "../../lib/plugin-ui-routing";
 
 type Field = {
   id: string;
@@ -66,7 +66,7 @@ export default function PluginForm({
 }: {
   title?: string;
   pluginId: string;
-  source: { method: "POST" | "PUT" | "PATCH"; path: string };
+  source: { method: "POST" | "PUT" | "PATCH"; path: string; plugin?: string };
   params: Record<string, string>;
   fields: Field[];
   options?: {
@@ -240,10 +240,10 @@ export default function PluginForm({
           String(value ?? ""),
         ]),
       );
-      const endpoint = `/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(source.path, { ...routeValues, ...params })}`;
+      const endpoint = pluginSourceUrl(pluginId, source, resolvePluginSourcePath(source.path, { ...routeValues, ...params }));
       const response = await apiFetch(endpoint, {
         method: source.method,
-        headers: { "Content-Type": "application/json" },
+        headers: pluginScreenHeaders(pluginId, { "Content-Type": "application/json" }),
         body: JSON.stringify(body),
       });
       const result = await response.json().catch(() => ({}));

@@ -29,6 +29,10 @@ import PluginFaceStation, { type FaceResult } from "./PluginFaceStation";
  * decoded text; a location fix is returned once per request. The face station (PluginFaceStation)
  * hands over face vectors only; Web NFC hands over card serial numbers; storage keeps small JSON values
  * on this device under a per-plugin key.
+ *
+ * Partners (`apis` = the page's declared `options.apis`): the screen may also call these plugins' APIs
+ * and open their pages. Every request says which plugin's screen made it (X-Wattanam-Plugin-Screen);
+ * a partner's route answers only if it lists this plugin as a caller.
  */
 export default function PluginAppFrame({
   pluginId,
@@ -39,6 +43,7 @@ export default function PluginAppFrame({
   height = "auto",
   minHeight = 320,
   devices = [],
+  apis = [],
   permissions,
 }: {
   pluginId: string;
@@ -51,6 +56,8 @@ export default function PluginAppFrame({
   height?: "auto" | "fill";
   minHeight?: number;
   devices?: PluginUiDevice[];
+  /** Partner plugins whose APIs and pages this screen may use. */
+  apis?: string[];
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -74,6 +81,7 @@ export default function PluginAppFrame({
   const allow = useMemo(() => createRateLimiter(), []);
   const src = pluginVersion ? pluginUiAssetUrl(pluginId, pluginVersion, entry) : null;
   const deviceKey = devices.join(",");
+  const apiKey = apis.join(",");
   const permissionKey = permissions ? permissions.join(",") : null;
   const mayScan = devices.includes("scanner");
   const mayLocate = devices.includes("location");
@@ -120,7 +128,8 @@ export default function PluginAppFrame({
       }
       if (message.type === "navigate") {
         const search = message.query && Object.keys(message.query).length ? `?${new URLSearchParams(message.query).toString()}` : "";
-        router.push(`/plugins/${encodeURIComponent(pluginId)}/${message.routePath}${search}`);
+        if (message.plugin && !apiKey.split(",").includes(message.plugin)) return;
+        router.push(`/plugins/${encodeURIComponent(message.plugin || pluginId)}/${message.routePath}${search}`);
         return;
       }
       if (message.type === "scan-start") {
@@ -147,7 +156,9 @@ export default function PluginAppFrame({
         if (!mayIdentify) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared device-id." } }); return; }
         let storage: Storage | null = null;
         try { storage = window.localStorage; } catch { storage = null; }
-        const deviceId = pluginDeviceId(pluginId, storage, () => crypto.randomUUID());
+        // a declared partner's identifier: devices registered with it stay registered (a moved screen)
+        if (message.plugin && !apiKey.split(",").includes(message.plugin)) { send({ type: "response", id: message.id, status: 403, body: { message: `This screen has not declared the ${message.plugin} API.` } }); return; }
+        const deviceId = pluginDeviceId(message.plugin || pluginId, storage, () => crypto.randomUUID());
         send(deviceId ? { type: "response", id: message.id, status: 200, body: { deviceId } } : { type: "response", id: message.id, status: 503, body: { message: "This browser does not keep a device identifier (private browsing?)." } });
         return;
       }
@@ -213,11 +224,15 @@ export default function PluginAppFrame({
         send({ type: "response", id: message.id, status: 429, body: { message: "Too many requests from this screen" } });
         return;
       }
+      if (message.plugin && !apiKey.split(",").includes(message.plugin)) {
+        send({ type: "response", id: message.id, status: 403, body: { message: `This screen has not declared the ${message.plugin} API.` } });
+        return;
+      }
       const query = message.query ? `?${new URLSearchParams(message.query).toString()}` : "";
       try {
-        const response = await apiFetch(`/api/plugin-api/${encodeURIComponent(pluginId)}/${message.path}${query}`, {
+        const response = await apiFetch(`/api/plugin-api/${encodeURIComponent(message.plugin || pluginId)}/${message.path}${query}`, {
           method: message.method,
-          headers: message.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+          headers: { ...(message.body !== undefined ? { "Content-Type": "application/json" } : {}), "X-Wattanam-Plugin-Screen": pluginId },
           body: message.body !== undefined ? JSON.stringify(message.body) : undefined,
         });
         const text = await response.text();
@@ -230,7 +245,7 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, deviceKey, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+  }, [allow, apiKey, deviceKey, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
 
   // NFC stops when the screen goes away.
   useEffect(() => () => { nfcAbort.current?.abort(); }, []);
