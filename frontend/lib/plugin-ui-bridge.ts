@@ -43,7 +43,7 @@ export type PluginUiMessage =
   | { type: 'scan-stop' }
   | { type: 'location'; id: string }
   | { type: 'device-id'; id: string; plugin?: string }
-  | { type: 'face-start'; mode: 'identify' | 'enroll'; title?: string; liveness: boolean; samples: number }
+  | { type: 'face-start'; mode: 'identify' | 'enroll'; title?: string; liveness: boolean; samples: number; codes: boolean; faces: boolean }
   | { type: 'face-stop' }
   | { type: 'nfc-start' }
   | { type: 'nfc-stop' }
@@ -141,7 +141,11 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (message.type === 'face-start') {
     const title = plain(message.title, 80);
     const samples = Math.min(5, Math.max(1, Math.round(Number(message.samples) || 3)));
-    return { type: 'face-start', mode: message.mode === 'enroll' ? 'enroll' : 'identify', liveness: message.liveness !== false, samples, ...(title ? { title } : {}) };
+    // codes: also read QR codes from the same camera and USB readers (an automatic station; needs "scanner");
+    // faces: false for a station that reads codes only. Enrolment always reads faces only.
+    const enroll = message.mode === 'enroll';
+    const codes = !enroll && message.codes === true;
+    return { type: 'face-start', mode: enroll ? 'enroll' : 'identify', liveness: message.liveness !== false, samples, codes, faces: enroll || !codes || message.faces !== false, ...(title ? { title } : {}) };
   }
   if (message.type === 'face-stop') return { type: 'face-stop' };
   if (message.type === 'nfc-start') return { type: 'nfc-start' };
