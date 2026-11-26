@@ -10,6 +10,8 @@
 // The plugin's API still authorizes every call with the signed-in user's permissions, so the bridge
 // never grants more than the plugin's own routes already allow for this user.
 
+import { parsePrintJob, type PrintJob } from './receipt-printer';
+
 export const PLUGIN_UI_PROTOCOL = 'wattanam.plugin-ui/1';
 export const PLUGIN_UI_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 export const PLUGIN_UI_MAX_BODY_BYTES = 256 * 1024;
@@ -24,8 +26,10 @@ export const PLUGIN_UI_MAX_REQUESTS_PER_SECOND = 20;
  * `face`: the school page runs the camera and a face model and returns face VECTORS (128 numbers per
  * capture) and quality / liveness scores — never an image. `nfc`: Web NFC card serial numbers (Chrome
  * on Android). `storage`: small JSON values kept on this device under a per-plugin key.
+ * `printer`: receipts sent as plain lines, printed by the school page on a USB thermal printer
+ * (lib/receipt-printer.ts), and the cash drawer.
  */
-export const PLUGIN_UI_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage'] as const;
+export const PLUGIN_UI_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage', 'printer'] as const;
 export const PLUGIN_UI_STORAGE_MAX_VALUE_BYTES = 256 * 1024;
 export const PLUGIN_UI_STORAGE_MAX_TOTAL_BYTES = 1024 * 1024;
 export type PluginUiDevice = (typeof PLUGIN_UI_DEVICES)[number];
@@ -47,7 +51,10 @@ export type PluginUiMessage =
   | { type: 'face-stop' }
   | { type: 'nfc-start' }
   | { type: 'nfc-stop' }
-  | { type: 'storage'; id: string; op: 'get' | 'set' | 'remove' | 'keys'; key?: string; value?: unknown };
+  | { type: 'storage'; id: string; op: 'get' | 'set' | 'remove' | 'keys'; key?: string; value?: unknown }
+  | { type: 'printer-print'; id: string; job: PrintJob }
+  | { type: 'printer-drawer'; id: string }
+  | { type: 'printer-status'; id: string };
 
 export type PluginUiTone = 'info' | 'success' | 'warning' | 'error';
 export type PluginUiActivity = { title: string; detail?: string; tone: PluginUiTone; initials?: string };
@@ -150,6 +157,13 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (message.type === 'face-stop') return { type: 'face-stop' };
   if (message.type === 'nfc-start') return { type: 'nfc-start' };
   if (message.type === 'nfc-stop') return { type: 'nfc-stop' };
+  if (message.type === 'printer-print' || message.type === 'printer-drawer' || message.type === 'printer-status') {
+    const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
+    if (!id) return null;
+    if (message.type !== 'printer-print') return { type: message.type, id };
+    const job = parsePrintJob(message.job);
+    return job ? { type: 'printer-print', id, job } : null;
+  }
   if (message.type === 'storage') {
     const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
     const op = ['get', 'set', 'remove', 'keys'].includes(message.op as string) ? (message.op as 'get' | 'set' | 'remove' | 'keys') : null;

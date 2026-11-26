@@ -17,6 +17,7 @@ import {
   type PluginUiTone,
 } from "../../lib/plugin-ui-bridge";
 import PluginFaceStation, { type FaceResult } from "./PluginFaceStation";
+import { choosePrinter, DRAWER_PULSE, encodeEscPos, rememberedPrinter, renderReceipt, sendToPrinter, usbPrintingAvailable, type PrintJob, type UsbPrinter } from "../../lib/receipt-printer";
 
 /**
  * A plugin-owned screen (`app` component). The plugin's signed ui/ document runs in a sandboxed
@@ -89,6 +90,9 @@ export default function PluginAppFrame({
   const mayFace = devices.includes("face");
   const mayNfc = devices.includes("nfc");
   const mayStore = devices.includes("storage");
+  const mayPrint = devices.includes("printer");
+  // a receipt waiting for the person to choose the USB printer (the browser's chooser needs a click)
+  const [printPrompt, setPrintPrompt] = useState<{ id: string; job: PrintJob | null } | null>(null);
   // The face station: open while the screen asked for it (its texts come from the plugin as plain strings).
   const [face, setFace] = useState<{ mode: "identify" | "enroll"; title: string; liveness: boolean; samples: number; codes: boolean; faces: boolean } | null>(null);
   // Web NFC (Chrome on Android): reading while on; the serial number of each card goes to the screen.
@@ -213,6 +217,16 @@ export default function PluginAppFrame({
         send({ type: "nfc-closed" });
         return;
       }
+      if (message.type === "printer-print" || message.type === "printer-drawer" || message.type === "printer-status") {
+        if (!mayPrint) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared the printer." } }); return; }
+        if (!usbPrintingAvailable()) { send({ type: "response", id: message.id, status: 501, body: { message: "This browser cannot reach USB printers (use Chrome or Edge)." } }); return; }
+        const printer = await rememberedPrinter().catch(() => null);
+        if (message.type === "printer-status") { send({ type: "response", id: message.id, status: 200, body: { available: true, connected: Boolean(printer), name: printer?.productName || "" } }); return; }
+        const job = message.type === "printer-print" ? message.job : null;
+        if (!printer) { setPrintPrompt({ id: message.id, job }); return; }
+        void printOn(printer, message.id, job);
+        return;
+      }
       if (message.type === "storage") {
         if (!mayStore) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared storage." } }); return; }
         let storage: Storage | null = null;
@@ -246,7 +260,18 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, apiKey, deviceKey, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+  }, [allow, apiKey, deviceKey, mayPrint, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+
+  // A receipt (or a drawer pulse when job is null) to the USB printer; the screen gets the outcome.
+  const printOn = useCallback(async (printer: UsbPrinter, id: string, job: PrintJob | null) => {
+    try {
+      const bytes = job ? encodeEscPos(await renderReceipt(job), { cut: job.cut, drawer: job.drawer }) : DRAWER_PULSE;
+      await sendToPrinter(printer, bytes);
+      send({ type: "response", id, status: 200, body: { printed: Boolean(job), drawer: !job || job.drawer, printer: printer.productName || "" } });
+    } catch (cause) {
+      send({ type: "response", id, status: 502, body: { message: cause instanceof Error && cause.message ? cause.message : "The printer did not answer." } });
+    }
+  }, [send]);
 
   // NFC stops when the screen goes away.
   useEffect(() => () => { nfcAbort.current?.abort(); }, []);
@@ -326,6 +351,19 @@ export default function PluginAppFrame({
           onClose={() => { setFace(null); send({ type: "face-closed" }); }}
         />
       )}
+      {printPrompt && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-900 p-3 text-white" data-plugin-printer>
+          <p className="text-sm font-semibold">🖨️ Choose the receipt printer <span className="font-normal text-slate-300">· once on this device (USB)</span></p>
+          <div className="flex gap-2">
+            <button type="button" className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900" onClick={async () => {
+              const waiting = printPrompt; setPrintPrompt(null);
+              try { const printer = await choosePrinter(); await printOn(printer, waiting.id, waiting.job); }
+              catch (cause) { send({ type: "response", id: waiting.id, status: 409, body: { message: cause instanceof Error && cause.message ? cause.message : "No printer was chosen." } }); }
+            }}>Choose printer</button>
+            <button type="button" className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm" onClick={() => { const waiting = printPrompt; setPrintPrompt(null); send({ type: "response", id: waiting.id, status: 409, body: { message: "No printer was chosen." } }); }}>Cancel</button>
+          </div>
+        </div>
+      )}
       {nfcOn && (
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-indigo-950 p-3 text-white" data-plugin-nfc>
           <p className="text-sm font-semibold">📶 NFC on <span className="font-normal text-indigo-200">· hold a card to the back of this phone</span></p>
@@ -398,6 +436,7 @@ export default function PluginAppFrame({
         sandbox="allow-scripts allow-forms allow-modals allow-downloads"
         referrerPolicy="no-referrer"
         className="block w-full border-0"
+        data-height={height}
         style={{ height: height === "fill" ? "calc(100vh - 12rem)" : frameHeight, minHeight }}
       />
     </section>

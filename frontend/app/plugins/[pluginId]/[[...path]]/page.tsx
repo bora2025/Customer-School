@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import AuthGuard from '../../../../components/AuthGuard';
 import Sidebar from '../../../../components/Sidebar';
 import { adminNav } from '../../../../lib/admin-nav';
@@ -10,9 +10,12 @@ import { isWorkspaceRole, ROLE_INFO, workspaceNav, workspaceTitle } from '../../
 import { apiFetch } from '../../../../lib/api';
 import { matchPluginPage, pluginScreenHeaders, pluginSourceUrl, PluginUiPageDescriptor, resolvePluginSourcePath } from '../../../../lib/plugin-ui-routing';
 import PluginUiRenderer from '../../../../components/plugin-ui/PluginUiRenderer';
+import PluginScreenMode, { PluginScreenLauncher } from '../../../../components/plugin-ui/PluginScreenMode';
 
 export default function PluginPageHost() {
   const params = useParams<{ pluginId: string; path?: string[] }>();
+  // ?screen=1: the page alone, for a customer or kitchen screen (no sidebar, no header)
+  const screenMode = useSearchParams()?.get('screen') === '1';
   const pluginId = decodeURIComponent(params.pluginId || '');
   const routePath = (params.path || ['settings']).map(decodeURIComponent).join('/');
   const legacyEndpoint = useMemo(() => `/api/plugin-api/${encodeURIComponent(pluginId)}/${routePath.split('/').map(encodeURIComponent).join('/')}`, [pluginId, routePath]);
@@ -78,6 +81,9 @@ export default function PluginPageHost() {
     finally { setBusy(false); }
   }
 
+  const renderer = descriptor ? <PluginUiRenderer pluginId={pluginId} page={descriptor} params={routeParams} data={(value || {}) as Record<string, unknown>} loading={value === null} errors={sourceErrors} onRefresh={load} onQueryFilters={async (sources, values) => { const next = { ...sourceQueries }; sources.forEach((source) => { next[source] = values; }); setSourceQueries(next); await load(next); }} /> : null;
+  if (screenMode && renderer) return <AuthGuard><PluginScreenMode>{renderer}</PluginScreenMode></AuthGuard>;
+
   return (
     <AuthGuard>
       <div className="page-shell">
@@ -86,9 +92,9 @@ export default function PluginPageHost() {
           : <Sidebar title="Admin Panel" subtitle="Wattanam" navItems={adminNav} accentColor="indigo" />}
         <div className="page-content">
           <div className="h-14 lg:hidden" />
-          <div className="page-header"><h1 className="text-2xl font-bold text-slate-800">{label}</h1><p className="mt-1 font-mono text-xs text-slate-500">{pluginId} · {routePath}</p></div>
+          <div className="page-header flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-slate-800">{label}</h1><p className="mt-1 font-mono text-xs text-slate-500">{pluginId} · {routePath}</p></div>{descriptor?.appearance?.screen === 'kiosk' && <PluginScreenLauncher name={`${pluginId}-${routePath}`} />}</div>
           <div className="page-body">
-            {descriptor ? <PluginUiRenderer pluginId={pluginId} page={descriptor} params={routeParams} data={(value || {}) as Record<string, unknown>} loading={value === null} errors={sourceErrors} onRefresh={load} onQueryFilters={async (sources, values) => { const next = { ...sourceQueries }; sources.forEach((source) => { next[source] = values; }); setSourceQueries(next); await load(next); }} /> : <section className="card max-w-3xl p-6">
+            {renderer || <section className="card max-w-3xl p-6">
               <h2 className="font-semibold text-slate-800">{descriptor ? 'Plugin page data' : 'Plugin settings'}</h2>
               <p className="mt-1 text-sm text-slate-500">This generic host sends JSON only to the plugin&apos;s namespaced, authenticated core route. Plugin browser scripts are not injected into Wattanam.</p>
               {error && <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
