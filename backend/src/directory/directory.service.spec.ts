@@ -290,6 +290,38 @@ describe('DirectoryService', () => {
     }
   });
 
+  it('reads classes from the Academic plugin by default on the core build (it has no class tables)', async () => {
+    const saved = { roster: process.env.ACADEMIC_ROSTER_READ_OWNER, department: process.env.ACADEMIC_DEPARTMENT_MEMBERSHIP_READ_OWNER, distribution: process.env.WATTANAM_DISTRIBUTION };
+    const restore = (name: string, value: string | undefined) => { if (value === undefined) delete process.env[name]; else process.env[name] = value; };
+    delete process.env.ACADEMIC_ROSTER_READ_OWNER;
+    delete process.env.ACADEMIC_DEPARTMENT_MEMBERSHIP_READ_OWNER;
+    try {
+      process.env.WATTANAM_DISTRIBUTION = 'core';
+      const tables = prismaWith({});
+      const service = new DirectoryService(tables);
+      await expect(service.classesForUser('u1', 'TEACHER')).rejects.toThrow('class-membership contract is unavailable');
+      service.bindAcademicPluginContracts({
+        getClassRoster: jest.fn(), getEnrollmentAtDate: jest.fn(), resolveClassAudience: jest.fn(), lookupSubjects: jest.fn(),
+        resolveClassesForUser: jest.fn().mockResolvedValue({ schemaVersion: 1, userId: 'u1', role: 'TEACHER', classIds: ['c1'] }),
+        lookupClasses: jest.fn().mockResolvedValue({ schemaVersion: 1, classes: [{ id: 'c1', name: 'Grade 7A' }] }),
+        departmentForUser: jest.fn().mockResolvedValue({ schemaVersion: 1, userId: 'u1', department: null }),
+      });
+      await expect(service.classesForUser('u1', 'TEACHER')).resolves.toEqual(['c1']);
+      await expect(service.lookupClasses(['c1'])).resolves.toEqual([{ id: 'c1', name: 'Grade 7A' }]);
+      await expect(service.departmentForUser('u1')).resolves.toBeNull();
+      expect(tables.class.findMany).not.toHaveBeenCalled();
+
+      // the full build keeps its own tables unless told otherwise
+      process.env.WATTANAM_DISTRIBUTION = 'legacy-full';
+      const legacy = new DirectoryService(prismaWith({ class: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([{ id: 'c9', name: 'Legacy' }]) } }));
+      await expect(legacy.lookupClasses(['c9'])).resolves.toEqual([{ id: 'c9', name: 'Legacy' }]);
+    } finally {
+      restore('ACADEMIC_ROSTER_READ_OWNER', saved.roster);
+      restore('ACADEMIC_DEPARTMENT_MEMBERSHIP_READ_OWNER', saved.department);
+      restore('WATTANAM_DISTRIBUTION', saved.distribution);
+    }
+  });
+
   it('fails closed for invalid Academic read-owner configuration', async () => {
     const rosterOwner = process.env.ACADEMIC_ROSTER_READ_OWNER;
     const departmentOwner = process.env.ACADEMIC_DEPARTMENT_MEMBERSHIP_READ_OWNER;

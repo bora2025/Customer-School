@@ -17,6 +17,7 @@ import {
   type PluginUiTone,
 } from "../../lib/plugin-ui-bridge";
 import PluginFaceStation, { type FaceResult } from "./PluginFaceStation";
+import { createSpeechHost, speechAvailable } from "../../lib/plugin-speech";
 import { choosePrinter, DRAWER_PULSE, encodeEscPos, rememberedPrinter, renderReceipt, sendToPrinter, usbPrintingAvailable, type PrintJob, type UsbPrinter } from "../../lib/receipt-printer";
 
 /**
@@ -91,6 +92,10 @@ export default function PluginAppFrame({
   const mayNfc = devices.includes("nfc");
   const mayStore = devices.includes("storage");
   const mayPrint = devices.includes("printer");
+  const mayTalk = devices.includes("speech");
+  // Speech (listening, text-to-speech, audio) runs on this page; the screen gets the recognised text only.
+  const [hearing, setHearing] = useState<string | null>(null);
+  const speech = useMemo(() => createSpeechHost((text) => setHearing((now) => (now === null ? null : text))), []);
   // a receipt waiting for the person to choose the USB printer (the browser's chooser needs a click)
   const [printPrompt, setPrintPrompt] = useState<{ id: string; job: PrintJob | null } | null>(null);
   // The face station: open while the screen asked for it (its texts come from the plugin as plain strings).
@@ -227,6 +232,17 @@ export default function PluginAppFrame({
         void printOn(printer, message.id, job);
         return;
       }
+      if (message.type === "speech-stop") { speech.stop(); setHearing(null); return; }
+      if (message.type === "speech-listen" || message.type === "speech-speak" || message.type === "speech-play" || message.type === "speech-status") {
+        if (!mayTalk) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared the speech device." } }); return; }
+        if (message.type === "speech-status") { send({ type: "response", id: message.id, status: 200, body: speechAvailable() }); return; }
+        if (message.type === "speech-listen") setHearing("");
+        const outcome = message.type === "speech-listen" ? await speech.listen(message)
+          : message.type === "speech-speak" ? await speech.speak(message) : await speech.play(message.audio);
+        if (message.type === "speech-listen") setHearing(null);
+        send({ type: "response", id: message.id, status: outcome.status, body: outcome.body });
+        return;
+      }
       if (message.type === "storage") {
         if (!mayStore) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared storage." } }); return; }
         let storage: Storage | null = null;
@@ -260,7 +276,7 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, apiKey, deviceKey, mayPrint, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+  }, [allow, apiKey, deviceKey, mayPrint, mayTalk, speech, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
 
   // A receipt (or a drawer pulse when job is null) to the USB printer; the screen gets the outcome.
   const printOn = useCallback(async (printer: UsbPrinter, id: string, job: PrintJob | null) => {
@@ -275,6 +291,8 @@ export default function PluginAppFrame({
 
   // NFC stops when the screen goes away.
   useEffect(() => () => { nfcAbort.current?.abort(); }, []);
+  // Listening, speaking and audio stop when the screen goes away.
+  useEffect(() => () => { speech.stop(); }, [speech]);
 
   useEffect(() => {
     if (!scanning || !station) return;
@@ -362,6 +380,12 @@ export default function PluginAppFrame({
             }}>Choose printer</button>
             <button type="button" className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm" onClick={() => { const waiting = printPrompt; setPrintPrompt(null); send({ type: "response", id: waiting.id, status: 409, body: { message: "No printer was chosen." } }); }}>Cancel</button>
           </div>
+        </div>
+      )}
+      {hearing !== null && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-700 p-3 text-white" data-plugin-speech role="status" aria-live="polite">
+          <p className="min-w-0 text-sm font-semibold">🎤 Listening… <span className="font-normal text-rose-100">{hearing || "speak now"}</span></p>
+          <button type="button" onClick={() => speech.stop()} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900">Stop</button>
         </div>
       )}
       {nfcOn && (
