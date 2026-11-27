@@ -5,8 +5,10 @@ import path from 'node:path';
 // Academic Management's own Session Time Settings screen (ui/sessions, plugin >= 0.3.7) rendered
 // from the real plugin files inside the core's sandboxed frame, talking through the bridge.
 const pluginId = 'wattanam.academic-management';
+// Since Academic Management 0.35.0 the screen is Smart Attendance's: a partner screen calling this plugin's API.
+const screenPluginId = 'wattanam.smart-attendance';
 const catalog = process.env.PLUGIN_SOURCE_CATALOG;
-const root = catalog ? path.resolve(catalog, pluginId) : '';
+const root = catalog ? path.resolve(catalog, screenPluginId) : '';
 const descriptorPath = root ? path.join(root, 'frontend/page.json') : '';
 const descriptor = descriptorPath && fs.existsSync(descriptorPath) ? JSON.parse(fs.readFileSync(descriptorPath, 'utf8')) : { pages: [] };
 const settingsPage = descriptor.pages.find((page: any) => (page.components || []).some((component: any) => component.type === 'app' && component.options?.entry === 'ui/sessions/index.html'));
@@ -17,12 +19,12 @@ const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.j
 
 appTest('Academic Management session settings run as the plugin\'s own sandboxed screen', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'tablet', 'phone and desktop cover the layout');
-  const pages = descriptor.pages.map((entry: any) => ({ pluginId, pluginVersion: version, schemaVersion: 2, kind: 'declarative-ui', ...entry }));
+  const pages = descriptor.pages.map((entry: any) => ({ pluginId: screenPluginId, pluginVersion: version, schemaVersion: 2, kind: 'declarative-ui', ...entry }));
   const saved: Array<{ method: string; path: string; body: any }> = [];
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
-    const prefix = `/api/plugin-ui/${pluginId}/${version}/`;
+    const prefix = `/api/plugin-ui/${screenPluginId}/${version}/`;
     if (pathname.startsWith(prefix)) {
       const file = path.join(root, ...pathname.slice(prefix.length).split('/'));
       if (!file.startsWith(path.join(root, 'ui')) || !fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
@@ -40,7 +42,7 @@ appTest('Academic Management session settings run as the plugin\'s own sandboxed
     return route.fulfill({ status: 200, json: [] });
   });
 
-  await page.goto(`/plugins/${pluginId}/${settingsPage.routePath}`);
+  await page.goto(`/plugins/${screenPluginId}/${settingsPage.routePath}`);
   const frame = page.frameLocator('iframe[title="Session Time Settings"]');
   await expect(frame.getByRole('heading', { name: 'Session Time Settings' })).toBeVisible({ timeout: 15_000 });
   // Values loaded through the bridge from the plugin's own API.

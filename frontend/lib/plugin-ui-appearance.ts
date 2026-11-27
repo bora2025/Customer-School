@@ -4,7 +4,7 @@
 // names from strings (`bg-${tone}-50`) here, or the class silently disappears from the CSS.
 
 export type PluginUiTone = 'neutral' | 'brand' | 'info' | 'success' | 'warning' | 'danger';
-export type PluginUiPageAppearance = { theme?: 'standard' | 'company'; layout?: 'stack' | 'grid'; accent?: PluginUiTone };
+export type PluginUiPageAppearance = { theme?: 'standard' | 'company'; layout?: 'stack' | 'grid'; accent?: PluginUiTone; screen?: 'kiosk' };
 export type PluginUiComponentAppearance = { width?: 'full' | 'half' | 'third' | 'two-thirds'; tone?: PluginUiTone; surface?: 'default' | 'plain' | 'card' | 'tinted' };
 
 const ACCENT_BAR: Record<PluginUiTone, string> = {

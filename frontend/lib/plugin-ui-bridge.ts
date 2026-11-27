@@ -3,11 +3,15 @@
 // A plugin-owned screen runs in <iframe sandbox="allow-scripts ..."> (opaque origin, no cookies, no
 // network: its CSP has connect-src 'none'). It asks the host page for everything through postMessage.
 // This module holds the pure validation so it can be reasoned about and tested on its own:
-//   - requests may only target the plugin's OWN API (/api/plugin-api/<pluginId>/<path>);
+//   - requests target the plugin's OWN API (/api/plugin-api/<pluginId>/<path>), or a partner plugin the
+//     screen declared (options.apis) whose route lists the plugin as a caller;
 //   - paths are plain relative segments (no "..", no scheme, no other plugin);
 //   - only JSON bodies up to 256 KiB, a fixed method set, and a rate limit per frame.
 // The plugin's API still authorizes every call with the signed-in user's permissions, so the bridge
 // never grants more than the plugin's own routes already allow for this user.
+
+import { parsePrintJob, type PrintJob } from './receipt-printer';
+import { parseSpeechAudio, parseSpeechListen, parseSpeechSpeak, type SpeechListen, type SpeechSpeak } from './plugin-speech';
 
 export const PLUGIN_UI_PROTOCOL = 'wattanam.plugin-ui/1';
 export const PLUGIN_UI_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
@@ -23,30 +27,42 @@ export const PLUGIN_UI_MAX_REQUESTS_PER_SECOND = 20;
  * `face`: the school page runs the camera and a face model and returns face VECTORS (128 numbers per
  * capture) and quality / liveness scores — never an image. `nfc`: Web NFC card serial numbers (Chrome
  * on Android). `storage`: small JSON values kept on this device under a per-plugin key.
+ * `printer`: receipts sent as plain lines, printed by the school page on a USB thermal printer
+ * (lib/receipt-printer.ts), and the cash drawer.
+ * `speech`: the school page listens (speech recognition) and returns only the recognised text, reads text
+ * aloud, and plays audio data the screen sends (lib/plugin-speech.ts); the screen never gets the microphone.
  */
-export const PLUGIN_UI_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage'] as const;
+export const PLUGIN_UI_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage', 'printer', 'speech'] as const;
 export const PLUGIN_UI_STORAGE_MAX_VALUE_BYTES = 256 * 1024;
 export const PLUGIN_UI_STORAGE_MAX_TOTAL_BYTES = 1024 * 1024;
 export type PluginUiDevice = (typeof PLUGIN_UI_DEVICES)[number];
 export const PLUGIN_UI_MAX_SCAN_TEXT = 2000;
 
-export type PluginUiRequest = { type: 'request'; id: string; method: (typeof PLUGIN_UI_METHODS)[number]; path: string; query?: Record<string, string>; body?: unknown };
+export type PluginUiRequest = { type: 'request'; id: string; method: (typeof PLUGIN_UI_METHODS)[number]; path: string; query?: Record<string, string>; body?: unknown; plugin?: string };
 export type PluginUiMessage =
   | { type: 'ready' }
   | PluginUiRequest
   | { type: 'resize'; height: number }
-  | { type: 'navigate'; routePath: string; query?: Record<string, string> }
+  | { type: 'navigate'; routePath: string; query?: Record<string, string>; plugin?: string }
   | { type: 'scan-start'; layout?: 'panel' | 'station'; title?: string }
   | { type: 'scan-feedback'; tone: PluginUiTone; message: string }
   | { type: 'scan-activity'; title?: string; items: PluginUiActivity[] }
   | { type: 'scan-stop' }
   | { type: 'location'; id: string }
-  | { type: 'device-id'; id: string }
-  | { type: 'face-start'; mode: 'identify' | 'enroll'; title?: string; liveness: boolean; samples: number }
+  | { type: 'device-id'; id: string; plugin?: string }
+  | { type: 'face-start'; mode: 'identify' | 'enroll'; title?: string; liveness: boolean; samples: number; codes: boolean; faces: boolean }
   | { type: 'face-stop' }
   | { type: 'nfc-start' }
   | { type: 'nfc-stop' }
-  | { type: 'storage'; id: string; op: 'get' | 'set' | 'remove' | 'keys'; key?: string; value?: unknown };
+  | { type: 'storage'; id: string; op: 'get' | 'set' | 'remove' | 'keys'; key?: string; value?: unknown }
+  | { type: 'printer-print'; id: string; job: PrintJob }
+  | { type: 'printer-drawer'; id: string }
+  | { type: 'printer-status'; id: string }
+  | ({ type: 'speech-listen'; id: string } & SpeechListen)
+  | ({ type: 'speech-speak'; id: string } & SpeechSpeak)
+  | { type: 'speech-play'; id: string; audio: string }
+  | { type: 'speech-status'; id: string }
+  | { type: 'speech-stop' };
 
 export type PluginUiTone = 'info' | 'success' | 'warning' | 'error';
 export type PluginUiActivity = { title: string; detail?: string; tone: PluginUiTone; initials?: string };
@@ -59,6 +75,9 @@ export function pluginUiDevices(value: unknown): PluginUiDevice[] {
 }
 
 const SEGMENT = /^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+$/;
+const PLUGIN_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+/** A partner plugin id named by the screen, or undefined; null when malformed. */
+const partnerOf = (value: unknown): string | null | undefined => value === undefined ? undefined : typeof value === 'string' && value.length <= 120 && PLUGIN_ID.test(value) ? value : null;
 const ROUTE_SEGMENT = /^[a-z0-9][a-z0-9_-]*$/;
 
 /** Plugin-relative API path such as "classes/42/students"; null when unsafe. */
@@ -100,9 +119,12 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
   if (message.type === 'navigate') {
     const routePath = typeof message.routePath === 'string' ? message.routePath : '';
     if (routePath.length > 200 || !routePath.split('/').every((segment) => ROUTE_SEGMENT.test(segment))) return null;
-    if (message.query === undefined) return { type: 'navigate', routePath };
+    const plugin = partnerOf(message.plugin);
+    if (plugin === null) return null;
+    const target = plugin ? { plugin } : {};
+    if (message.query === undefined) return { type: 'navigate', routePath, ...target };
     const query = safePluginUiQuery(message.query);
-    return query ? { type: 'navigate', routePath, query } : null;
+    return query ? { type: 'navigate', routePath, query, ...target } : null;
   }
   if (message.type === 'scan-start') {
     const title = plain(message.title, 80);
@@ -126,16 +148,40 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
     return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'location', id: message.id } : null;
   }
   if (message.type === 'device-id') {
-    return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'device-id', id: message.id } : null;
+    // plugin: a partner's identifier for this browser (a screen that moved from that plugin keeps its devices)
+    const plugin = partnerOf(message.plugin);
+    if (plugin === null) return null;
+    return typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? { type: 'device-id', id: message.id, ...(plugin ? { plugin } : {}) } : null;
   }
   if (message.type === 'face-start') {
     const title = plain(message.title, 80);
     const samples = Math.min(5, Math.max(1, Math.round(Number(message.samples) || 3)));
-    return { type: 'face-start', mode: message.mode === 'enroll' ? 'enroll' : 'identify', liveness: message.liveness !== false, samples, ...(title ? { title } : {}) };
+    // codes: also read QR codes from the same camera and USB readers (an automatic station; needs "scanner");
+    // faces: false for a station that reads codes only. Enrolment always reads faces only.
+    const enroll = message.mode === 'enroll';
+    const codes = !enroll && message.codes === true;
+    return { type: 'face-start', mode: enroll ? 'enroll' : 'identify', liveness: message.liveness !== false, samples, codes, faces: enroll || !codes || message.faces !== false, ...(title ? { title } : {}) };
   }
   if (message.type === 'face-stop') return { type: 'face-stop' };
   if (message.type === 'nfc-start') return { type: 'nfc-start' };
   if (message.type === 'nfc-stop') return { type: 'nfc-stop' };
+  if (message.type === 'printer-print' || message.type === 'printer-drawer' || message.type === 'printer-status') {
+    const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
+    if (!id) return null;
+    if (message.type !== 'printer-print') return { type: message.type, id };
+    const job = parsePrintJob(message.job);
+    return job ? { type: 'printer-print', id, job } : null;
+  }
+  if (message.type === 'speech-stop') return { type: 'speech-stop' };
+  if (message.type === 'speech-listen' || message.type === 'speech-speak' || message.type === 'speech-play' || message.type === 'speech-status') {
+    const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
+    if (!id) return null;
+    if (message.type === 'speech-status') return { type: 'speech-status', id };
+    if (message.type === 'speech-listen') return { type: 'speech-listen', id, ...parseSpeechListen(message) };
+    if (message.type === 'speech-speak') { const speak = parseSpeechSpeak(message); return speak ? { type: 'speech-speak', id, ...speak } : null; }
+    const audio = parseSpeechAudio(message.audio);
+    return audio ? { type: 'speech-play', id, audio } : null;
+  }
   if (message.type === 'storage') {
     const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
     const op = ['get', 'set', 'remove', 'keys'].includes(message.op as string) ? (message.op as 'get' | 'set' | 'remove' | 'keys') : null;
@@ -153,7 +199,8 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
     const id = typeof message.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(message.id) ? message.id : null;
     const method = String(message.method || 'GET').toUpperCase() as PluginUiRequest['method'];
     const path = safePluginApiPath(message.path);
-    if (!id || !path || !PLUGIN_UI_METHODS.includes(method)) return null;
+    const plugin = partnerOf(message.plugin);
+    if (!id || !path || !PLUGIN_UI_METHODS.includes(method) || plugin === null) return null;
     let query: Record<string, string> | undefined;
     if (message.query !== undefined) {
       const safe = safePluginUiQuery(message.query);
@@ -161,7 +208,7 @@ export function parsePluginUiMessage(data: unknown): PluginUiMessage | null {
       query = safe;
     }
     if (message.body !== undefined && (method === 'GET' || new TextEncoder().encode(JSON.stringify(message.body)).length > PLUGIN_UI_MAX_BODY_BYTES)) return null;
-    return { type: 'request', id, method, path, ...(query ? { query } : {}), ...(message.body !== undefined ? { body: message.body } : {}) };
+    return { type: 'request', id, method, path, ...(query ? { query } : {}), ...(message.body !== undefined ? { body: message.body } : {}), ...(plugin ? { plugin } : {}) };
   }
   return null;
 }

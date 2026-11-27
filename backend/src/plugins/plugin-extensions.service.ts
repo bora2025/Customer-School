@@ -37,6 +37,7 @@ export interface PluginDashboardWidget {
   updatedAt?: string;
 }
 const DASHBOARD_TONES: PluginDashboardTone[] = ['neutral', 'good', 'warn', 'bad', 'info'];
+const PLUGIN_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
 @Injectable()
 export class PluginExtensionsService {
@@ -62,6 +63,8 @@ export class PluginExtensionsService {
     if (!declaredPermissions.has(definition.permission)) throw new BadRequestException('Plugin route permission is not declared in the manifest');
     if (typeof definition.handler !== 'function') throw new BadRequestException('Plugin route handler is required');
     if (definition.access !== undefined && definition.access !== 'user' && definition.access !== 'device') throw new BadRequestException('Plugin route access must be user or device');
+    if (definition.callers !== undefined && (!Array.isArray(definition.callers) || definition.callers.length > 10
+      || definition.callers.some((caller) => typeof caller !== 'string' || !PLUGIN_ID.test(caller) || caller === pluginId))) throw new BadRequestException('Plugin route callers must be other plugin ids');
     if (definition.contract) {
       if (!/^\d+\.\d+$/.test(definition.contract.version) || !definition.contract.response?.parse || !definition.contract.errors || Object.entries(definition.contract.errors).some(([code, value]) => !/^[A-Z][A-Z0-9_]{2,63}$/.test(code) || !Number.isInteger(value.status) || value.status < 400 || value.status > 599 || !value.message?.trim() || (value.detail !== undefined && typeof value.detail !== 'boolean'))) throw new BadRequestException('Plugin route contract is invalid');
     }
@@ -76,7 +79,11 @@ export class PluginExtensionsService {
     return () => this.routes.delete(key);
   }
 
-  async dispatch(pluginId: string, request: PluginRouteRequest) {
+  /**
+   * `screenPluginId`: the plugin whose screen made the call (set by the school page's bridge). A
+   * screen of another plugin reaches only the routes that list it in `callers`.
+   */
+  async dispatch(pluginId: string, request: PluginRouteRequest, screenPluginId?: string) {
     this.quota?.consume(pluginId, 'request');
     if (!request.path || request.path.length > 240 || request.path.includes('//') || request.path.split('/').some((segment) => !/^[a-zA-Z0-9._~-]{1,160}$/.test(segment) || segment === '..')) throw new NotFoundException('Plugin route not found');
     let definition = this.routes.get(`${pluginId}:${request.method}:${request.path}`);
@@ -96,6 +103,7 @@ export class PluginExtensionsService {
       }
     }
     if (!definition) throw new NotFoundException('Plugin route not found');
+    if (screenPluginId && screenPluginId !== pluginId && !(definition.callers || []).includes(screenPluginId)) throw new NotFoundException('Plugin route not found');
     request = { ...request, params };
     if (definition.contract?.request) {
       try {
@@ -187,11 +195,11 @@ export class PluginExtensionsService {
     return () => keys.forEach((key) => this.navigation.delete(key));
   }
 
-  registerPage(pluginId: string, value: unknown, declaredPermissions = new Set<string>(), pluginVersion?: string) {
+  registerPage(pluginId: string, value: unknown, declaredPermissions = new Set<string>(), pluginVersion?: string, partners?: Set<string>) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('Plugin frontend entry must be an object');
     const page = value as Record<string, unknown>;
     if (page.schemaVersion === 2) {
-      const bundle = parsePluginUiBundle(value, pluginId, declaredPermissions);
+      const bundle = parsePluginUiBundle(value, pluginId, declaredPermissions, partners);
       const keys: string[] = [];
       for (const descriptor of bundle.pages) {
         const key = `${pluginId}:${descriptor.id}`;

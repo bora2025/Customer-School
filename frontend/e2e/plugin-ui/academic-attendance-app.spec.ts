@@ -7,11 +7,13 @@ import path from 'node:path';
 // the real plugin files inside the core's sandboxed frame. The camera is run by the school page;
 // the screen receives decoded codes through the bridge.
 const pluginId = 'wattanam.academic-management';
+// Since Academic Management 0.35.0 the screen is Smart Attendance's: a partner screen calling this plugin's API.
+const screenPluginId = 'wattanam.smart-attendance';
 const catalog = process.env.PLUGIN_SOURCE_CATALOG;
-const root = catalog ? path.resolve(catalog, pluginId) : '';
+const root = catalog ? path.resolve(catalog, screenPluginId) : '';
 const descriptorPath = root ? path.join(root, 'frontend/page.json') : '';
 const descriptor = descriptorPath && fs.existsSync(descriptorPath) ? JSON.parse(fs.readFileSync(descriptorPath, 'utf8')) : { pages: [] };
-const attendancePage = descriptor.pages.find((page: any) => (page.components || []).some((component: any) => component.type === 'app' && component.options?.entry === 'ui/attendance/index.html'));
+const attendancePage = descriptor.pages.find((page: any) => (page.components || []).some((component: any) => component.type === 'app' && component.options?.entry === 'ui/take/index.html'));
 const version = root && fs.existsSync(path.join(root, 'plugin.json')) ? JSON.parse(fs.readFileSync(path.join(root, 'plugin.json'), 'utf8')).version : '0.0.0';
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-modals allow-downloads";
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
@@ -37,7 +39,7 @@ const CODE = 'wattanam:student:s2-91bc';
     };
   }, cells);
 
-  const pages = descriptor.pages.map((entry: any) => ({ pluginId, pluginVersion: version, schemaVersion: 2, kind: 'declarative-ui', ...entry }));
+  const pages = descriptor.pages.map((entry: any) => ({ pluginId: screenPluginId, pluginVersion: version, schemaVersion: 2, kind: 'declarative-ui', ...entry }));
   const everyDay = JSON.stringify({ week: ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] });
   const classes = [{ id: 'c1', name: 'Grade 6B', schedule: everyDay }, { id: 'c2', name: 'Grade 7A', subject: 'Science', schedule: everyDay }];
   // One session open all day, so the test does not depend on the clock.
@@ -50,7 +52,7 @@ const CODE = 'wattanam:student:s2-91bc';
     const request = route.request();
     const url = new URL(request.url());
     const pathname = url.pathname;
-    const prefix = `/api/plugin-ui/${pluginId}/${version}/`;
+    const prefix = `/api/plugin-ui/${screenPluginId}/${version}/`;
     if (pathname.startsWith(prefix)) {
       const file = path.join(root, ...pathname.slice(prefix.length).split('/'));
       if (!file.startsWith(path.join(root, 'ui')) || !fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
@@ -83,7 +85,7 @@ const CODE = 'wattanam:student:s2-91bc';
   });
 
   // Opened for a specific class, as the Class Manager does.
-  await page.goto(`/plugins/${pluginId}/${attendancePage.routePath}?classId=c2`);
+  await page.goto(`/plugins/${screenPluginId}/${attendancePage.routePath}?classId=c2`);
   const frame = page.frameLocator('iframe[title="Take Student Attendance"]');
   await expect(frame.getByRole('heading', { name: 'Take Attendance' })).toBeVisible({ timeout: 15_000 });
   await expect(frame.locator('#class')).toHaveValue('c2');
