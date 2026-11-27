@@ -11,6 +11,10 @@ import type { PluginUiActivity, PluginUiTone } from "../../lib/plugin-ui-bridge"
  *             random order (turn the head to the side shown, and blink), then the vector goes to the plugin.
  *   enroll:   `samples` vectors taken a moment apart, then the liveness steps, then all of them at once.
  * A printed photo cannot turn or blink; a recorded video would have to do both, in the order asked.
+ *
+ * Automatic station (`codes`): the same camera also reads QR codes (ID cards), and USB readers in keyboard
+ * mode (QR scanners, NFC card readers) are caught while the station is open, so whatever a student shows is
+ * recorded with no button to press. `faces: false` reads codes only. Codes go to the screen as text.
  */
 export type FaceResult = {
   mode: "identify" | "enroll";
@@ -25,6 +29,9 @@ type Props = {
   mode: "identify" | "enroll";
   liveness: boolean;
   samples: number;
+  codes?: boolean;
+  faces?: boolean;
+  onCode?: (text: string, source: "CAMERA" | "USB") => void;
   feedback: { tone: PluginUiTone; message: string } | null;
   activity: { title: string; items: PluginUiActivity[] };
   onResult: (result: FaceResult) => void;
@@ -32,15 +39,62 @@ type Props = {
   onClose: () => void;
 };
 
-export default function PluginFaceStation({ title, mode, liveness, samples, feedback, activity, onResult, onError, onClose }: Props) {
+// A QR code read from one video frame (ZXing on a downscaled copy), or null.
+type CodeReader = (source: HTMLVideoElement) => string | null;
+async function codeReader(): Promise<CodeReader> {
+  const zxing = await import("@zxing/library");
+  const reader = new zxing.MultiFormatReader();
+  reader.setHints(new Map<any, any>([[zxing.DecodeHintType.POSSIBLE_FORMATS, [zxing.BarcodeFormat.QR_CODE]]]));
+  const canvas = document.createElement("canvas");
+  return (source) => {
+    const width = Math.min(640, source.videoWidth || 0), height = Math.round((source.videoHeight || 0) * (width / Math.max(1, source.videoWidth || 1)));
+    if (!width || !height) return null;
+    canvas.width = width; canvas.height = height;
+    canvas.getContext("2d", { willReadFrequently: true })!.drawImage(source, 0, 0, width, height);
+    try {
+      return reader.decodeWithState(new zxing.BinaryBitmap(new zxing.HybridBinarizer(new zxing.HTMLCanvasElementLuminanceSource(canvas)))).getText();
+    } catch { return null; } finally { reader.reset(); }
+  };
+}
+const MAX_CODE = 1000;
+
+export default function PluginFaceStation({ title, mode, liveness, samples, codes = false, faces = true, onCode, feedback, activity, onResult, onError, onClose }: Props) {
   const video = useRef<HTMLVideoElement>(null);
   const [hint, setHint] = useState("Starting camera…");
   const [tone, setTone] = useState<PluginUiTone>("info");
   const [arrow, setArrow] = useState<"left" | "right" | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [clock, setClock] = useState(() => new Date());
-  const callbacks = useRef({ onResult, onError });
-  callbacks.current = { onResult, onError };
+  const callbacks = useRef({ onResult, onError, onCode });
+  callbacks.current = { onResult, onError, onCode };
+  // the last code sent, so a card held in front of the camera is sent once, not every frame
+  const lastCode = useRef({ text: "", at: 0 });
+  const sendCode = (text: string, source: "CAMERA" | "USB") => {
+    const clean = text.replace(/[\u0000-\u001f]/g, "").trim().slice(0, MAX_CODE);
+    if (!clean || (clean === lastCode.current.text && Date.now() - lastCode.current.at < 5000)) return false;
+    lastCode.current = { text: clean, at: Date.now() };
+    setShowFeedback(false);
+    callbacks.current.onCode?.(clean, source);
+    return true;
+  };
+  const sendCodeRef = useRef(sendCode);
+  sendCodeRef.current = sendCode;
+
+  // USB readers (QR scanners, NFC card readers in keyboard mode) type fast and end with Enter; a person
+  // typing slowly is ignored. Only while an automatic station is open (it covers the screen's own input).
+  useEffect(() => {
+    if (!codes) return;
+    let buffer = "", last = 0;
+    const onKey = (event: KeyboardEvent) => {
+      const now = Date.now();
+      if (now - last > 100) buffer = "";
+      last = now;
+      if (event.key === "Enter") { if (buffer.length >= 4) sendCodeRef.current(buffer, "USB"); buffer = ""; event.preventDefault(); return; }
+      if (event.key.length === 1 && buffer.length < MAX_CODE) buffer += event.key;
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [codes]);
 
   // the plugin's answer (who it is, recorded or not) replaces the hint for a moment
   useEffect(() => { if (feedback) setShowFeedback(true); }, [feedback]);
@@ -60,10 +114,18 @@ export default function PluginFaceStation({ title, mode, liveness, samples, feed
       const element = video.current!;
       element.srcObject = stream;
       await element.play().catch(() => undefined);
-      say("Loading face recognition…");
-      let faceapi;
-      try { faceapi = await loadFaceEngine(); }
-      catch { callbacks.current.onError("Face recognition could not load on this device."); return; }
+      let readCode: CodeReader | null = null;
+      if (codes) {
+        try { readCode = await codeReader(); }
+        catch { callbacks.current.onError("The QR code reader could not load on this device."); return; }
+      }
+      let faceapi: Awaited<ReturnType<typeof loadFaceEngine>> | null = null;
+      if (faces) {
+        say("Loading face recognition…");
+        try { faceapi = await loadFaceEngine(); }
+        catch { callbacks.current.onError("Face recognition could not load on this device."); return; }
+      }
+      const invite = codes ? (faces ? "Show your face, QR code or card · បង្ហាញមុខ ឬកាត" : "Show your QR code or card · បង្ហាញកាត") : null;
 
       let step: "look" | "check" | "pause" | "done" = "look";
       let frames: number[][] = [];
@@ -90,12 +152,18 @@ export default function PluginFaceStation({ title, mode, liveness, samples, feed
         if (stopped) return;
         try {
           if (step === "pause" && Date.now() >= pauseUntil) { step = "look"; setShowFeedback(false); }
-          if (step === "look" || step === "check") {
+          // an ID card's QR code, while nobody is half-way through the face steps
+          if (readCode && step === "look") {
+            const text = readCode(element);
+            if (text && sendCodeRef.current(text, "CAMERA")) { frames = []; step = "pause"; pauseUntil = Date.now() + 2500; }
+            if (!faceapi) { say(invite!); }
+          }
+          if (faceapi && (step === "look" || step === "check")) {
             const r = await readFace(faceapi, element);
             if (stopped) return;
             quality = { score: Math.round(r.score * 100) / 100, size: Math.round(r.size * 100) / 100 };
             if (step === "look") {
-              if (!r.count) { frames = []; say(mode === "enroll" ? "Look at the camera" : "Look at the camera · សូមមើលកាមេរ៉ា"); }
+              if (!r.count) { frames = []; say(invite || (mode === "enroll" ? "Look at the camera" : "Look at the camera · សូមមើលកាមេរ៉ា")); }
               else if (r.count > 1) { frames = []; say("One person at a time", "warning"); }
               else if (r.score < FACE_RULES.minScore || r.size < FACE_RULES.minSize) { frames = []; say("Come a little closer", "warning"); }
               else if (Math.abs(r.yaw) > FACE_RULES.frontal) { frames = []; say("Look straight at the camera", "warning"); }
@@ -131,11 +199,11 @@ export default function PluginFaceStation({ title, mode, liveness, samples, feed
         } catch { /* one bad frame: try the next */ }
         if (!stopped) timer = setTimeout(tick, 120);
       };
-      say("Look at the camera");
+      say(invite || "Look at the camera");
       tick();
     })();
     return () => { stopped = true; if (timer) clearTimeout(timer); stream?.getTracks().forEach((t) => t.stop()); };
-  }, [mode, liveness, samples]);
+  }, [mode, liveness, samples, codes, faces]);
 
   const toneClass = (value: PluginUiTone) => value === "success" ? "bg-emerald-600 text-white" : value === "error" ? "bg-rose-700 text-white" : value === "warning" ? "bg-amber-500 text-slate-950" : "bg-sky-700 text-white";
   const markClass = (value: PluginUiTone) => value === "success" ? "bg-emerald-600" : value === "error" ? "bg-rose-700" : value === "warning" ? "bg-amber-500 text-slate-950" : "bg-sky-700";
@@ -145,15 +213,15 @@ export default function PluginFaceStation({ title, mode, liveness, samples, feed
       <header className="flex items-center gap-5 border-b border-slate-700 bg-slate-800 px-5 py-4">
         <button type="button" onClick={onClose} className="font-bold">‹ Back</button>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate font-extrabold">🙂 {title}</h2>
-          <p className="text-xs text-slate-400">The picture stays on this device; only a face code is sent.</p>
+          <h2 className="truncate font-extrabold">{codes ? "⚡" : "🙂"} {title}</h2>
+          <p className="text-xs text-slate-400">{codes ? `Automatic: ${faces ? "face, " : ""}QR code and card readers · ` : ""}The picture stays on this device{faces ? "; only a face code is sent" : ""}.</p>
         </div>
         <strong className="font-mono text-xl">{clock.toLocaleTimeString()}</strong>
       </header>
       <div className="flex min-h-0 flex-1">
         <main className="relative flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden">
           <video ref={video} className="absolute inset-0 h-full w-full object-cover" style={{ transform: "scaleX(-1)" }} muted playsInline />
-          <div className={`pointer-events-none relative h-80 w-60 rounded-[50%] border-4 shadow-[0_0_0_9999px_rgba(0,0,0,.55)] ${arrow ? "border-amber-400" : "border-emerald-400"}`} />
+          <div className={`pointer-events-none relative h-80 ${faces ? "w-60 rounded-[50%]" : "w-80 rounded-3xl"} border-4 shadow-[0_0_0_9999px_rgba(0,0,0,.55)] ${arrow ? "border-amber-400" : "border-emerald-400"}`} />
           {arrow && <div className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-8xl font-black text-amber-300" style={arrow === "left" ? { left: "8%" } : { right: "8%" }} aria-hidden>{arrow === "left" ? "←" : "→"}</div>}
           <p className={`relative mt-6 max-w-[90%] rounded-full px-6 py-3 text-center text-lg font-bold shadow-lg ${toneClass(bubble.tone)}`} role="status" aria-live="polite" data-face-hint>{bubble.message}</p>
         </main>

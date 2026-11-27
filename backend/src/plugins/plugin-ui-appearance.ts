@@ -12,6 +12,8 @@ const PAGE_APPEARANCE = {
   theme: ['standard', 'company'],
   layout: ['stack', 'grid'],
   accent: PLUGIN_UI_TONES,
+  // kiosk: the page can be shown alone on a screen (customer display, kitchen display): "Show on a screen"
+  screen: ['kiosk'],
 } as const;
 
 const COMPONENT_APPEARANCE = {
@@ -20,7 +22,7 @@ const COMPONENT_APPEARANCE = {
   surface: ['default', 'plain', 'card', 'tinted'],
 } as const;
 
-export type PluginUiPageAppearance = { theme?: 'standard' | 'company'; layout?: 'stack' | 'grid'; accent?: PluginUiTone };
+export type PluginUiPageAppearance = { theme?: 'standard' | 'company'; layout?: 'stack' | 'grid'; accent?: PluginUiTone; screen?: 'kiosk' };
 export type PluginUiComponentAppearance = { width?: 'full' | 'half' | 'third' | 'two-thirds'; tone?: PluginUiTone; surface?: 'default' | 'plain' | 'card' | 'tinted' };
 
 function parse<T>(value: unknown, vocabulary: Record<string, readonly string[]>, label: string): T | undefined {

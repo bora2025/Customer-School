@@ -17,6 +17,8 @@ import {
   type PluginUiTone,
 } from "../../lib/plugin-ui-bridge";
 import PluginFaceStation, { type FaceResult } from "./PluginFaceStation";
+import { createSpeechHost, speechAvailable } from "../../lib/plugin-speech";
+import { choosePrinter, DRAWER_PULSE, encodeEscPos, rememberedPrinter, renderReceipt, sendToPrinter, usbPrintingAvailable, type PrintJob, type UsbPrinter } from "../../lib/receipt-printer";
 
 /**
  * A plugin-owned screen (`app` component). The plugin's signed ui/ document runs in a sandboxed
@@ -89,8 +91,15 @@ export default function PluginAppFrame({
   const mayFace = devices.includes("face");
   const mayNfc = devices.includes("nfc");
   const mayStore = devices.includes("storage");
+  const mayPrint = devices.includes("printer");
+  const mayTalk = devices.includes("speech");
+  // Speech (listening, text-to-speech, audio) runs on this page; the screen gets the recognised text only.
+  const [hearing, setHearing] = useState<string | null>(null);
+  const speech = useMemo(() => createSpeechHost((text) => setHearing((now) => (now === null ? null : text))), []);
+  // a receipt waiting for the person to choose the USB printer (the browser's chooser needs a click)
+  const [printPrompt, setPrintPrompt] = useState<{ id: string; job: PrintJob | null } | null>(null);
   // The face station: open while the screen asked for it (its texts come from the plugin as plain strings).
-  const [face, setFace] = useState<{ mode: "identify" | "enroll"; title: string; liveness: boolean; samples: number } | null>(null);
+  const [face, setFace] = useState<{ mode: "identify" | "enroll"; title: string; liveness: boolean; samples: number; codes: boolean; faces: boolean } | null>(null);
   // Web NFC (Chrome on Android): reading while on; the serial number of each card goes to the screen.
   const [nfcOn, setNfcOn] = useState(false);
   const nfcAbort = useRef<AbortController | null>(null);
@@ -176,9 +185,10 @@ export default function PluginAppFrame({
       }
       if (message.type === "face-start") {
         if (!mayFace) { send({ type: "face-error", message: "This screen has not declared the face device." }); return; }
+        if (message.codes && !mayScan) { send({ type: "face-error", message: "This screen has not declared the scanner." }); return; }
         setFeedback(null);
         setActivity({ title: "Today", items: [] });
-        setFace({ mode: message.mode, title: message.title || (message.mode === "enroll" ? "Face enrolment" : "Face attendance"), liveness: message.liveness, samples: message.samples });
+        setFace({ mode: message.mode, title: message.title || (message.mode === "enroll" ? "Face enrolment" : "Face attendance"), liveness: message.liveness, samples: message.samples, codes: message.codes, faces: message.faces });
         return;
       }
       if (message.type === "face-stop") {
@@ -210,6 +220,27 @@ export default function PluginAppFrame({
       if (message.type === "nfc-stop") {
         stopNfc();
         send({ type: "nfc-closed" });
+        return;
+      }
+      if (message.type === "printer-print" || message.type === "printer-drawer" || message.type === "printer-status") {
+        if (!mayPrint) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared the printer." } }); return; }
+        if (!usbPrintingAvailable()) { send({ type: "response", id: message.id, status: 501, body: { message: "This browser cannot reach USB printers (use Chrome or Edge)." } }); return; }
+        const printer = await rememberedPrinter().catch(() => null);
+        if (message.type === "printer-status") { send({ type: "response", id: message.id, status: 200, body: { available: true, connected: Boolean(printer), name: printer?.productName || "" } }); return; }
+        const job = message.type === "printer-print" ? message.job : null;
+        if (!printer) { setPrintPrompt({ id: message.id, job }); return; }
+        void printOn(printer, message.id, job);
+        return;
+      }
+      if (message.type === "speech-stop") { speech.stop(); setHearing(null); return; }
+      if (message.type === "speech-listen" || message.type === "speech-speak" || message.type === "speech-play" || message.type === "speech-status") {
+        if (!mayTalk) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared the speech device." } }); return; }
+        if (message.type === "speech-status") { send({ type: "response", id: message.id, status: 200, body: speechAvailable() }); return; }
+        if (message.type === "speech-listen") setHearing("");
+        const outcome = message.type === "speech-listen" ? await speech.listen(message)
+          : message.type === "speech-speak" ? await speech.speak(message) : await speech.play(message.audio);
+        if (message.type === "speech-listen") setHearing(null);
+        send({ type: "response", id: message.id, status: outcome.status, body: outcome.body });
         return;
       }
       if (message.type === "storage") {
@@ -245,10 +276,23 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, apiKey, deviceKey, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+  }, [allow, apiKey, deviceKey, mayPrint, mayTalk, speech, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+
+  // A receipt (or a drawer pulse when job is null) to the USB printer; the screen gets the outcome.
+  const printOn = useCallback(async (printer: UsbPrinter, id: string, job: PrintJob | null) => {
+    try {
+      const bytes = job ? encodeEscPos(await renderReceipt(job), { cut: job.cut, drawer: job.drawer }) : DRAWER_PULSE;
+      await sendToPrinter(printer, bytes);
+      send({ type: "response", id, status: 200, body: { printed: Boolean(job), drawer: !job || job.drawer, printer: printer.productName || "" } });
+    } catch (cause) {
+      send({ type: "response", id, status: 502, body: { message: cause instanceof Error && cause.message ? cause.message : "The printer did not answer." } });
+    }
+  }, [send]);
 
   // NFC stops when the screen goes away.
   useEffect(() => () => { nfcAbort.current?.abort(); }, []);
+  // Listening, speaking and audio stop when the screen goes away.
+  useEffect(() => () => { speech.stop(); }, [speech]);
 
   useEffect(() => {
     if (!scanning || !station) return;
@@ -317,12 +361,32 @@ export default function PluginAppFrame({
     <section className="card overflow-hidden p-0">
       {face && (
         <PluginFaceStation
-          title={face.title} mode={face.mode} liveness={face.liveness} samples={face.samples}
+          title={face.title} mode={face.mode} liveness={face.liveness} samples={face.samples} codes={face.codes} faces={face.faces}
           feedback={feedback} activity={activity}
           onResult={(result: FaceResult) => send({ type: "face-result", result })}
+          onCode={(text, source) => send({ type: "face-code", text, source })}
           onError={(message) => { setFace(null); send({ type: "face-error", message }); }}
           onClose={() => { setFace(null); send({ type: "face-closed" }); }}
         />
+      )}
+      {printPrompt && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-900 p-3 text-white" data-plugin-printer>
+          <p className="text-sm font-semibold">🖨️ Choose the receipt printer <span className="font-normal text-slate-300">· once on this device (USB)</span></p>
+          <div className="flex gap-2">
+            <button type="button" className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900" onClick={async () => {
+              const waiting = printPrompt; setPrintPrompt(null);
+              try { const printer = await choosePrinter(); await printOn(printer, waiting.id, waiting.job); }
+              catch (cause) { send({ type: "response", id: waiting.id, status: 409, body: { message: cause instanceof Error && cause.message ? cause.message : "No printer was chosen." } }); }
+            }}>Choose printer</button>
+            <button type="button" className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm" onClick={() => { const waiting = printPrompt; setPrintPrompt(null); send({ type: "response", id: waiting.id, status: 409, body: { message: "No printer was chosen." } }); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {hearing !== null && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-700 p-3 text-white" data-plugin-speech role="status" aria-live="polite">
+          <p className="min-w-0 text-sm font-semibold">🎤 Listening… <span className="font-normal text-rose-100">{hearing || "speak now"}</span></p>
+          <button type="button" onClick={() => speech.stop()} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900">Stop</button>
+        </div>
       )}
       {nfcOn && (
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-indigo-950 p-3 text-white" data-plugin-nfc>
@@ -396,6 +460,7 @@ export default function PluginAppFrame({
         sandbox="allow-scripts allow-forms allow-modals allow-downloads"
         referrerPolicy="no-referrer"
         className="block w-full border-0"
+        data-height={height}
         style={{ height: height === "fill" ? "calc(100vh - 12rem)" : frameHeight, minHeight }}
       />
     </section>
