@@ -3,3 +3,6 @@ node_modules
 .env
 *.log
 frontend/tsconfig.tsbuildinfo
+
+# face device models, copied from @vladmandic/face-api at dev/build time
+public/face-models/

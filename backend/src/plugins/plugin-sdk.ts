@@ -22,6 +22,11 @@ export interface PluginRouteDefinition {
   path: string;
   permission: string;
   contract?: PluginRouteContract;
+  /**
+   * Who may call the route: 'user' (default; /api/plugin-api, the signed-in user's grants) or 'device'
+   * (/api/plugin-device with one of the plugin's device credentials; principal role 'DEVICE').
+   */
+  access?: 'user' | 'device';
   handler(request: PluginRouteRequest): unknown | Promise<unknown>;
 }
 
@@ -117,6 +122,12 @@ export interface PluginRuntimeContext {
   };
   crypto: {
     hashBcrypt(plaintext: string, rounds?: number): Promise<string>;
+  };
+  /** Device credentials (capability devices.credentials): keys for terminals calling 'device' routes. */
+  devices?: {
+    issue(input: { name: string; scope: string }): Promise<{ id: string; name: string; scope: string; hint: string; token: string; createdAt: Date }>;
+    list(): Promise<Array<{ id: string; name: string; scope: string; hint: string; createdAt: Date; lastUsedAt: Date | null; revokedAt: Date | null }>>;
+    revoke(id: string): Promise<{ id: string; revoked: boolean }>;
   };
   accounts: {
     createStaff(input: { commandKey: string; name: string; email: string; phone?: string | null; photo?: string | null; passwordHash: string; role: 'STAFF' | 'TEACHER' }): Promise<{ id: string; name: string; role: 'STAFF' | 'TEACHER'; email: string | null; phone: string | null }>;
