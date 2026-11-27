@@ -64,6 +64,12 @@ Every message carries `protocol: 'wattanam.plugin-ui/1'`. The `init` message als
 - **`scanner`**: the school page shows its own camera panel above the screen, decodes QR codes and barcodes itself, and sends the screen the decoded text. The screen never receives video. The person can close the camera at any time with the school page's own button. A code that stays in view is reported at most once every 1.5 seconds; text is capped at 2,000 characters.
 - **`location`**: one position per request, with the browser's normal permission prompt shown for the school.
 - **`device-id`** (core 0.1.35): a random identifier this browser keeps for your plugin, for example to recognise a registered device. It is different for every plugin and is lost when the person clears the site's data. Private browsing may refuse it (status 503).
+- **`speech`** (core 0.1.36): the frame has no microphone and its CSP blocks media (`media-src 'none'`), so the school page does the audio work.
+  - **Listening.** The school page runs the browser's speech recognition. It shows a "🎤 Listening…" bar with a Stop button, and returns only the recognised text: `{ transcript, alternatives }`. You can pass a language and up to 60 seconds. Chrome and Edge support this; other browsers return status 501, so offer typing instead. A refused microphone returns 403.
+  - **Reading text aloud.** Text-to-speech, up to 5,000 characters.
+  - **Playing audio.** A base64 `data:audio/…` URL of up to 6 MB.
+
+  A new request stops the one before it, and `speech-stop` stops all of them. Each request answers when it ends. The gateway allows the microphone for the school's own origin only (`microphone=(self)`).
 
 Declare what the screen uses in the page definition, so it is visible in the signed package and to reviewers:
 
@@ -77,6 +83,10 @@ A screen that asks for a device its page did not declare gets `scan-error` or st
 WattanamPluginUI.scanner.start({ onResult: (text) => record(text), onClose: () => showIdle(), onError: (message) => show(message) });
 WattanamPluginUI.scanner.stop();
 const position = await WattanamPluginUI.location(); // { latitude, longitude, accuracy }
+const heard = await WattanamPluginUI.speech.listen({ lang: 'en-US', seconds: 15 }); // core 0.1.36+: { transcript, alternatives }
+await WattanamPluginUI.speech.speak('The cat sat on the mat', { lang: 'en-US', rate: 0.9 });
+await WattanamPluginUI.speech.play('data:audio/mpeg;base64,...');
+WattanamPluginUI.speech.stop();
 const deviceId = await WattanamPluginUI.deviceId();  // core 0.1.35+
 ```
 

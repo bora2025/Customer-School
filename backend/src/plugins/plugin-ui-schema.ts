@@ -76,8 +76,9 @@ const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
  * Device services an `app` screen may declare; the host runs them and hands over results only.
  * face: the school page runs the camera and a face model and returns face vectors (never images);
  * nfc: Web NFC (Chrome on Android) card serial numbers; storage: a small per-plugin store on this device.
+ * speech: the school page listens (recognised text only), reads text aloud and plays audio for the screen.
  */
-export const PLUGIN_UI_APP_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage', 'printer'] as const;
+export const PLUGIN_UI_APP_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage', 'printer', 'speech'] as const;
 export const PLUGIN_UI_APP_ENTRY = /^ui\/(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_.-]*\.html$/;
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
