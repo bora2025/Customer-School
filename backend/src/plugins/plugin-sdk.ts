@@ -22,6 +22,17 @@ export interface PluginRouteDefinition {
   path: string;
   permission: string;
   contract?: PluginRouteContract;
+  /**
+   * Who may call the route: 'user' (default; /api/plugin-api, the signed-in user's grants) or 'device'
+   * (/api/plugin-device with one of the plugin's device credentials; principal role 'DEVICE').
+   */
+  access?: 'user' | 'device';
+  /**
+   * Other plugins whose screens may call this route ("partner screens", for example Smart Attendance
+   * calling Academic Management). Calls the school page makes for another plugin's screen carry that
+   * plugin's id and are refused unless it is listed here. The user's own grants still apply.
+   */
+  callers?: string[];
   handler(request: PluginRouteRequest): unknown | Promise<unknown>;
 }
 
@@ -30,7 +41,12 @@ export interface PluginRouteContract {
   version: `${number}.${number}`;
   request?: { params?: PluginValueSchema<Record<string, string>>; query?: PluginValueSchema<Record<string, string | string[]>>; body?: PluginValueSchema };
   response: PluginValueSchema;
-  errors: Record<string, { status: number; message: string }>;
+  /**
+   * Declared business errors. `detail: true` lets the error's own (one-line, at most 300 characters)
+   * message reach the caller instead of `message` — for messages that carry a value, such as a field or
+   * a subject name. Without it, callers see `message`.
+   */
+  errors: Record<string, { status: number; message: string; detail?: boolean }>;
 }
 
 export class PluginContractError extends Error {
@@ -62,7 +78,8 @@ export interface PluginRuntimeContext {
     delete(name: string): Promise<void>;
     list(prefix?: string): Promise<string[]>;
   };
-  permissions: { register(definitions: Array<{ id: string; label: string; description?: string }>): () => void };
+  /** `roles` (optional): roles the plugin suggests for the permission; offered to administrators, never granted automatically. */
+  permissions: { register(definitions: Array<{ id: string; label: string; description?: string; roles?: string[] }>): () => void };
   navigation: { register(entries: Array<{
     id: string;
     label: string;
@@ -111,6 +128,12 @@ export interface PluginRuntimeContext {
   };
   crypto: {
     hashBcrypt(plaintext: string, rounds?: number): Promise<string>;
+  };
+  /** Device credentials (capability devices.credentials): keys for terminals calling 'device' routes. */
+  devices?: {
+    issue(input: { name: string; scope: string }): Promise<{ id: string; name: string; scope: string; hint: string; token: string; createdAt: Date }>;
+    list(): Promise<Array<{ id: string; name: string; scope: string; hint: string; createdAt: Date; lastUsedAt: Date | null; revokedAt: Date | null }>>;
+    revoke(id: string): Promise<{ id: string; revoked: boolean }>;
   };
   accounts: {
     createStaff(input: { commandKey: string; name: string; email: string; phone?: string | null; photo?: string | null; passwordHash: string; role: 'STAFF' | 'TEACHER' }): Promise<{ id: string; name: string; role: 'STAFF' | 'TEACHER'; email: string | null; phone: string | null }>;

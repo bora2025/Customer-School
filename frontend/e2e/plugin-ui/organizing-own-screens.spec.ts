@@ -5,14 +5,19 @@ import path from 'node:path';
 // Organizing Management's own screens (ui/attendance-settings and ui/profile, plugin >= 0.26.0)
 // rendered from the real plugin files inside the core's sandboxed frame, talking through the bridge.
 const pluginId = 'wattanam.organizing-management';
+// Since Organizing Management 0.28.0 the attendance settings screen is Smart Attendance's (a partner screen
+// calling this plugin's API); the profile screen stays here.
+const screenPluginId = 'wattanam.smart-attendance';
 const catalog = process.env.PLUGIN_SOURCE_CATALOG;
-const root = catalog ? path.resolve(catalog, pluginId) : '';
-const descriptorPath = root ? path.join(root, 'frontend/page.json') : '';
-const descriptor = descriptorPath && fs.existsSync(descriptorPath) ? JSON.parse(fs.readFileSync(descriptorPath, 'utf8')) : { pages: [] };
-const pageWithEntry = (entry: string) => descriptor.pages.find((page: any) => (page.components || []).some((component: any) => component.type === 'app' && component.options?.entry === entry));
-const settingsPage = pageWithEntry('ui/attendance-settings/index.html');
-const profilePage = pageWithEntry('ui/profile/index.html');
-const version = root && fs.existsSync(path.join(root, 'plugin.json')) ? JSON.parse(fs.readFileSync(path.join(root, 'plugin.json'), 'utf8')).version : '0.0.0';
+const pluginFiles = (id: string) => {
+  const root = catalog ? path.resolve(catalog, id) : '';
+  const read = (file: string, fallback: any) => root && fs.existsSync(path.join(root, file)) ? JSON.parse(fs.readFileSync(path.join(root, file), 'utf8')) : fallback;
+  return { id, root, descriptor: read('frontend/page.json', { pages: [] }), version: read('plugin.json', { version: '0.0.0' }).version };
+};
+const plugins = [pluginFiles(pluginId), pluginFiles(screenPluginId)];
+const pageWithEntry = (id: string, entry: string) => plugins.find((p) => p.id === id)!.descriptor.pages.find((page: any) => (page.components || []).some((component: any) => component.type === 'app' && component.options?.entry === entry));
+const settingsPage = pageWithEntry(screenPluginId, 'ui/workforce-settings/index.html');
+const profilePage = pageWithEntry(pluginId, 'ui/profile/index.html');
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-forms allow-modals allow-downloads";
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 const employeeId = '7b0c2f0e-2a53-4a51-9d55-0d3a5d2b8a11';
@@ -20,14 +25,15 @@ const employeeId = '7b0c2f0e-2a53-4a51-9d55-0d3a5d2b8a11';
 type Saved = { method: string; path: string; body: any };
 
 async function host(page: Page, api: (method: string, apiPath: string) => unknown | undefined): Promise<Saved[]> {
-  const pages = descriptor.pages.map((entry: any) => ({ pluginId, pluginVersion: version, schemaVersion: 2, kind: 'declarative-ui', ...entry }));
+  const pages = plugins.flatMap((p) => p.descriptor.pages.map((entry: any) => ({ pluginId: p.id, pluginVersion: p.version, schemaVersion: 2, kind: 'declarative-ui', ...entry })));
   const saved: Saved[] = [];
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
-    const prefix = `/api/plugin-ui/${pluginId}/${version}/`;
-    if (pathname.startsWith(prefix)) {
-      const file = path.join(root, ...pathname.slice(prefix.length).split('/'));
+    const owner = plugins.find((p) => pathname.startsWith(`/api/plugin-ui/${p.id}/${p.version}/`));
+    if (owner) {
+      const root = owner.root;
+      const file = path.join(root, ...pathname.slice(`/api/plugin-ui/${owner.id}/${owner.version}/`.length).split('/'));
       if (!file.startsWith(path.join(root, 'ui')) || !fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
       return route.fulfill({ status: 200, headers: { 'content-type': types[path.extname(file)] || 'application/octet-stream', 'content-security-policy': CSP, 'cross-origin-resource-policy': 'cross-origin' }, body: fs.readFileSync(file) });
     }
@@ -56,7 +62,7 @@ async function host(page: Page, api: (method: string, apiPath: string) => unknow
     return undefined;
   });
 
-  await page.goto(`/plugins/${pluginId}/${settingsPage.routePath}`);
+  await page.goto(`/plugins/${screenPluginId}/${settingsPage.routePath}`);
   const frame = page.frameLocator('iframe[title="Workforce Session Settings"]');
   await expect(frame.getByRole('heading', { name: 'Workforce Attendance Settings' })).toBeVisible({ timeout: 15_000 });
   // Values loaded through the bridge from the plugin's own API.

@@ -9,7 +9,7 @@ export type PluginUiPageDescriptor = {
   title: string;
   routePath: string;
   parameters: PluginRouteParameter[];
-  dataSources: Array<{ id: string; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; permission: string; parameters?: string[]; autoload?: boolean }>;
+  dataSources: Array<{ id: string; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; permission: string; parameters?: string[]; autoload?: boolean; plugin?: string }>;
   components: Array<Record<string, unknown>>;
   realtime?: Array<{ event: string; refreshSources: string[] }>;
   defaultLanguage?: string;
@@ -17,6 +17,8 @@ export type PluginUiPageDescriptor = {
   appearance?: PluginUiPageAppearance;
   /** Installed plugin version; pins URLs of the plugin's own ui/ files (app component). */
   pluginVersion?: string;
+  /** The plugin's permissions granted to the signed-in user (an app screen hides what it may not do). */
+  grantedPermissions?: string[];
 };
 
 const validators: Record<PluginRouteParameter['type'], (value: string) => boolean> = {
@@ -45,6 +47,19 @@ export function matchPluginPage(pages: PluginUiPageDescriptor[], routePath: stri
     if (matches) return { page, params };
   }
   return null;
+}
+
+/**
+ * The API URL of a page data source: the partner plugin's API when the source names one ("plugin"),
+ * otherwise the page's own plugin. Send it with pluginScreenHeaders(pluginId).
+ */
+export function pluginSourceUrl(pluginId: string, source: { plugin?: string }, path: string): string {
+  return `/api/plugin-api/${encodeURIComponent(source.plugin || pluginId)}/${path}`;
+}
+
+/** Marks a request as made for this plugin's screen; another plugin's route answers only if it lists it as a caller. */
+export function pluginScreenHeaders(pluginId: string, headers: Record<string, string> = {}): Record<string, string> {
+  return { ...headers, 'X-Wattanam-Plugin-Screen': pluginId };
 }
 
 export function resolvePluginSourcePath(path: string, params: Record<string, string>): string {

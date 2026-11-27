@@ -29,13 +29,28 @@ import { PluginAccountService } from './plugin-account.service';
 import { assertPluginExecutionAllowed } from './plugin-execution-policy';
 import { applyPluginDatabasePolicy, pluginDatabasePolicy } from './plugin-database-policy';
 import { enterPluginDatabaseRole, ensurePluginDatabaseRole, leavePluginDatabaseRole, pluginDatabaseRolesEnforced } from './plugin-database-roles';
+import { PluginDeviceCredentialsService } from './plugin-device-credentials.service';
 
 @Injectable()
 export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(PluginRuntimeService.name);
   private readonly loaded = new Map<string, { module: RuntimePluginModule; context: PluginRuntimeContext; cleanup?: () => void; disposers: Array<() => void>; version: string; sha256: string }>();
   private readonly loadOperations = new Map<string, Promise<void>>();
+  // Plugins an install/update in this process is replacing; the reconciler leaves them alone.
+  private readonly reconcileHolds = new Map<string, number>();
   private rolloutTimer?: NodeJS.Timeout;
+
+  /** Keep the background reconciler away from a plugin until the returned release is called. */
+  holdReconcile(id: string) {
+    this.reconcileHolds.set(id, (this.reconcileHolds.get(id) || 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const left = (this.reconcileHolds.get(id) || 1) - 1;
+      if (left > 0) this.reconcileHolds.set(id, left); else this.reconcileHolds.delete(id);
+    };
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -56,6 +71,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
     @Optional() private readonly rollout?: PluginRolloutService,
     @Optional() private readonly academicIdentity?: PrismaAcademicIdentityProvider,
     @Optional() private readonly pluginAccounts?: PluginAccountService,
+    @Optional() private readonly deviceCredentials?: PluginDeviceCredentialsService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -115,6 +131,9 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
     // every process converges even though Railway services do not share memory or filesystems.
     const active = await this.prisma.pluginInstallation.findMany({ where: { status: 'active' } }).catch(() => []);
     for (const plugin of active) {
+      // An install or update of this plugin is running in this process: it unloads, migrates and
+      // reloads the plugin itself (see PluginsService.install).
+      if (this.reconcileHolds.has(plugin.id)) continue;
       const local = this.loaded.get(plugin.id);
       if (!local || local.version !== plugin.version || local.sha256 !== plugin.packageSha256) {
         await this.unload(plugin.id).catch(() => undefined);
@@ -324,6 +343,11 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
       crypto: {
         hashBcrypt: (plaintext, rounds = 12) => { requireCapability('crypto.hash'); return bcrypt.hash(plaintext, rounds); },
       },
+      devices: {
+        issue: (input) => { requireCapability('devices.credentials'); if (!this.deviceCredentials) throw new Error('Device credentials are unavailable'); return this.deviceCredentials.issue(id, input); },
+        list: () => { requireCapability('devices.credentials'); if (!this.deviceCredentials) throw new Error('Device credentials are unavailable'); return this.deviceCredentials.list(id); },
+        revoke: (credentialId) => { requireCapability('devices.credentials'); if (!this.deviceCredentials) throw new Error('Device credentials are unavailable'); return this.deviceCredentials.revoke(id, credentialId); },
+      },
       accounts: {
         createStaff: async (input) => {
           requireCapability('accounts.staff.create');
@@ -392,12 +416,18 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnApplicati
         let descriptor: unknown;
         try { descriptor = JSON.parse(verified.files.get(verified.manifest.frontendEntry)!.toString('utf8')); }
         catch { throw new Error('Plugin frontend entry must be valid declarative JSON'); }
-        const dispose = this.extensions.registerPage(id, descriptor, declaredPermissions, record.version); disposers.push(dispose);
+        const partners = new Set([...Object.keys(verified.manifest.dependencies || {}), ...Object.keys(verified.manifest.optionalDependencies || {})]);
+        const dispose = this.extensions.registerPage(id, descriptor, declaredPermissions, record.version, partners); disposers.push(dispose);
       }
       // Create/refresh the plugin's database role before any plugin code can run SQL. Done on every
       // load so tables added by later migrations, and databases restored without ACLs, are covered.
       if (usesDatabase && pluginDatabaseRolesEnforced()) {
-        const { role, relations, mode } = await this.prisma.$transaction((tx) => ensurePluginDatabaseRole(tx, id));
+        // Under the plugin's lifecycle lock (PluginsService.withPluginLock): the grants touch every
+        // plugin table, and must not interleave with a migration altering one of them, from any process.
+        const { role, relations, mode } = await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`);
+          return ensurePluginDatabaseRole(tx, id);
+        });
         this.logger.log(mode === 'member' ? `Database role ${role} of ${id} is managed by the API user; this process is a member` : `Database role ${role} covers ${relations} relation(s) of ${id} (${mode})`);
       }
       const cleanup = await pluginModule.activate(context);

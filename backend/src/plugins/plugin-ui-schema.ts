@@ -15,6 +15,8 @@ export interface PluginUiDataSource {
   permission: string;
   parameters?: string[];
   autoload?: boolean;
+  /** Partner plugin whose API this source calls (a dependency; its route must list this plugin in `callers`). */
+  plugin?: string;
 }
 
 export interface PluginUiComponent {
@@ -70,8 +72,13 @@ const UNIVERSAL_COMPONENTS = new Set<PluginUiComponentType>([
   'app',
 ]);
 /** ui/<path>.html inside the signed package: lowercase segments, no traversal, no hidden files. */
-/** Device services an `app` screen may declare; the host runs them and hands over results only. */
-export const PLUGIN_UI_APP_DEVICES = ['scanner', 'location', 'device-id'] as const;
+/**
+ * Device services an `app` screen may declare; the host runs them and hands over results only.
+ * face: the school page runs the camera and a face model and returns face vectors (never images);
+ * nfc: Web NFC (Chrome on Android) card serial numbers; storage: a small per-plugin store on this device.
+ * speech: the school page listens (recognised text only), reads text aloud and plays audio for the screen.
+ */
+export const PLUGIN_UI_APP_DEVICES = ['scanner', 'location', 'device-id', 'face', 'nfc', 'storage', 'printer', 'speech'] as const;
 export const PLUGIN_UI_APP_ENTRY = /^ui\/(?:[a-z0-9][a-z0-9_-]*\/)*[a-z0-9][a-z0-9_.-]*\.html$/;
 const FORBIDDEN_KEYS = /^(?:html|dangerouslySetInnerHTML|script|srcDoc|javascript|on[A-Z].*)$/;
 const DATA_PATH = /^[a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)*$/;
@@ -145,7 +152,20 @@ function expandUiComponents(
   return expanded;
 }
 
-export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPermissions: Set<string>): PluginUiBundle {
+const PLUGIN_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+/** Components that read the page's loaded data or send their requests through pluginSourceUrl. */
+const PARTNER_READY_COMPONENTS = new Set<PluginUiComponentType>(['heading', 'text', 'status', 'card', 'metric', 'table', 'form', 'detail', 'chart', 'print', 'scanner', 'filter', 'actions', 'app']);
+
+/**
+ * `partners`: the plugin's dependencies and optional dependencies; data sources (`plugin`) and app screens
+ * (`options.apis`) may call only these plugins' APIs. Omitted, partners are not limited here.
+ */
+export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPermissions: Set<string>, partners?: Set<string>): PluginUiBundle {
+  const partner = (value: unknown, label: string) => {
+    const id = string(value, label, 120);
+    if (!PLUGIN_ID.test(id) || id === pluginId || (partners && !partners.has(id))) throw new BadRequestException(`${label} must be a dependency of the plugin`);
+    return id;
+  };
   const root = object(value, 'Plugin UI descriptor');
   if (root.schemaVersion !== PLUGIN_UI_SCHEMA_VERSION || root.kind !== 'declarative-ui') throw new BadRequestException('Unsupported plugin UI schema version or kind');
   if (root.portability !== undefined && root.portability !== 'universal') throw new BadRequestException('Plugin UI portability contract is invalid');
@@ -201,7 +221,9 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       const method = string(source.method, 'data source method', 10).toUpperCase();
       if (!METHODS.has(method)) throw new BadRequestException('Plugin UI data source method is unsupported');
       const sourcePermission = string(source.permission, 'data source permission');
-      if (!sourcePermission.startsWith(`${pluginId}.`) || !declaredPermissions.has(sourcePermission)) throw new BadRequestException('Plugin UI data source permission is not declared by the plugin');
+      // A partner's source names the partner's permission (its route checks it for the user).
+      const sourcePlugin = source.plugin === undefined ? null : partner(source.plugin, 'Plugin UI data source plugin');
+      if (sourcePlugin ? !sourcePermission.startsWith(`${sourcePlugin}.`) : !sourcePermission.startsWith(`${pluginId}.`) || !declaredPermissions.has(sourcePermission)) throw new BadRequestException('Plugin UI data source permission is not declared by the plugin');
       const sourcePath = safeRoute(source.path, 'data source path', true);
       if (source.parameters !== undefined && (!Array.isArray(source.parameters) || source.parameters.some((name) => typeof name !== 'string' || !/^[a-z][a-zA-Z0-9]*$/.test(name)))) throw new BadRequestException('Plugin UI data source parameters are invalid');
       const ownParameters = new Set((source.parameters || []) as string[]);
@@ -212,7 +234,7 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       if (ownParameters.size && source.autoload !== false) throw new BadRequestException('Plugin UI data source with runtime parameters must disable autoload');
       sourceMethods.set(sourceId, method as PluginUiDataSource['method']);
       sourceParameters.set(sourceId, ownParameters);
-      return { id: sourceId, method: method as PluginUiDataSource['method'], path: sourcePath, permission: sourcePermission, ...(ownParameters.size ? { parameters: [...ownParameters] } : {}), ...(source.autoload === false ? { autoload: false } : {}) };
+      return { id: sourceId, method: method as PluginUiDataSource['method'], path: sourcePath, permission: sourcePermission, ...(ownParameters.size ? { parameters: [...ownParameters] } : {}), ...(source.autoload === false ? { autoload: false } : {}), ...(sourcePlugin ? { plugin: sourcePlugin } : {}) };
     });
 
     const expandedPageComponents = expandUiComponents(page.components, fragments, `pages[${pageIndex}].components`);
@@ -457,7 +479,13 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
             throw new BadRequestException(`Plugin UI app devices must be a list of: ${PLUGIN_UI_APP_DEVICES.join(', ')}`);
           }
         }
-        const unsupported = Object.keys(options).filter((key) => !['entry', 'height', 'minHeight', 'devices'].includes(key));
+        // Partner plugins whose APIs the screen calls (WattanamPluginUI.partner(id)).
+        if (options.apis !== undefined) {
+          if (!Array.isArray(options.apis) || options.apis.length > 5) throw new BadRequestException('Plugin UI app apis must list at most 5 plugins');
+          const apis = options.apis.map((item) => partner(item, 'Plugin UI app apis entry'));
+          if (new Set(apis).size !== apis.length) throw new BadRequestException('Plugin UI app apis are duplicated');
+        }
+        const unsupported = Object.keys(options).filter((key) => !['entry', 'height', 'minHeight', 'devices', 'apis'].includes(key));
         if (unsupported.length) throw new BadRequestException(`Plugin UI app options are not supported: ${unsupported.join(', ')}`);
       }
       if (type === 'filter') {
@@ -596,6 +624,11 @@ export function parsePluginUiBundle(value: unknown, pluginId: string, declaredPe
       if (!translations[defaultLanguage]) throw new BadRequestException('Plugin UI defaultLanguage has no translations');
     } else if (page.defaultLanguage !== undefined) throw new BadRequestException('Plugin UI defaultLanguage requires translations');
     const pageAppearance = parsePageAppearance(page.appearance, `Plugin UI page ${id} appearance`);
+    // Partner data sources reach the partner only through the components whose requests honour them.
+    if (dataSources.some((source) => source.plugin)) {
+      const other = components.find((component) => !PARTNER_READY_COMPONENTS.has(component.type));
+      if (other) throw new BadRequestException(`Plugin UI page ${id} uses partner data sources; component type ${other.type} cannot be on it`);
+    }
     return { id, title: string(page.title, `pages[${pageIndex}].title`, 200), routePath, permission, parameters, dataSources, components, ...(realtime ? { realtime } : {}), ...(translations ? { translations, defaultLanguage } : {}), ...(pageAppearance ? { appearance: pageAppearance } : {}) };
   });
   return { schemaVersion: 2, kind: 'declarative-ui', ...(root.portability === 'universal' ? { portability: 'universal' as const } : {}), pages };

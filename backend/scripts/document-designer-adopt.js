@@ -27,7 +27,7 @@ function parseConfirmation(env) {
 function verifyRecoveryBackup(directory, name, slug) {
   const resolved = path.resolve(directory);
   if (resolved === path.parse(resolved).root) throw new Error('backup directory cannot be a filesystem root');
-  if (!/^wattanam-\d{8}T\d{6}Z\.dump$/.test(name || '')) throw new Error('backup filename must be an exact wattanam pg_dump filename');
+  if (!/^wattanam-\d{8}T\d{6}Z(-\d+)?\.dump$/.test(name || '')) throw new Error('backup filename must be an exact wattanam pg_dump filename');
   const archive = path.join(resolved, name);
   const manifestPath = path.join(resolved, name.replace(/\.dump$/, '.manifest.json'));
   if (!fs.existsSync(archive) || !fs.existsSync(manifestPath)) throw new Error('backup archive and manifest are required');

@@ -30,13 +30,18 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header Permissions-Policy "camera=(self), geolocation=(self), microphone=(), payment=(), usb=()" always;
+    # usb=(self): the school page reaches a USB receipt printer for plugin screens (the "printer" device);
+    # the browser still asks the person to choose the printer once, and plugin frames get no USB access.
+    # microphone=(self): the school page listens for plugin screens (the "speech" device: exam speaking
+    # questions) and hands them the recognised text only; plugin frames get no microphone.
+    add_header Permissions-Policy "camera=(self), geolocation=(self), microphone=(self), payment=(), usb=(self)" always;
     # Content-Security-Policy, phase 1: REPORT-ONLY (blocks nothing). This is the strict target
     # policy; browsers report what it would block to /api/csp-report (logged by the API as
     # "CSP report violation"). report-uri only: Chromium sends nothing when report-to is also set.
     # Next.js inline scripts are expected to report until phase 2 adds
     # per-request nonces; any other reported origin must be reviewed before enforcing.
-    add_header Content-Security-Policy-Report-Only "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self'; manifest-src 'self'; report-uri /api/csp-report" always;
+    # wasm-unsafe-eval: WebAssembly only (the face device runs MediaPipe), not JavaScript eval.
+    add_header Content-Security-Policy-Report-Only "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'self'; manifest-src 'self'; report-uri /api/csp-report" always;
     # Drop upstream copies (helmet on the API sets some) so each header is sent exactly once;
     # a duplicated X-Frame-Options can make browsers ignore it.
     proxy_hide_header Strict-Transport-Security;

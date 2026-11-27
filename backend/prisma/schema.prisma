@@ -1601,3 +1601,20 @@ model Post {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// A plugin's device credential (hardware terminals and other machines without a user session). Only the
+// SHA-256 of the key is kept; the key is shown once when it is issued. A key reaches only the plugin's
+// routes registered with access 'device', and only under its scope (a path prefix).
+model PluginDeviceCredential {
+  id         String    @id @default(uuid())
+  pluginId   String
+  name       String
+  scope      String
+  tokenHash  String    @unique
+  tokenHint  String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([pluginId])
+}

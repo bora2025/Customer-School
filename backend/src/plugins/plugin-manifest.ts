@@ -22,7 +22,9 @@ export const PLUGIN_CAPABILITIES = [
 export const PLUGIN_CAPABILITIES_V1_1 = ['accounts.guardian.assign', 'accounts.parent.resolve', 'accounts.student.create', 'accounts.student.update', 'crypto.hash', 'events.durable', 'readmodels.publish', 'readmodels.read'] as const;
 export const PLUGIN_CAPABILITIES_V1_2 = ['accounts.staff.create'] as const;
 export const PLUGIN_CAPABILITIES_V1_3 = ['database.transaction'] as const;
-export const PLUGIN_SUPPORTED_CAPABILITIES = [...PLUGIN_CAPABILITIES, ...PLUGIN_CAPABILITIES_V1_1, ...PLUGIN_CAPABILITIES_V1_2, ...PLUGIN_CAPABILITIES_V1_3] as const;
+// devices.credentials: issue / revoke keys for hardware terminals calling the plugin's 'device' routes
+export const PLUGIN_CAPABILITIES_V1_4 = ['devices.credentials'] as const;
+export const PLUGIN_SUPPORTED_CAPABILITIES = [...PLUGIN_CAPABILITIES, ...PLUGIN_CAPABILITIES_V1_1, ...PLUGIN_CAPABILITIES_V1_2, ...PLUGIN_CAPABILITIES_V1_3, ...PLUGIN_CAPABILITIES_V1_4] as const;
 export const PLUGIN_SDK_VERSION = '1.3.0';
 export const PLUGIN_RUNTIME_VERSION = '1.0.0';
 export const PLUGIN_HOST_CONTRACTS = [
@@ -38,6 +40,8 @@ export const PLUGIN_DATA_CLASSIFICATIONS = [
   'employment-records',
   'location-data',
   'generated-documents',
+  // face vectors and other biometric identifiers: shown on the install consent; required by the 'face' device
+  'biometric-data',
 ] as const;
 
 export interface PluginOperationalContract {

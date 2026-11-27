@@ -49,7 +49,7 @@ function readJournal(file, input) {
   const journal = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (journal.format !== 'wattanam-legacy-adoption-v1') throw new Error('legacy adoption journal has an unsupported format');
   if (journal.schoolSlug !== input.schoolSlug || journal.sourceFingerprint !== input.fingerprint) throw new Error('legacy adoption journal does not match the confirmed school and fingerprint');
-  if (typeof journal.backup?.file !== 'string' || path.basename(journal.backup.file) !== journal.backup.file || !/^wattanam-\d{8}T\d{6}Z\.dump$/.test(journal.backup.file)) {
+  if (typeof journal.backup?.file !== 'string' || path.basename(journal.backup.file) !== journal.backup.file || !/^wattanam-\d{8}T\d{6}Z(-\d+)?\.dump$/.test(journal.backup.file)) {
     throw new Error('legacy adoption journal contains an invalid backup filename');
   }
   const archive = path.join(path.dirname(file), journal.backup.file);

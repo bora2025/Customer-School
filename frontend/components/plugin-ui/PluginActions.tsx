@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { apiFetch } from '../../lib/api';
-import { resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
+import { pluginScreenHeaders, pluginSourceUrl, resolvePluginSourcePath } from '../../lib/plugin-ui-routing';
 
-type Source = { id: string; method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string };
+type Source = { id: string; method: 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; plugin?: string };
 type Action = { id: string; label: string; mode: 'single' | 'bulk'; source: string; selectionSource?: string; idField?: string; idParameter?: string; confirmation?: string; destructive?: boolean; body?: Record<string, unknown> };
 
 export default function PluginActions({ pluginId, sources, params, actions, selections, onSuccess }: {
@@ -28,9 +28,9 @@ export default function PluginActions({ pluginId, sources, params, actions, sele
       const id = ids[index];
       try {
         const sourceParams = id && action.idParameter ? { ...params, [action.idParameter]: id } : params;
-        const endpoint = `/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(source.path, sourceParams)}`;
+        const endpoint = pluginSourceUrl(pluginId, source, resolvePluginSourcePath(source.path, sourceParams));
         const body = { ...(action.body || {}), ...(id ? { [action.idField || 'id']: id } : {}) };
-        const response = await apiFetch(endpoint, { method: source.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const response = await apiFetch(endpoint, { method: source.method, headers: pluginScreenHeaders(pluginId, { 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message || `Request failed (${response.status})`);
       } catch { failed += 1; }

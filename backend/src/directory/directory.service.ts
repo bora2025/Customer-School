@@ -230,14 +230,21 @@ export class DirectoryService {
     return [];
   }
 
+  // The core build has no class, student or department tables (prisma/core/schema.prisma): there the
+  // Academic Management plugin's contracts are the only source, so they are the default. The full
+  // (legacy) build keeps reading its own tables unless told otherwise.
+  private defaultAcademicReadOwner(): 'legacy' | 'plugin' {
+    return process.env.WATTANAM_DISTRIBUTION?.trim().toLowerCase() === 'core' ? 'plugin' : 'legacy';
+  }
+
   private academicRosterReadOwner(): 'legacy' | 'plugin' {
-    const owner = process.env.ACADEMIC_ROSTER_READ_OWNER ?? 'legacy';
+    const owner = process.env.ACADEMIC_ROSTER_READ_OWNER ?? this.defaultAcademicReadOwner();
     if (owner !== 'legacy' && owner !== 'plugin') throw new Error('ACADEMIC_ROSTER_READ_OWNER must be legacy or plugin');
     return owner;
   }
 
   private academicDepartmentReadOwner(): 'legacy' | 'plugin' {
-    const owner = process.env.ACADEMIC_DEPARTMENT_MEMBERSHIP_READ_OWNER ?? 'legacy';
+    const owner = process.env.ACADEMIC_DEPARTMENT_MEMBERSHIP_READ_OWNER ?? this.defaultAcademicReadOwner();
     if (owner !== 'legacy' && owner !== 'plugin') throw new Error('ACADEMIC_DEPARTMENT_MEMBERSHIP_READ_OWNER must be legacy or plugin');
     return owner;
   }

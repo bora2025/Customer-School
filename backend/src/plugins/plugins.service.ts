@@ -126,7 +126,13 @@ export class PluginsService {
     if ((descriptor as any)?.schemaVersion === 1 && (descriptor as any)?.kind === 'json-settings') {
       return { present: true, portability: 'legacy-json-settings', pageCount: 1, componentTypes: ['json-settings'] };
     }
-    const bundle = parsePluginUiBundle(descriptor, verified.manifest.id, new Set(verified.manifest.permissions));
+    const partners = new Set([...Object.keys(verified.manifest.dependencies || {}), ...Object.keys(verified.manifest.optionalDependencies || {})]);
+    const bundle = parsePluginUiBundle(descriptor, verified.manifest.id, new Set(verified.manifest.permissions), partners);
+    // A screen that reads faces handles biometric data: the plugin must say so (install consent, marketplace).
+    const readsFaces = bundle.pages.some((page) => page.components.some((component) => component.type === 'app' && Array.isArray(component.options?.devices) && (component.options.devices as unknown[]).includes('face')));
+    if (readsFaces && !(verified.manifest.operational?.dataClassification || []).includes('biometric-data')) {
+      throw new BadRequestException('A plugin screen using the face device must declare biometric-data in operational.dataClassification');
+    }
     // A plugin-owned screen must ship its entry document inside the same signed package.
     for (const page of bundle.pages) for (const component of page.components) {
       if (component.type === 'app' && !verified.files.has(String(component.options?.entry))) {
@@ -312,6 +318,19 @@ export class PluginsService {
   async install(packageBuffer: Buffer, confirmedPackageSha256?: string, trustedKeys?: TrustedPluginKeys) {
     const coreVersion = readRuntimeConfig().appVersion;
     const verified = await this.verifier.verify(packageBuffer, trustedKeys ?? await trustedPluginKeys(this.prisma), coreVersion);
+    // While this plugin is being replaced, the runtime's background reconciler must not reload the
+    // previous version: the registry still says "active" while the update has unloaded it, and a
+    // reload re-grants the plugin role on its tables in the middle of the migration transaction
+    // ("tuple concurrently updated", and old plugin code running against tables being migrated).
+    const release = this.runtime.holdReconcile(verified.manifest.id);
+    try {
+      return await this.installVerified(verified, packageBuffer, confirmedPackageSha256);
+    } finally {
+      release();
+    }
+  }
+
+  private async installVerified(verified: VerifiedPluginPackage, packageBuffer: Buffer, confirmedPackageSha256?: string) {
     assertPluginExecutionAllowed(verified.manifest);
     this.inspectUi(verified);
     await this.artifactCache?.seed(packageBuffer, verified.packageSha256);

@@ -52,6 +52,27 @@ describe('PluginExtensionsService', () => {
     expect(deps_.audit.log).toHaveBeenCalledWith(expect.objectContaining({ success: false, errorMessage: 'licence read-only' }));
   });
 
+  it('shows a declared error\'s own one-line wording only when it is declared with detail', async () => {
+    const fail = (message: string) => Promise.reject(Object.assign(new Error(message), { code: message.startsWith('Khmer') ? 'SCORE_OUT_OF_RANGE' : 'NAME_REQUIRED', isPluginContractError: true }));
+    service.registerRoute('wattanam.test', permissions, {
+      method: 'POST', path: 'detail/:kind', permission: 'wattanam.test.read',
+      contract: {
+        version: '1.0', response: { parse: (value: any) => value },
+        errors: { SCORE_OUT_OF_RANGE: { status: 400, message: '…: the score must be between 0 and …', detail: true }, NAME_REQUIRED: { status: 400, message: 'Name is required' } },
+      },
+      handler: ({ params }) => params.kind === 'score' ? fail('Khmer: the score must be between 0 and 100')
+        : params.kind === 'long' ? fail('Khmer: ' + 'x'.repeat(400))
+          : params.kind === 'multiline' ? fail('Khmer: line one\nstack trace')
+            : fail('Name is required for user 42'),
+    });
+    const request = (kind: string) => ({ method: 'POST' as const, path: `detail/${kind}`, params: {}, query: {}, body: {}, principal: { userId: 'owner', role: 'SUPER_ADMIN' } });
+    await expect(service.dispatch('wattanam.test', request('score'))).rejects.toMatchObject({ response: { code: 'SCORE_OUT_OF_RANGE', message: 'Khmer: the score must be between 0 and 100' }, status: 400 });
+    await expect(service.dispatch('wattanam.test', request('long'))).rejects.toMatchObject({ response: { message: '…: the score must be between 0 and …' } });
+    await expect(service.dispatch('wattanam.test', request('multiline'))).rejects.toMatchObject({ response: { message: '…: the score must be between 0 and …' } });
+    await expect(service.dispatch('wattanam.test', request('name'))).rejects.toMatchObject({ response: { code: 'NAME_REQUIRED', message: 'Name is required' } });
+    expect(() => service.registerRoute('wattanam.test', permissions, { method: 'GET', path: 'bad-detail', permission: 'wattanam.test.read', contract: { version: '1.0', response: { parse: (v: any) => v }, errors: { BAD_DETAIL: { status: 400, message: 'x', detail: 'yes' as any } } }, handler: () => null })).toThrow('contract is invalid');
+  });
+
   it('rejects traversal, undeclared permissions, and duplicate routes', () => {
     const handler = () => ({});
     expect(() => service.registerRoute('wattanam.test', permissions, { method: 'GET', path: '../core', permission: 'wattanam.test.read', handler })).toThrow('invalid');
@@ -169,6 +190,73 @@ describe('PluginExtensionsService', () => {
 
     await expect(service.searchForPrincipal('student', { userId: 'u1', role: 'TEACHER' }))
       .resolves.toEqual([{ pluginId: 'allowed', id: 'one', title: 'Valid result', description: 'Found', href: '/plugins/allowed/records/one' }]);
+  });
+
+  it('keeps only grantable suggested roles on a permission', () => {
+    service.registerPermissions('wattanam.test', permissions, [
+      { pluginId: 'wattanam.test', id: 'wattanam.test.read', label: ' Read ', roles: ['RECEPTIONIST', 'WATTAMAN', 'SUPER_ADMIN', 'nobody', 'RECEPTIONIST'] } as any,
+      { pluginId: 'wattanam.test', id: 'wattanam.test.manage', label: 'Manage', extra: 'dropped' } as any,
+    ]);
+    expect(service.list().permissions).toEqual([
+      { pluginId: 'wattanam.test', id: 'wattanam.test.read', label: 'Read', roles: ['RECEPTIONIST', 'WATTAMAN'] },
+      { pluginId: 'wattanam.test', id: 'wattanam.test.manage', label: 'Manage' },
+    ]);
+  });
+
+  it('keeps an optional bounded search result group', async () => {
+    const service = new PluginExtensionsService({ isGranted: jest.fn().mockResolvedValue(true) } as any, { log: jest.fn() } as any);
+    service.registerRoute('p', new Set(['p.read']), { method: 'GET', path: 'search', permission: 'p.read', handler: async () => [
+      { id: 'a', title: 'A', href: '/plugins/p/a', group: ' Students ' },
+      { id: 'b', title: 'B', href: '/plugins/p/b', group: 'x'.repeat(41) },
+    ] });
+    await expect(service.searchForPrincipal('ab', { userId: 'u1', role: 'ADMIN' })).resolves.toEqual([
+      { pluginId: 'p', id: 'a', title: 'A', href: '/plugins/p/a', group: 'Students' },
+      { pluginId: 'p', id: 'b', title: 'B', href: '/plugins/p/b' },
+    ]);
+  });
+
+  it('collects bounded dashboard summaries from granted providers only', async () => {
+    const service = new PluginExtensionsService(
+      { isGranted: jest.fn(async (pluginId: string) => pluginId !== 'denied') } as any,
+      { log: jest.fn() } as any,
+    );
+    const summary = (pluginId: string) => ({
+      method: 'GET' as const, path: 'dashboard/summary', permission: `${pluginId}.read`,
+      handler: jest.fn(async () => [{
+        id: 'today', title: 'Today', priority: 10, href: `/plugins/${pluginId}/attendance`, updatedAt: '2026-11-14T01:00:00Z',
+        stats: [
+          { id: 'present', label: 'Present', value: 30, hint: 'of 32', tone: 'good', href: `/plugins/${pluginId}/records` },
+          { id: 'escape', label: 'Escape', value: 1, href: '/admin/users', tone: 'loud' },
+          { id: 'bad id!', label: 'Bad', value: 1 },
+          { id: 'nan', label: 'NaN', value: Number.NaN },
+        ],
+        segments: [{ label: 'Present', value: 30, tone: 'good' }, { label: 'Negative', value: -1 }],
+        items: [{ label: '7A', value: '95%', tone: 'good' }],
+      }, { id: 'empty', title: 'Nothing to show', stats: [] }]),
+    });
+    service.registerRoute('allowed', new Set(['allowed.read']), summary('allowed'));
+    service.registerRoute('denied', new Set(['denied.read']), summary('denied'));
+    service.registerRoute('broken', new Set(['broken.read']), { method: 'GET', path: 'dashboard/summary', permission: 'broken.read', handler: async () => { throw new Error('down'); } });
+
+    await expect(service.dashboardForPrincipal({ userId: 'u1', role: 'ADMIN' })).resolves.toEqual([{
+      pluginId: 'allowed', id: 'today', title: 'Today', priority: 10, href: '/plugins/allowed/attendance', updatedAt: '2026-11-14T01:00:00.000Z',
+      stats: [
+        { id: 'present', label: 'Present', value: '30', hint: 'of 32', tone: 'good', href: '/plugins/allowed/records' },
+        { id: 'escape', label: 'Escape', value: '1', tone: 'neutral' },
+      ],
+      segments: [{ label: 'Present', value: 30, tone: 'good' }],
+      items: [{ label: '7A', value: '95%', tone: 'good' }],
+    }]);
+  });
+
+  it('collects profile cards from each plugin\'s me/profile, separately from the dashboard', async () => {
+    const service = new PluginExtensionsService({ isGranted: jest.fn().mockResolvedValue(true) } as any, { log: jest.fn() } as any);
+    service.registerRoute('p', new Set(['p.read']), { method: 'GET', path: 'me/profile', permission: 'p.read', handler: async ({ principal }) => ({ id: 'staff', title: 'Staff record', stats: [{ id: 'number', label: 'Staff ID', value: principal.userId }] }) });
+    service.registerRoute('p', new Set(['p.read']), { method: 'GET', path: 'dashboard/summary', permission: 'p.read', handler: async () => ({ id: 'today', title: 'Today', stats: [{ id: 'n', label: 'N', value: 1 }] }) });
+    await expect(service.profileForPrincipal({ userId: 'T-7', role: 'TEACHER' })).resolves.toEqual([
+      { pluginId: 'p', id: 'staff', title: 'Staff record', priority: 500, stats: [{ id: 'number', label: 'Staff ID', value: 'T-7', tone: 'neutral' }] },
+    ]);
+    await expect(service.dashboardForPrincipal({ userId: 'T-7', role: 'TEACHER' })).resolves.toMatchObject([{ id: 'today' }]);
   });
 
   it('requires a bounded plugin search query', async () => {

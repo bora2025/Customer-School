@@ -7,12 +7,18 @@ import {
   createRateLimiter,
   parsePluginUiMessage,
   pluginDeviceId,
+  pluginStorage,
   pluginUiAssetUrl,
   pluginUiPageQuery,
   PLUGIN_UI_MAX_SCAN_TEXT,
   PLUGIN_UI_PROTOCOL,
+  type PluginUiActivity,
   type PluginUiDevice,
+  type PluginUiTone,
 } from "../../lib/plugin-ui-bridge";
+import PluginFaceStation, { type FaceResult } from "./PluginFaceStation";
+import { createSpeechHost, speechAvailable } from "../../lib/plugin-speech";
+import { choosePrinter, DRAWER_PULSE, encodeEscPos, rememberedPrinter, renderReceipt, sendToPrinter, usbPrintingAvailable, type PrintJob, type UsbPrinter } from "../../lib/receipt-printer";
 
 /**
  * A plugin-owned screen (`app` component). The plugin's signed ui/ document runs in a sandboxed
@@ -22,7 +28,13 @@ import {
  *
  * Devices (`devices` = the page's declared `options.devices`): the screen never gets the camera or
  * the Geolocation API. This component runs the scanner on the school page and passes on only the
- * decoded text; a location fix is returned once per request.
+ * decoded text; a location fix is returned once per request. The face station (PluginFaceStation)
+ * hands over face vectors only; Web NFC hands over card serial numbers; storage keeps small JSON values
+ * on this device under a per-plugin key.
+ *
+ * Partners (`apis` = the page's declared `options.apis`): the screen may also call these plugins' APIs
+ * and open their pages. Every request says which plugin's screen made it (X-Wattanam-Plugin-Screen);
+ * a partner's route answers only if it lists this plugin as a caller.
  */
 export default function PluginAppFrame({
   pluginId,
@@ -33,15 +45,21 @@ export default function PluginAppFrame({
   height = "auto",
   minHeight = 320,
   devices = [],
+  apis = [],
+  permissions,
 }: {
   pluginId: string;
   pluginVersion?: string;
+  /** The user's granted permissions of this plugin; the screen reads them as context.permissions. */
+  permissions?: string[];
   title?: string;
   entry: string;
   params: Record<string, string>;
   height?: "auto" | "fill";
   minHeight?: number;
   devices?: PluginUiDevice[];
+  /** Partner plugins whose APIs and pages this screen may use. */
+  apis?: string[];
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -51,12 +69,41 @@ export default function PluginAppFrame({
   const [frameHeight, setFrameHeight] = useState(minHeight);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
+  // Station layout (full screen, like the staff attendance station). Its texts come from the
+  // plugin as plain strings; the camera itself never leaves this page.
+  const [station, setStation] = useState<{ title: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: PluginUiTone; message: string } | null>(null);
+  const [activity, setActivity] = useState<{ title: string; items: PluginUiActivity[] }>({ title: "Scanned Today", items: [] });
+  const [cameraReady, setCameraReady] = useState(false);
+  const [clock, setClock] = useState(() => new Date());
+  const [stationLocation, setStationLocation] = useState("");
+  // Latest fix from the station's location watch; location requests are answered from it while
+  // it is fresh (a second, parallel lookup can fail on some browsers while a watch is running).
+  const lastFix = useRef<{ latitude: number; longitude: number; accuracy: number; at: number } | null>(null);
   const allow = useMemo(() => createRateLimiter(), []);
   const src = pluginVersion ? pluginUiAssetUrl(pluginId, pluginVersion, entry) : null;
   const deviceKey = devices.join(",");
+  const apiKey = apis.join(",");
+  const permissionKey = permissions ? permissions.join(",") : null;
   const mayScan = devices.includes("scanner");
   const mayLocate = devices.includes("location");
   const mayIdentify = devices.includes("device-id");
+  const mayFace = devices.includes("face");
+  const mayNfc = devices.includes("nfc");
+  const mayStore = devices.includes("storage");
+  const mayPrint = devices.includes("printer");
+  const mayTalk = devices.includes("speech");
+  // Speech (listening, text-to-speech, audio) runs on this page; the screen gets the recognised text only.
+  const [hearing, setHearing] = useState<string | null>(null);
+  const speech = useMemo(() => createSpeechHost((text) => setHearing((now) => (now === null ? null : text))), []);
+  // a receipt waiting for the person to choose the USB printer (the browser's chooser needs a click)
+  const [printPrompt, setPrintPrompt] = useState<{ id: string; job: PrintJob | null } | null>(null);
+  // The face station: open while the screen asked for it (its texts come from the plugin as plain strings).
+  const [face, setFace] = useState<{ mode: "identify" | "enroll"; title: string; liveness: boolean; samples: number; codes: boolean; faces: boolean } | null>(null);
+  // Web NFC (Chrome on Android): reading while on; the serial number of each card goes to the screen.
+  const [nfcOn, setNfcOn] = useState(false);
+  const nfcAbort = useRef<AbortController | null>(null);
+  const stopNfc = useCallback(() => { nfcAbort.current?.abort(); nfcAbort.current = null; setNfcOn(false); }, []);
 
   const send = useCallback((message: Record<string, unknown>) => {
     // The sandboxed document has an opaque origin, so "*" is the only possible target origin.
@@ -81,7 +128,7 @@ export default function PluginAppFrame({
       const message = parsePluginUiMessage(event.data);
       if (!message) return;
       if (message.type === "ready") {
-        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme(), devices: deviceKey ? deviceKey.split(",") : [], query: pluginUiPageQuery(window.location.search) });
+        send({ type: "init", pluginId, pluginVersion, params, language: document.documentElement.lang || "en", theme: theme(), devices: deviceKey ? deviceKey.split(",") : [], query: pluginUiPageQuery(window.location.search), ...(permissionKey === null ? {} : { permissions: permissionKey ? permissionKey.split(",") : [] }) });
         return;
       }
       if (message.type === "resize") {
@@ -90,12 +137,15 @@ export default function PluginAppFrame({
       }
       if (message.type === "navigate") {
         const search = message.query && Object.keys(message.query).length ? `?${new URLSearchParams(message.query).toString()}` : "";
-        router.push(`/plugins/${encodeURIComponent(pluginId)}/${message.routePath}${search}`);
+        if (message.plugin && !apiKey.split(",").includes(message.plugin)) return;
+        router.push(`/plugins/${encodeURIComponent(message.plugin || pluginId)}/${message.routePath}${search}`);
         return;
       }
       if (message.type === "scan-start") {
         if (!mayScan) { send({ type: "scan-error", message: "This screen has not declared the scanner." }); return; }
         setScanError("");
+        setFeedback(null);
+        setStation(message.layout === "station" ? { title: message.title || "Scan" } : null);
         setScanning(true);
         return;
       }
@@ -103,17 +153,29 @@ export default function PluginAppFrame({
         setScanning(false);
         return;
       }
+      if (message.type === "scan-feedback") {
+        setFeedback(message.message ? { tone: message.tone, message: message.message } : null);
+        return;
+      }
+      if (message.type === "scan-activity") {
+        setActivity({ title: message.title || "Scanned Today", items: message.items });
+        return;
+      }
       if (message.type === "device-id") {
         if (!mayIdentify) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared device-id." } }); return; }
         let storage: Storage | null = null;
         try { storage = window.localStorage; } catch { storage = null; }
-        const deviceId = pluginDeviceId(pluginId, storage, () => crypto.randomUUID());
+        // a declared partner's identifier: devices registered with it stay registered (a moved screen)
+        if (message.plugin && !apiKey.split(",").includes(message.plugin)) { send({ type: "response", id: message.id, status: 403, body: { message: `This screen has not declared the ${message.plugin} API.` } }); return; }
+        const deviceId = pluginDeviceId(message.plugin || pluginId, storage, () => crypto.randomUUID());
         send(deviceId ? { type: "response", id: message.id, status: 200, body: { deviceId } } : { type: "response", id: message.id, status: 503, body: { message: "This browser does not keep a device identifier (private browsing?)." } });
         return;
       }
       if (message.type === "location") {
         if (!mayLocate) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared location." } }); return; }
         if (!navigator.geolocation) { send({ type: "response", id: message.id, status: 503, body: { message: "Location is unavailable on this device." } }); return; }
+        const fix = lastFix.current;
+        if (fix && Date.now() - fix.at < 30000) { send({ type: "response", id: message.id, status: 200, body: { latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy } }); return; }
         navigator.geolocation.getCurrentPosition(
           (position) => send({ type: "response", id: message.id, status: 200, body: { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy } }),
           () => send({ type: "response", id: message.id, status: 403, body: { message: "Location permission was not granted." } }),
@@ -121,15 +183,87 @@ export default function PluginAppFrame({
         );
         return;
       }
+      if (message.type === "face-start") {
+        if (!mayFace) { send({ type: "face-error", message: "This screen has not declared the face device." }); return; }
+        if (message.codes && !mayScan) { send({ type: "face-error", message: "This screen has not declared the scanner." }); return; }
+        setFeedback(null);
+        setActivity({ title: "Today", items: [] });
+        setFace({ mode: message.mode, title: message.title || (message.mode === "enroll" ? "Face enrolment" : "Face attendance"), liveness: message.liveness, samples: message.samples, codes: message.codes, faces: message.faces });
+        return;
+      }
+      if (message.type === "face-stop") {
+        setFace(null);
+        send({ type: "face-closed" });
+        return;
+      }
+      if (message.type === "nfc-start") {
+        if (!mayNfc) { send({ type: "nfc-error", message: "This screen has not declared the nfc device." }); return; }
+        const Reader = (window as any).NDEFReader;
+        if (!Reader) { send({ type: "nfc-error", message: "This browser cannot read NFC cards: use Chrome on an Android phone, or a USB card reader." }); return; }
+        nfcAbort.current?.abort();
+        const controller = new AbortController();
+        nfcAbort.current = controller;
+        try {
+          const reader = new Reader();
+          reader.onreading = (event: { serialNumber?: string }) => {
+            const serialNumber = String(event.serialNumber || "").slice(0, 100);
+            if (serialNumber) send({ type: "nfc-result", serialNumber });
+          };
+          await reader.scan({ signal: controller.signal });
+          setNfcOn(true);
+        } catch (cause) {
+          nfcAbort.current = null;
+          send({ type: "nfc-error", message: cause instanceof Error && cause.message ? cause.message : "NFC permission was not granted." });
+        }
+        return;
+      }
+      if (message.type === "nfc-stop") {
+        stopNfc();
+        send({ type: "nfc-closed" });
+        return;
+      }
+      if (message.type === "printer-print" || message.type === "printer-drawer" || message.type === "printer-status") {
+        if (!mayPrint) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared the printer." } }); return; }
+        if (!usbPrintingAvailable()) { send({ type: "response", id: message.id, status: 501, body: { message: "This browser cannot reach USB printers (use Chrome or Edge)." } }); return; }
+        const printer = await rememberedPrinter().catch(() => null);
+        if (message.type === "printer-status") { send({ type: "response", id: message.id, status: 200, body: { available: true, connected: Boolean(printer), name: printer?.productName || "" } }); return; }
+        const job = message.type === "printer-print" ? message.job : null;
+        if (!printer) { setPrintPrompt({ id: message.id, job }); return; }
+        void printOn(printer, message.id, job);
+        return;
+      }
+      if (message.type === "speech-stop") { speech.stop(); setHearing(null); return; }
+      if (message.type === "speech-listen" || message.type === "speech-speak" || message.type === "speech-play" || message.type === "speech-status") {
+        if (!mayTalk) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared the speech device." } }); return; }
+        if (message.type === "speech-status") { send({ type: "response", id: message.id, status: 200, body: speechAvailable() }); return; }
+        if (message.type === "speech-listen") setHearing("");
+        const outcome = message.type === "speech-listen" ? await speech.listen(message)
+          : message.type === "speech-speak" ? await speech.speak(message) : await speech.play(message.audio);
+        if (message.type === "speech-listen") setHearing(null);
+        send({ type: "response", id: message.id, status: outcome.status, body: outcome.body });
+        return;
+      }
+      if (message.type === "storage") {
+        if (!mayStore) { send({ type: "response", id: message.id, status: 403, body: { message: "This screen has not declared storage." } }); return; }
+        let storage: Storage | null = null;
+        try { storage = window.localStorage; } catch { storage = null; }
+        const answer = pluginStorage(pluginId, storage, message.op, message.key, message.value);
+        send({ type: "response", id: message.id, status: answer.status, body: answer.body });
+        return;
+      }
       if (!allow()) {
         send({ type: "response", id: message.id, status: 429, body: { message: "Too many requests from this screen" } });
         return;
       }
+      if (message.plugin && !apiKey.split(",").includes(message.plugin)) {
+        send({ type: "response", id: message.id, status: 403, body: { message: `This screen has not declared the ${message.plugin} API.` } });
+        return;
+      }
       const query = message.query ? `?${new URLSearchParams(message.query).toString()}` : "";
       try {
-        const response = await apiFetch(`/api/plugin-api/${encodeURIComponent(pluginId)}/${message.path}${query}`, {
+        const response = await apiFetch(`/api/plugin-api/${encodeURIComponent(message.plugin || pluginId)}/${message.path}${query}`, {
           method: message.method,
-          headers: message.body !== undefined ? { "Content-Type": "application/json" } : undefined,
+          headers: { ...(message.body !== undefined ? { "Content-Type": "application/json" } : {}), "X-Wattanam-Plugin-Screen": pluginId },
           body: message.body !== undefined ? JSON.stringify(message.body) : undefined,
         });
         const text = await response.text();
@@ -142,7 +276,41 @@ export default function PluginAppFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [allow, deviceKey, height, mayIdentify, mayLocate, mayScan, minHeight, params, pluginId, pluginVersion, router, send]);
+  }, [allow, apiKey, deviceKey, mayPrint, mayTalk, speech, permissionKey, height, mayFace, mayIdentify, mayLocate, mayNfc, mayScan, mayStore, minHeight, params, pluginId, pluginVersion, router, send, stopNfc]);
+
+  // A receipt (or a drawer pulse when job is null) to the USB printer; the screen gets the outcome.
+  const printOn = useCallback(async (printer: UsbPrinter, id: string, job: PrintJob | null) => {
+    try {
+      const bytes = job ? encodeEscPos(await renderReceipt(job), { cut: job.cut, drawer: job.drawer }) : DRAWER_PULSE;
+      await sendToPrinter(printer, bytes);
+      send({ type: "response", id, status: 200, body: { printed: Boolean(job), drawer: !job || job.drawer, printer: printer.productName || "" } });
+    } catch (cause) {
+      send({ type: "response", id, status: 502, body: { message: cause instanceof Error && cause.message ? cause.message : "The printer did not answer." } });
+    }
+  }, [send]);
+
+  // NFC stops when the screen goes away.
+  useEffect(() => () => { nfcAbort.current?.abort(); }, []);
+  // Listening, speaking and audio stop when the screen goes away.
+  useEffect(() => () => { speech.stop(); }, [speech]);
+
+  useEffect(() => {
+    if (!scanning || !station) return;
+    const timer = window.setInterval(() => setClock(new Date()), 1000);
+    let watch: number | null = null;
+    if (mayLocate && navigator.geolocation) {
+      setStationLocation("Requesting location…");
+      watch = navigator.geolocation.watchPosition(
+        (position) => {
+          lastFix.current = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, at: Date.now() };
+          setStationLocation(`Location active · ±${Math.round(position.coords.accuracy)} m`);
+        },
+        () => setStationLocation("Location permission not granted"),
+        { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 },
+      );
+    }
+    return () => { window.clearInterval(timer); if (watch !== null) navigator.geolocation.clearWatch(watch); lastFix.current = null; };
+  }, [scanning, station, mayLocate]);
 
   // The scanner runs here, on the school page. The camera stream stays in this document; the
   // screen is told only the text of each decoded code.
@@ -157,7 +325,9 @@ export default function PluginAppFrame({
         if (stopped || !video.current) return;
         const instance = new BrowserMultiFormatReader();
         reader = instance;
+        setCameraReady(false);
         await instance.decodeFromVideoDevice(null, video.current, (result) => {
+          if (!stopped) setCameraReady(true);
           if (stopped || !result) return;
           const text = result.getText().slice(0, PLUGIN_UI_MAX_SCAN_TEXT);
           const now = Date.now();
@@ -176,6 +346,7 @@ export default function PluginAppFrame({
     return () => {
       stopped = true;
       reader?.reset();
+      setCameraReady(false);
       send({ type: "scan-closed" });
     };
   }, [scanning, send]);
@@ -183,9 +354,92 @@ export default function PluginAppFrame({
   if (!src) {
     return <section className="card p-5 text-sm text-slate-500">This screen needs a newer school core to show {title || "this plugin screen"}.</section>;
   }
+  const toneClass = (tone: PluginUiTone) => tone === "success" ? "bg-emerald-600 text-white" : tone === "error" ? "bg-rose-700 text-white" : tone === "warning" ? "bg-amber-500 text-slate-950" : "bg-sky-700 text-white";
+  const markClass = (tone: PluginUiTone) => tone === "success" ? "bg-emerald-600" : tone === "error" ? "bg-rose-700" : tone === "warning" ? "bg-amber-500 text-slate-950" : "bg-sky-700";
+  const lineClass = (tone: PluginUiTone) => tone === "success" ? "text-emerald-300" : tone === "error" ? "text-rose-300" : tone === "warning" ? "text-amber-300" : "text-sky-300";
   return (
     <section className="card overflow-hidden p-0">
-      {scanning && (
+      {face && (
+        <PluginFaceStation
+          title={face.title} mode={face.mode} liveness={face.liveness} samples={face.samples} codes={face.codes} faces={face.faces}
+          feedback={feedback} activity={activity}
+          onResult={(result: FaceResult) => send({ type: "face-result", result })}
+          onCode={(text, source) => send({ type: "face-code", text, source })}
+          onError={(message) => { setFace(null); send({ type: "face-error", message }); }}
+          onClose={() => { setFace(null); send({ type: "face-closed" }); }}
+        />
+      )}
+      {printPrompt && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-900 p-3 text-white" data-plugin-printer>
+          <p className="text-sm font-semibold">🖨️ Choose the receipt printer <span className="font-normal text-slate-300">· once on this device (USB)</span></p>
+          <div className="flex gap-2">
+            <button type="button" className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900" onClick={async () => {
+              const waiting = printPrompt; setPrintPrompt(null);
+              try { const printer = await choosePrinter(); await printOn(printer, waiting.id, waiting.job); }
+              catch (cause) { send({ type: "response", id: waiting.id, status: 409, body: { message: cause instanceof Error && cause.message ? cause.message : "No printer was chosen." } }); }
+            }}>Choose printer</button>
+            <button type="button" className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm" onClick={() => { const waiting = printPrompt; setPrintPrompt(null); send({ type: "response", id: waiting.id, status: 409, body: { message: "No printer was chosen." } }); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {hearing !== null && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-700 p-3 text-white" data-plugin-speech role="status" aria-live="polite">
+          <p className="min-w-0 text-sm font-semibold">🎤 Listening… <span className="font-normal text-rose-100">{hearing || "speak now"}</span></p>
+          <button type="button" onClick={() => speech.stop()} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900">Stop</button>
+        </div>
+      )}
+      {nfcOn && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-indigo-950 p-3 text-white" data-plugin-nfc>
+          <p className="text-sm font-semibold">📶 NFC on <span className="font-normal text-indigo-200">· hold a card to the back of this phone</span></p>
+          <button type="button" onClick={() => { stopNfc(); send({ type: "nfc-closed" }); }} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-900">Stop NFC</button>
+        </div>
+      )}
+      {scanning && station && (
+        <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 text-white" data-plugin-scanner data-plugin-station>
+          <header className="flex items-center gap-5 border-b border-slate-700 bg-slate-800 px-5 py-4">
+            <button type="button" onClick={() => setScanning(false)} className="font-bold">‹ Back</button>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate font-extrabold">📷 {station.title}</h2>
+              {stationLocation && <p className="text-xs text-slate-400">{stationLocation}</p>}
+            </div>
+            <strong className="font-mono text-xl">{clock.toLocaleTimeString()}</strong>
+          </header>
+          <div className="flex min-h-0 flex-1">
+            <main className="relative flex min-w-0 flex-1 flex-col items-center justify-center">
+              {scanError ? (
+                <p role="alert" className="mx-6 rounded-xl bg-rose-700 px-5 py-3 font-semibold">{scanError}</p>
+              ) : (
+                <>
+                  <video ref={video} className="absolute inset-0 h-full w-full object-cover" muted playsInline />
+                  <div className="pointer-events-none relative h-64 w-64 rounded-3xl border-4 border-emerald-400 shadow-[0_0_0_9999px_rgba(0,0,0,.55)]" />
+                  <p className={`relative mt-6 max-w-[90%] rounded-full px-6 py-3 text-center font-bold shadow-lg ${feedback ? toneClass(feedback.tone) : "bg-emerald-600/90"}`} role="status" aria-live="polite">
+                    {feedback ? feedback.message : cameraReady ? "Camera ready — scan the QR code" : "Starting camera…"}
+                  </p>
+                </>
+              )}
+            </main>
+            <aside className="hidden w-80 overflow-y-auto border-l border-slate-700 bg-slate-800 p-5 md:block">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold">{activity.title}</h3>
+                <span className="rounded-full bg-slate-700 px-2.5 py-1 text-xs font-bold text-slate-300">{activity.items.length}</span>
+              </div>
+              <div className="mt-5 space-y-3">
+                {activity.items.map((item, index) => (
+                  <div key={index} className="flex items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
+                    <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-extrabold ${markClass(item.tone)}`}>{item.initials || (item.tone === "success" ? "✓" : item.tone === "error" ? "✕" : "!")}</span>
+                    <div className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm">{item.title}</strong>
+                      {item.detail && <span className={`mt-1 block text-xs font-medium ${lineClass(item.tone)}`}>{item.detail}</span>}
+                    </div>
+                  </div>
+                ))}
+                {!activity.items.length && <p className="pt-32 text-center text-sm text-slate-500">📋<br />No scans yet</p>}
+              </div>
+            </aside>
+          </div>
+        </div>
+      )}
+      {scanning && !station && (
         <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-950 p-3 text-white" data-plugin-scanner>
           <div className="mb-2 flex items-center justify-between gap-3">
             <p className="text-sm font-semibold">Camera scanner <span className="font-normal text-slate-300">· point the camera at a QR code</span></p>
@@ -206,6 +460,7 @@ export default function PluginAppFrame({
         sandbox="allow-scripts allow-forms allow-modals allow-downloads"
         referrerPolicy="no-referrer"
         className="block w-full border-0"
+        data-height={height}
         style={{ height: height === "fill" ? "calc(100vh - 12rem)" : frameHeight, minHeight }}
       />
     </section>

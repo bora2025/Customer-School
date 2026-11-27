@@ -1,12 +1,12 @@
 import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
 import { PluginContractError, PluginRouteDefinition, PluginRouteRequest } from './plugin-sdk';
-import { PluginPermissionsService } from './plugin-permissions.service';
+import { GRANTABLE_PLUGIN_ROLES, GrantablePluginRole, PluginPermissionsService } from './plugin-permissions.service';
 import { parsePluginUiBundle, PluginUiPage } from './plugin-ui-schema';
 import { PluginResourceQuotaService } from './plugin-resource-quota.service';
 import { PluginEntitlementPolicyService } from './plugin-entitlement-policy.service';
 
-export interface PermissionExtension { pluginId: string; id: string; label: string; description?: string }
+export interface PermissionExtension { pluginId: string; id: string; label: string; description?: string; roles?: string[] }
 export interface NavigationExtension {
   pluginId: string;
   id: string;
@@ -18,7 +18,26 @@ export interface NavigationExtension {
 export type PageExtension =
   | { pluginId: string; schemaVersion: 1; id: string; title: string; routePath: string; kind: 'json-settings' }
   | (PluginUiPage & { pluginId: string; schemaVersion: 2; kind: 'declarative-ui' });
-export interface PluginSearchResult { pluginId: string; id: string; title: string; description?: string; href: string }
+export interface PluginSearchResult { pluginId: string; id: string; title: string; description?: string; href: string; group?: string }
+export type PluginDashboardTone = 'neutral' | 'good' | 'warn' | 'bad' | 'info';
+export interface PluginDashboardStat { id: string; label: string; value: string; hint?: string; tone: PluginDashboardTone; href?: string }
+export interface PluginDashboardSegment { label: string; value: number; tone: PluginDashboardTone }
+export interface PluginDashboardItem { label: string; value: string; hint?: string; tone: PluginDashboardTone; href?: string }
+export interface PluginDashboardWidget {
+  pluginId: string;
+  id: string;
+  title: string;
+  description?: string;
+  href?: string;
+  priority: number;
+  stats: PluginDashboardStat[];
+  segments?: PluginDashboardSegment[];
+  items?: PluginDashboardItem[];
+  itemsTitle?: string;
+  updatedAt?: string;
+}
+const DASHBOARD_TONES: PluginDashboardTone[] = ['neutral', 'good', 'warn', 'bad', 'info'];
+const PLUGIN_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
 @Injectable()
 export class PluginExtensionsService {
@@ -43,8 +62,11 @@ export class PluginExtensionsService {
     if (new Set(parameterNames).size !== parameterNames.length) throw new BadRequestException('Plugin route parameter names must be unique');
     if (!declaredPermissions.has(definition.permission)) throw new BadRequestException('Plugin route permission is not declared in the manifest');
     if (typeof definition.handler !== 'function') throw new BadRequestException('Plugin route handler is required');
+    if (definition.access !== undefined && definition.access !== 'user' && definition.access !== 'device') throw new BadRequestException('Plugin route access must be user or device');
+    if (definition.callers !== undefined && (!Array.isArray(definition.callers) || definition.callers.length > 10
+      || definition.callers.some((caller) => typeof caller !== 'string' || !PLUGIN_ID.test(caller) || caller === pluginId))) throw new BadRequestException('Plugin route callers must be other plugin ids');
     if (definition.contract) {
-      if (!/^\d+\.\d+$/.test(definition.contract.version) || !definition.contract.response?.parse || !definition.contract.errors || Object.entries(definition.contract.errors).some(([code, value]) => !/^[A-Z][A-Z0-9_]{2,63}$/.test(code) || !Number.isInteger(value.status) || value.status < 400 || value.status > 599 || !value.message?.trim())) throw new BadRequestException('Plugin route contract is invalid');
+      if (!/^\d+\.\d+$/.test(definition.contract.version) || !definition.contract.response?.parse || !definition.contract.errors || Object.entries(definition.contract.errors).some(([code, value]) => !/^[A-Z][A-Z0-9_]{2,63}$/.test(code) || !Number.isInteger(value.status) || value.status < 400 || value.status > 599 || !value.message?.trim() || (value.detail !== undefined && typeof value.detail !== 'boolean'))) throw new BadRequestException('Plugin route contract is invalid');
     }
     const key = `${pluginId}:${method}:${definition.path}`;
     if (this.routes.has(key)) throw new BadRequestException(`Plugin route is already registered: ${method} ${definition.path}`);
@@ -57,7 +79,11 @@ export class PluginExtensionsService {
     return () => this.routes.delete(key);
   }
 
-  async dispatch(pluginId: string, request: PluginRouteRequest) {
+  /**
+   * `screenPluginId`: the plugin whose screen made the call (set by the school page's bridge). A
+   * screen of another plugin reaches only the routes that list it in `callers`.
+   */
+  async dispatch(pluginId: string, request: PluginRouteRequest, screenPluginId?: string) {
     this.quota?.consume(pluginId, 'request');
     if (!request.path || request.path.length > 240 || request.path.includes('//') || request.path.split('/').some((segment) => !/^[a-zA-Z0-9._~-]{1,160}$/.test(segment) || segment === '..')) throw new NotFoundException('Plugin route not found');
     let definition = this.routes.get(`${pluginId}:${request.method}:${request.path}`);
@@ -77,6 +103,7 @@ export class PluginExtensionsService {
       }
     }
     if (!definition) throw new NotFoundException('Plugin route not found');
+    if (screenPluginId && screenPluginId !== pluginId && !(definition.callers || []).includes(screenPluginId)) throw new NotFoundException('Plugin route not found');
     request = { ...request, params };
     if (definition.contract?.request) {
       try {
@@ -94,7 +121,10 @@ export class PluginExtensionsService {
       method: request.method, path: `${pluginId}/${request.path}`,
       metadata: { permission: definition.permission },
     };
-    const granted = await this.grants.isGranted(pluginId, definition.permission, request.principal.role);
+    // Device routes answer only device credentials (PluginDeviceController), user routes only users.
+    const fromDevice = request.principal.role === 'DEVICE';
+    if (fromDevice !== (definition.access === 'device')) throw new NotFoundException('Plugin route not found');
+    const granted = fromDevice || await this.grants.isGranted(pluginId, definition.permission, request.principal.role);
     if (!granted) {
       void this.audit.log({ ...auditBase, success: false, errorMessage: `Permission denied: ${definition.permission}` });
       throw new ForbiddenException(`Missing plugin permission: ${definition.permission}`);
@@ -119,7 +149,10 @@ export class PluginExtensionsService {
         const code = (error as PluginContractError).code;
         const declared = definition.contract.errors[code];
         if (!declared) throw new Error('Plugin returned an undeclared error code');
-        throw new HttpException({ code, message: declared.message }, declared.status);
+        // `detail`: the plugin's own wording of this declared error (one line, bounded) reaches the caller.
+        const own = (error as Error).message;
+        const message = declared.detail === true && typeof own === 'string' && own.trim() && own.length <= 300 && !/[\r\n]/.test(own) ? own.trim() : declared.message;
+        throw new HttpException({ code, message }, declared.status);
       }
       throw error;
     } finally { if (timer) clearTimeout(timer); }
@@ -131,7 +164,13 @@ export class PluginExtensionsService {
       if (!declared.has(definition.id) || !definition.label?.trim()) throw new BadRequestException(`Plugin permission is not declared: ${definition.id}`);
       const key = `${pluginId}:${definition.id}`;
       if (this.permissions.has(key)) throw new BadRequestException(`Plugin permission is already registered: ${definition.id}`);
-      this.permissions.set(key, { ...definition, pluginId, label: definition.label.trim() });
+      // Optional: the roles the plugin suggests for this permission (offered on Roles & access, never
+      // granted automatically). Unknown roles are dropped.
+      const roles = Array.isArray(definition.roles)
+        ? [...new Set(definition.roles.filter((role): role is GrantablePluginRole => GRANTABLE_PLUGIN_ROLES.includes(role as GrantablePluginRole)))]
+        : [];
+      const description = typeof definition.description === 'string' && definition.description.trim() ? definition.description.trim().slice(0, 300) : undefined;
+      this.permissions.set(key, { id: definition.id, pluginId, label: definition.label.trim(), ...(description ? { description } : {}), ...(roles.length ? { roles } : {}) });
       keys.push(key);
     }
     return () => keys.forEach((key) => this.permissions.delete(key));
@@ -156,11 +195,11 @@ export class PluginExtensionsService {
     return () => keys.forEach((key) => this.navigation.delete(key));
   }
 
-  registerPage(pluginId: string, value: unknown, declaredPermissions = new Set<string>(), pluginVersion?: string) {
+  registerPage(pluginId: string, value: unknown, declaredPermissions = new Set<string>(), pluginVersion?: string, partners?: Set<string>) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('Plugin frontend entry must be an object');
     const page = value as Record<string, unknown>;
     if (page.schemaVersion === 2) {
-      const bundle = parsePluginUiBundle(value, pluginId, declaredPermissions);
+      const bundle = parsePluginUiBundle(value, pluginId, declaredPermissions, partners);
       const keys: string[] = [];
       for (const descriptor of bundle.pages) {
         const key = `${pluginId}:${descriptor.id}`;
@@ -237,7 +276,15 @@ export class PluginExtensionsService {
   async listForPrincipal(role: string | undefined) {
     const allowed = async (permission: string | undefined, pluginId: string) => !permission || this.grants.isGranted(pluginId, permission, role);
     const navigation = await this.filterAsync([...this.navigation.values()], (entry) => allowed(entry.permission, entry.pluginId));
-    const pages = await this.filterAsync([...this.pages.values()], async (page) => page.schemaVersion === 1 || allowed(page.permission, page.pluginId));
+    const visible = await this.filterAsync([...this.pages.values()], async (page) => page.schemaVersion === 1 || allowed(page.permission, page.pluginId));
+    // A plugin screen may show or hide actions by what this user may do: each page carries the
+    // plugin's permissions granted to this role (the routes still check them on every call).
+    const grantedByPlugin = new Map<string, string[]>();
+    for (const pluginId of new Set(visible.map((page) => page.pluginId))) {
+      const own = [...this.permissions.values()].filter((permission) => permission.pluginId === pluginId);
+      grantedByPlugin.set(pluginId, (await this.filterAsync(own, (permission) => allowed(permission.id, pluginId))).map((permission) => permission.id));
+    }
+    const pages = visible.map((page) => ({ ...page, grantedPermissions: grantedByPlugin.get(page.pluginId) || [] }));
     return { navigation, pages };
   }
 
@@ -265,7 +312,9 @@ export class PluginExtensionsService {
           if (typeof item.title !== 'string' || !item.title.trim() || item.title.length > 200) return [];
           if (typeof item.href !== 'string' || !item.href.startsWith(`/plugins/${pluginId}/`) || item.href.includes('..')) return [];
           if (item.description !== undefined && (typeof item.description !== 'string' || item.description.length > 500)) return [];
-          return [{ pluginId, id: item.id, title: item.title.trim(), href: item.href, ...(item.description ? { description: item.description as string } : {}) }];
+          // Optional: the kind of record (Students, Staff, Classes…), used to group results.
+          const group = typeof item.group === 'string' && item.group.trim() && item.group.length <= 40 ? item.group.trim() : undefined;
+          return [{ pluginId, id: item.id, title: item.title.trim(), href: item.href, ...(item.description ? { description: item.description as string } : {}), ...(group ? { group } : {}) }];
         });
       } catch {
         // One unavailable or unauthorized provider must not break results from other plugins.
@@ -273,6 +322,91 @@ export class PluginExtensionsService {
       }
     }));
     return batches.flat();
+  }
+
+  /**
+   * Dashboard summary convention (same shape of trust as search): an active plugin may register a
+   * permission-gated GET `dashboard/summary` route returning one widget or a list of widgets with
+   * its key figures. Dispatch keeps the grant, quota, timeout and audit rules; the output is
+   * validated and bounded here, and links must stay inside the plugin's own namespace.
+   */
+  dashboardForPrincipal(principal: PluginRouteRequest['principal']): Promise<PluginDashboardWidget[]> {
+    return this.widgetsForPrincipal('dashboard/summary', principal);
+  }
+
+  /**
+   * Profile convention (same widgets and trust as the dashboard): an active plugin may register a
+   * permission-gated GET `me/profile` route describing the signed-in person in that plugin — e.g. a
+   * teacher's staff record, classes and attendance — shown on their My Profile page.
+   */
+  profileForPrincipal(principal: PluginRouteRequest['principal']): Promise<PluginDashboardWidget[]> {
+    return this.widgetsForPrincipal('me/profile', principal);
+  }
+
+  private async widgetsForPrincipal(path: 'dashboard/summary' | 'me/profile', principal: PluginRouteRequest['principal']): Promise<PluginDashboardWidget[]> {
+    const suffix = `:GET:${path}`;
+    const providers = [...this.routes.keys()]
+      .filter((key) => key.endsWith(suffix))
+      .map((key) => key.slice(0, -suffix.length));
+    const batches = await Promise.all(providers.map(async (pluginId) => {
+      try {
+        const value = await this.dispatch(pluginId, { method: 'GET', path, params: {}, query: {}, body: undefined, principal });
+        const list = Array.isArray(value) ? value : value ? [value] : [];
+        return list.slice(0, 4).flatMap((candidate) => {
+          const widget = this.dashboardWidget(pluginId, candidate);
+          return widget ? [widget] : [];
+        });
+      } catch {
+        // One failing or unauthorized plugin must not hide the others.
+        return [];
+      }
+    }));
+    return batches.flat().sort((left, right) => left.priority - right.priority || left.title.localeCompare(right.title));
+  }
+
+  private dashboardWidget(pluginId: string, candidate: unknown): PluginDashboardWidget | null {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+    const raw = candidate as Record<string, unknown>;
+    const text = (value: unknown, max: number) => (typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : undefined);
+    const tone = (value: unknown): PluginDashboardTone => (DASHBOARD_TONES.includes(value as PluginDashboardTone) ? value as PluginDashboardTone : 'neutral');
+    const link = (value: unknown) => (typeof value === 'string' && value.startsWith(`/plugins/${pluginId}/`) && !value.includes('..') && value.length <= 300 ? value : undefined);
+    const shown = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? String(value) : text(value, 40));
+    const id = typeof raw.id === 'string' && /^[a-zA-Z0-9._:-]{1,80}$/.test(raw.id) ? raw.id : undefined;
+    const title = text(raw.title, 100);
+    if (!id || !title) return null;
+    const stats = (Array.isArray(raw.stats) ? raw.stats : []).slice(0, 8).flatMap((entry): PluginDashboardStat[] => {
+      if (!entry || typeof entry !== 'object') return [];
+      const stat = entry as Record<string, unknown>;
+      const statId = typeof stat.id === 'string' && /^[a-zA-Z0-9._:-]{1,80}$/.test(stat.id) ? stat.id : undefined;
+      const label = text(stat.label, 60), value = shown(stat.value);
+      if (!statId || !label || value === undefined) return [];
+      const hint = text(stat.hint, 120), href = link(stat.href);
+      return [{ id: statId, label, value, tone: tone(stat.tone), ...(hint ? { hint } : {}), ...(href ? { href } : {}) }];
+    });
+    const segments = (Array.isArray(raw.segments) ? raw.segments : []).slice(0, 8).flatMap((entry): PluginDashboardSegment[] => {
+      if (!entry || typeof entry !== 'object') return [];
+      const segment = entry as Record<string, unknown>;
+      const label = text(segment.label, 40), value = Number(segment.value);
+      return label && Number.isFinite(value) && value >= 0 ? [{ label, value, tone: tone(segment.tone) }] : [];
+    });
+    const items = (Array.isArray(raw.items) ? raw.items : []).slice(0, 8).flatMap((entry): PluginDashboardItem[] => {
+      if (!entry || typeof entry !== 'object') return [];
+      const item = entry as Record<string, unknown>;
+      const label = text(item.label, 100), value = shown(item.value);
+      if (!label || value === undefined) return [];
+      const hint = text(item.hint, 120), href = link(item.href);
+      return [{ label, value, tone: tone(item.tone), ...(hint ? { hint } : {}), ...(href ? { href } : {}) }];
+    });
+    if (!stats.length && !items.length) return null;
+    const description = text(raw.description, 240), href = link(raw.href), itemsTitle = text(raw.itemsTitle, 80);
+    const priority = Number.isInteger(raw.priority) && (raw.priority as number) >= 0 && (raw.priority as number) <= 1000 ? raw.priority as number : 500;
+    const updatedAt = typeof raw.updatedAt === 'string' && !Number.isNaN(Date.parse(raw.updatedAt)) ? new Date(raw.updatedAt).toISOString() : undefined;
+    return {
+      pluginId, id, title, priority, stats,
+      ...(description ? { description } : {}), ...(href ? { href } : {}),
+      ...(segments.length ? { segments } : {}), ...(items.length ? { items } : {}), ...(itemsTitle ? { itemsTitle } : {}),
+      ...(updatedAt ? { updatedAt } : {}),
+    };
   }
 
   private async filterAsync<T>(items: T[], predicate: (item: T) => Promise<boolean>): Promise<T[]> {

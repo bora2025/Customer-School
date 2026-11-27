@@ -670,12 +670,14 @@ export default function PluginUiRenderer({
               key={component.id}
               pluginId={pluginId}
               pluginVersion={page.pluginVersion}
+              permissions={page.grantedPermissions}
               title={component.title || page.title}
               entry={String(component.options?.entry || "")}
               params={params}
               height={component.options?.height === "fill" ? "fill" : "auto"}
               minHeight={Number(component.options?.minHeight) || 320}
               devices={pluginUiDevices(component.options?.devices)}
+              apis={Array.isArray(component.options?.apis) ? (component.options.apis as unknown[]).filter((item): item is string => typeof item === "string") : []}
             />
           );
         if (component.type === "heading")

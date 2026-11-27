@@ -119,6 +119,8 @@ describe('per-plugin database roles', () => {
           return [{ id: 'n1' }];
         }),
         $executeRawUnsafe: jest.fn(async (sql: string) => { log.push(sql.trim().split(/\s+/).slice(0, 4).join(' ')); return 1; }),
+        // the plugin's lifecycle lock, taken before the role grants
+        $executeRaw: jest.fn(async () => { log.push('LOCK plugin'); return 1; }),
       };
       const prisma = {
         pluginInstallation: { findUnique: jest.fn().mockResolvedValue({ id: 'wattanam.test', version: '1.0.0', installedPath }) },
@@ -142,6 +144,9 @@ describe('per-plugin database roles', () => {
       const firstPluginSql = log.indexOf('SELECT * FROM plugin_wattanam_test_notes');
       expect(provisioning).toBeGreaterThanOrEqual(0);
       expect(provisioning).toBeLessThan(firstPluginSql);
+      // the grants wait for the plugin's lifecycle lock, so they never interleave with a migration
+      expect(log.indexOf('LOCK plugin')).toBeGreaterThanOrEqual(0);
+      expect(log.indexOf('LOCK plugin')).toBeLessThan(provisioning);
       expect(log[firstPluginSql - 1]).toBe('SET LOCAL ROLE "wtp_wattanam_test"');
       const write = log.indexOf('DELETE FROM plugin_wattanam_test_notes WHERE');
       expect(log[write - 1]).toBe('SET LOCAL ROLE "wtp_wattanam_test"');

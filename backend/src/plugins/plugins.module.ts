@@ -1,3 +1,5 @@
+import { PluginDeviceController } from './plugin-device.controller';
+import { PluginDeviceCredentialsService } from './plugin-device-credentials.service';
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -29,8 +31,8 @@ import { PluginEntitlementPolicyService } from './plugin-entitlement-policy.serv
 
 @Module({
   imports: [DatabaseModule, NotificationModule, AuthModule, DirectoryModule, StorageModule],
-  controllers: [PluginsController, PluginApiController, PluginUiAssetsController],
-  providers: [PluginPackageVerifier, PluginArtifactCacheService, PluginResourceQuotaService, PluginContractRuntimeService, PluginRolloutService, PluginAccountService, PluginEntitlementPolicyService, PluginEventBus, PluginPermissionsService, PluginExtensionsService, PluginJobsService, PluginSettingsService, PluginStorageService, PluginMigrationsService, PluginRealtimeGateway, PluginRealtimeService, PluginNotificationQuotaService, PluginRuntimeService, PluginsService],
+  controllers: [PluginsController, PluginApiController, PluginUiAssetsController, PluginDeviceController],
+  providers: [PluginPackageVerifier, PluginArtifactCacheService, PluginResourceQuotaService, PluginContractRuntimeService, PluginRolloutService, PluginAccountService, PluginEntitlementPolicyService, PluginEventBus, PluginPermissionsService, PluginExtensionsService, PluginJobsService, PluginSettingsService, PluginStorageService, PluginMigrationsService, PluginRealtimeGateway, PluginRealtimeService, PluginNotificationQuotaService, PluginRuntimeService, PluginsService, PluginDeviceCredentialsService],
   exports: [PluginsService, PluginEventBus, PluginExtensionsService, PluginPermissionsService, PluginEntitlementPolicyService],
 })
 export class PluginsModule {}

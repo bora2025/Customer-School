@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../../lib/api";
-import { resolvePluginSourcePath } from "../../lib/plugin-ui-routing";
+import { pluginScreenHeaders, pluginSourceUrl, resolvePluginSourcePath } from "../../lib/plugin-ui-routing";
 
 type Column = {
   id: string;
@@ -17,6 +17,7 @@ type Source = {
   id: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
+  plugin?: string;
 };
 type RowAction = {
   id: string;
@@ -283,10 +284,10 @@ export default function PluginDataTable({
         ...(pageParams || {}),
         [action.idParameter || "id"]: String(rawId),
       };
-      const endpoint = `/api/plugin-api/${encodeURIComponent(pluginId)}/${resolvePluginSourcePath(source.path, sourceParams)}`;
+      const endpoint = pluginSourceUrl(pluginId, source, resolvePluginSourcePath(source.path, sourceParams));
       const response = await apiFetch(endpoint, {
         method: source.method,
-        headers: { "Content-Type": "application/json" },
+        headers: pluginScreenHeaders(pluginId, { "Content-Type": "application/json" }),
         body: JSON.stringify({
           ...(action.body || {}),
           [action.idField || "id"]: rawId,
